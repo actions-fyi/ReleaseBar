@@ -86,6 +86,7 @@ export type DurableObjectState = {
 };
 
 export type Env = {
+  ADMIN_LOGINS?: string;
   ASSETS?: { fetch(request: Request): Promise<Response> };
   AUTH_COOKIE_SECRET?: string;
   DASHBOARD_CACHE?: KVNamespace;

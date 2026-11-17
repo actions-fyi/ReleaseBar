@@ -62,7 +62,7 @@
     <div class="error-state">
       <span class="loading-kicker">admin unavailable</span>
       <strong>{adminError}</strong>
-      <small>Admin access requires signing in as @steipete.</small>
+      <small>Admin access requires signing in with an admin account.</small>
       {#if auth?.configured && !auth.user}
         <button type="button" onclick={login}>Connect GitHub</button>
       {:else}

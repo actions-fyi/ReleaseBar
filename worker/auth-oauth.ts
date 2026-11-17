@@ -102,6 +102,7 @@ export async function meResponse(request: Request, env: Env): Promise<Response> 
     configured: authConfigured(env),
     quotaConfigured: appTokenConfigured(env),
     user: session?.user ?? null,
+    admin: Boolean(session && isAdminLogin(session.user.login, env)),
     installations,
     installNeeded: Boolean(session && coverage.needed),
     installReason: session ? coverage.reason : null,
@@ -808,6 +809,10 @@ export function authDependentAppShellHeaders(request: Request, env: Env): Record
     : { "cache-control": "public, max-age=300" };
 }
 
-export function isAdminLogin(login: string): boolean {
-  return login.toLowerCase() === "steipete";
+export function isAdminLogin(login: string, env: Env): boolean {
+  const admins = (env.ADMIN_LOGINS ?? "")
+    .split(",")
+    .map((admin) => admin.trim().toLowerCase())
+    .filter(Boolean);
+  return admins.includes(login.toLowerCase());
 }

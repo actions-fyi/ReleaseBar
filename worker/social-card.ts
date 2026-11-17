@@ -340,7 +340,7 @@ export async function socialSvg(card: SocialCard): Promise<string> {
   <text x="${titleX}" y="318" fill="#f2ffe9" font-family="JetBrains Mono, SFMono-Regular, ui-monospace, Menlo, Consolas, monospace" font-size="${titleSize}" font-weight="700" letter-spacing="0">${title}</text>
   <text x="96" y="424" fill="#a8ff6b" font-family="JetBrains Mono, SFMono-Regular, ui-monospace, Menlo, Consolas, monospace" font-size="34" font-weight="700" letter-spacing="0">${metric}</text>
   <text x="96" y="474" fill="#8f9b89" font-family="JetBrains Mono, SFMono-Regular, ui-monospace, Menlo, Consolas, monospace" font-size="28" letter-spacing="0">${detail}</text>
-  <text x="96" y="506" fill="#52604d" font-family="JetBrains Mono, SFMono-Regular, ui-monospace, Menlo, Consolas, monospace" font-size="24" letter-spacing="0">release.bar</text>
+  <text x="96" y="506" fill="#52604d" font-family="JetBrains Mono, SFMono-Regular, ui-monospace, Menlo, Consolas, monospace" font-size="24" letter-spacing="0">releases.actions.fyi</text>
 </svg>`;
 }
 

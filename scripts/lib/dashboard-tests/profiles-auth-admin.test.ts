@@ -110,6 +110,7 @@ test("worker saves owner public defaults and applies them to clean owner URLs", 
     }),
   });
   const env = {
+    ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
     DASHBOARD_CACHE: cache,
     GITHUB_TOKEN: "shared-token",
@@ -226,6 +227,7 @@ test("worker only lets the dashboard owner save public defaults", async () => {
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
   const env = {
+    ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
     DASHBOARD_CACHE: kvStore({
       [`auth:session:${sessionId}`]: JSON.stringify({
@@ -276,6 +278,7 @@ test("worker logout deletes the stored session and clears the cookie", async () 
     }),
   });
   const env = {
+    ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
     DASHBOARD_CACHE: cache,
     GITHUB_APP_CLIENT_ID: "Iv123",
@@ -386,6 +389,7 @@ test("worker admin scheduler requires an admin session and reports refresh targe
   });
   const sentJobs: RefreshJob[] = [];
   const env = {
+    ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
     DASHBOARD_CACHE: cache,
     REFRESH_QUEUE: {
@@ -518,6 +522,7 @@ test("worker admin installation summary bounds record and counter reads", async 
       headers: { cookie: `rd_session=${authCookie}` },
     }),
     {
+      ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
     },
@@ -598,6 +603,7 @@ test("worker scheduler rotates bounded current-schema target pages", async () =>
         headers: { cookie: `rd_session=${authCookie}` },
       }),
       {
+        ADMIN_LOGINS: "steipete",
         AUTH_COOKIE_SECRET: "test-secret",
         DASHBOARD_CACHE: cache,
       },
@@ -624,6 +630,7 @@ test("worker scheduler rotates bounded current-schema target pages", async () =>
       headers: { cookie: `rd_session=${authCookie}` },
     }),
     {
+      ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
     },

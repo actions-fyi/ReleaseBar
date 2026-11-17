@@ -34,6 +34,7 @@ test("worker exposes GitHub App auth endpoints", async () => {
     configured: true,
     quotaConfigured: false,
     user: null,
+    admin: false,
     installations: [],
     installNeeded: false,
     installReason: null,
@@ -823,4 +824,12 @@ test("worker records server-verified install callbacks without signed return sta
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("admin logins come from ADMIN_LOGINS and default to nobody", async () => {
+  const { isAdminLogin } = await import("../../../worker/auth-oauth.js");
+  assert.equal(isAdminLogin("steipete", {}), false);
+  assert.equal(isAdminLogin("anyone", { ADMIN_LOGINS: "" }), false);
+  assert.equal(isAdminLogin("Octo", { ADMIN_LOGINS: "first, octo ,third" }), true);
+  assert.equal(isAdminLogin("other", { ADMIN_LOGINS: "first, octo ,third" }), false);
 });

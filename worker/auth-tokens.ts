@@ -73,7 +73,7 @@ export async function requireAdmin(
   if (!session) {
     return jsonResponse({ error: "login required" }, 401, { "cache-control": "no-store" });
   }
-  if (!isAdminLogin(session.user.login)) {
+  if (!isAdminLogin(session.user.login, env)) {
     return jsonResponse({ error: "admin required" }, 403, { "cache-control": "no-store" });
   }
   return session;

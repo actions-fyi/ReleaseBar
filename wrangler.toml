@@ -1,17 +1,23 @@
-name = "releasedeck-api"
+name = "releasebar"
 main = "node_modules/.cache/releasebar-build/worker/index.js"
 compatibility_date = "2026-07-11"
-account_id = "de09342a728de2c25c85cc6b34d68739"
 workers_dev = true
+
+# The canonical domain. Its zone must be in the Cloudflare account that deploys this Worker.
+[[routes]]
+pattern = "releases.actions.fyi"
+custom_domain = true
 
 [vars]
 OPENAI_SUMMARY_MODEL = "chat-latest"
+RELEASEDECK_CANONICAL_DOMAIN = "releases.actions.fyi"
+ADMIN_LOGINS = "matfax"
 
 [triggers]
 crons = ["*/15 * * * *"]
 
 [build]
-command = "npm run build:script && npm run build:app && npm run build:assets"
+command = "npm run build"
 
 [assets]
 directory = "./dist"
@@ -21,8 +27,6 @@ run_worker_first = true
 
 [[kv_namespaces]]
 binding = "DASHBOARD_CACHE"
-id = "687a658593b94897b8cc09d62127d140"
-preview_id = "30e91855eea543e8ad6e0b6f981d529f"
 
 [[queues.producers]]
 binding = "REFRESH_QUEUE"

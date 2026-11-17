@@ -1,21 +1,21 @@
 # ReleaseBar 📦 — Know what needs a release.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/steipete/ReleaseBar/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/steipete/ReleaseBar/actions/workflows/ci.yml)
-[![GitHub release](https://img.shields.io/github/v/release/steipete/ReleaseBar?style=flat-square&label=release)](https://github.com/steipete/ReleaseBar/releases/latest)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22.12-339933?style=flat-square&logo=node.js&logoColor=white)](package.json)
-[![License](https://img.shields.io/github/license/steipete/ReleaseBar?style=flat-square)](LICENSE)
-[![Live](https://img.shields.io/badge/live-release.bar-6fda44?style=flat-square)](https://release.bar)
+[![License](https://img.shields.io/github/license/actions-fyi/ReleaseBar?style=flat-square)](LICENSE)
+[![Live](https://img.shields.io/badge/live-releases.actions.fyi-6fda44?style=flat-square)](https://releases.actions.fyi)
 
 ReleaseBar is a release-freshness dashboard for public GitHub users and organizations. It combines releases, unreleased commits, repository activity, CI, and open work so maintainers can see which projects need attention.
 
+This is the actions-fyi fork of [steipete/ReleaseBar](https://github.com/steipete/ReleaseBar), deployed at [releases.actions.fyi](https://releases.actions.fyi).
+
 ## Install
 
-The public service runs at [release.bar](https://release.bar), with no installation required.
+The public service runs at [releases.actions.fyi](https://releases.actions.fyi), with no installation required.
 
 To run the source locally:
 
 ```sh
-git clone https://github.com/steipete/ReleaseBar.git
+git clone https://github.com/actions-fyi/ReleaseBar.git
 cd ReleaseBar
 npm ci
 ```
@@ -24,10 +24,10 @@ ReleaseBar requires Node.js 22.12 or newer. Node.js 24 is the version used by CI
 
 ## Quick start
 
-Open a dashboard for any public GitHub owner, such as [release.bar/steipete](https://release.bar/steipete), or read the same cached data from the API:
+Open a dashboard for any public GitHub owner, such as [releases.actions.fyi/steipete](https://releases.actions.fyi/steipete), or read the same cached data from the API:
 
 ```sh
-curl -fsSL https://release.bar/api/steipete \
+curl -fsSL https://releases.actions.fyi/api/steipete \
   | jq '{owners: [.owners[].login], repositories: (.projects | length), cache: .cache.state}'
 ```
 
@@ -54,7 +54,7 @@ ReleaseBar ignores private repositories even when a GitHub App installation incl
 
 ## API
 
-The Worker exposes cached public endpoints for owner dashboards, activity, repository details, audience signals, and public GitHub profile context. Swagger-compatible OpenAPI 3.1 is available at [`/openapi.json`](https://release.bar/openapi.json).
+The Worker exposes cached public endpoints for owner dashboards, activity, repository details, audience signals, and public GitHub profile context. Swagger-compatible OpenAPI 3.1 is available at [`/openapi.json`](https://releases.actions.fyi/openapi.json).
 
 See the [public API reference](docs/api.md) for response shapes, cache semantics, and agent guidance. The [refresh scheduler](docs/refresh-scheduler.md) describes background hydration, retries, quota selection, and webhook-driven refreshes.
 

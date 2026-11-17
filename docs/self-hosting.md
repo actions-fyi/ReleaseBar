@@ -55,7 +55,7 @@ For local code running on Cloudflare with real secrets and preview KV:
 npm run dev:worker:real
 ```
 
-Open `http://localhost:8787/steipete` or another owner route. Because `wrangler.toml` defines a KV `preview_id`, remote development warms preview storage rather than the production dashboard cache.
+Open `http://localhost:8787/steipete` or another owner route.
 
 ## Cloudflare resources
 
@@ -66,7 +66,9 @@ Open `http://localhost:8787/steipete` or another owner route. Because `wrangler.
 - `DASHBOARD_LOCKS` as a Durable Object for single-flight builds, checkpoints, job reservations, and failure state
 - `REFRESH_QUEUE` for bounded background hydration and webhook work
 
-The Worker runs before static assets so `/api/*` stays dynamic and owner routes return the application shell. The deployed Cloudflare service remains named `releasedeck-api` for infrastructure continuity even though the product, repository, package, and configuration names are ReleaseBar and `releasebar`.
+The Worker runs before static assets so `/api/*` stays dynamic and owner routes return the application shell. The Worker is named `releasebar`.
+
+`wrangler.toml` names no account and no KV namespace ID: the deploying Cloudflare account is the one Workers Builds is connected to, and Wrangler creates the `DASHBOARD_CACHE` namespace on the first deploy. The queues `releasebar-refresh` and `releasebar-refresh-dlq` must exist before that deploy (`wrangler queues create <name>`), and the zone of the custom domain in `[[routes]]` must be in the same account.
 
 The shared `GITHUB_TOKEN` is the fallback quota bucket for sources without GitHub App coverage. Installed accounts use their own App quota. ReleaseBar defers optional enrichment before core release-health work when shared GitHub quota becomes constrained. Detailed cache, queue, and retry behavior is in [the refresh scheduler](refresh-scheduler.md).
 
@@ -83,7 +85,7 @@ Configure these Worker secrets to enable login and installation:
 
 `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` enable dedicated installation quota. Without them, users can still sign in, but dashboard rebuilds use the shared server token and cache. `GITHUB_APP_SLUG` is optional and defaults to `releasebar-app`.
 
-Set the GitHub App setup URL to `https://release.bar/api/auth/install` and enable redirect-on-update. Set the webhook URL to `https://release.bar/api/github/webhook`, use the same webhook secret in GitHub and Cloudflare, and subscribe to Issues, Pull requests, Push, Releases, and Repository events.
+Set the GitHub App setup URL to `https://releases.actions.fyi/api/auth/install` and enable redirect-on-update. Set the webhook URL to `https://releases.actions.fyi/api/github/webhook`, use the same webhook secret in GitHub and Cloudflare, and subscribe to Issues, Pull requests, Push, Releases, and Repository events.
 
 Signed webhook payloads up to 2 MiB enter Cloudflare Queue before acknowledgement. Issue and pull-request bursts coalesce into authoritative count refreshes; push and release bursts coalesce into release refreshes. Privacy and archive transitions remain separate so visibility changes apply promptly.
 
@@ -106,6 +108,10 @@ npm run build
 wrangler deploy
 ```
 
-Pushes to `main` run `.github/workflows/deploy.yml`. The workflow requires `CLOUDFLARE_API_TOKEN`, runs `npm run check:static`, deploys through Wrangler, compares live JavaScript and CSS asset hashes with the local build, and smokes `/`, `/steipete`, `/openclaw/openclaw`, and `/api/_discover`.
+Pushes to `main` are built and deployed by Cloudflare's GitHub app (Workers Builds), which runs the `[build]` command of `wrangler.toml` and `wrangler deploy`. No workflow deploys, and GitHub holds no Cloudflare token.
 
-`.github/workflows/monitor.yml` repeats the production route, discovery API, and asset checks every six hours without redeploying unchanged code.
+Pull requests are gated by the org's Test TypeScript check, which runs the `typecheck`, `lint`, `format:check`, `build` and `test` scripts, and by `.github/workflows/cloudflare.yml`, which dry-runs the Wrangler deployment without credentials. `npm run build` is the offline build; `npm run build:data` also fetches dashboard data from GitHub.
+
+## Admin
+
+`ADMIN_LOGINS` in `wrangler.toml` is a comma-separated list of GitHub logins that may open `/_admin`. Without it, nobody can.
