@@ -177,7 +177,7 @@
   $: repoSummaryRanges = repoDetail?.project.releaseDate
     ? [...activityRanges, { value: "release" as RepoActivityRange, label: "since release" }]
     : activityRanges;
-  $: isAdminUser = auth?.user?.login.toLowerCase() === "steipete";
+  $: isAdminUser = auth?.admin === true;
   $: label = adminRoute
     ? "ReleaseBar Admin"
     : activityPageRoute
@@ -306,7 +306,7 @@
     ),
   );
   $: document.body.classList.toggle("dev-mode", devMode);
-  $: document.title = `${label} · release.bar`;
+  $: document.title = `${label} · releases.actions.fyi`;
   $: activeDiscoverPeriod = initialRoute.discoverPeriod ?? "week";
   $: activeDiscoverLanguage = initialRoute.discoverLanguage;
   $: syncViewState(query, language, filter, sortKey, sortDirection, devMode);
@@ -946,7 +946,7 @@
   <span>A project by</span>
   <a class="external-link" href="https://steipete.me" target="_blank" rel="noreferrer">Peter Steinberger</a>
   <span class="footer-separator" aria-hidden="true">.</span>
-  <a class="external-link" href="https://github.com/steipete/ReleaseBar/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT Licensed</a>
+  <a class="external-link" href="https://github.com/actions-fyi/ReleaseBar/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT Licensed</a>
 </footer>
 
 <CommandPalette

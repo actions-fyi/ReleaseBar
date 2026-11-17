@@ -352,7 +352,10 @@ export async function assetResponse(request: Request, env: Env): Promise<Respons
     const initialData = await initialPageData(request, originalUrl, env).catch(() => null);
     const html = injectInitialPageData(
       (await response.text())
-        .replace(/<title>.*?<\/title>/, `<title>${escapeHtml(title)} · release.bar</title>`)
+        .replace(
+          /<title>.*?<\/title>/,
+          `<title>${escapeHtml(title)} · ${env.RELEASEDECK_CANONICAL_DOMAIN ?? "release.bar"}</title>`,
+        )
         .replace(
           /<meta property="og:title" content="[^"]*" \/>/,
           `<meta property="og:title" content="${escapeHtml(title)}" />`,

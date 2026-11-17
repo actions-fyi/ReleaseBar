@@ -114,6 +114,7 @@ test("worker admin installation sync removes stale registry entries", async () =
     }),
   });
   const env = {
+    ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
     DASHBOARD_CACHE: cache,
     GITHUB_APP_ID: "123",
@@ -196,6 +197,7 @@ test("worker admin installation sync keeps registry when GitHub listing fails", 
     }),
   });
   const env = {
+    ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
     DASHBOARD_CACHE: cache,
     GITHUB_APP_ID: "123",
@@ -259,6 +261,7 @@ test("worker admin installation sync keeps selected repos when repository listin
     }),
   });
   const env = {
+    ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
     DASHBOARD_CACHE: cache,
     GITHUB_APP_ID: "123",
@@ -351,6 +354,7 @@ test("worker admin scheduler counts missing caches as due even before nextDueAt"
       headers: { cookie: `rd_session=${authCookie}` },
     }),
     {
+      ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
     },
@@ -403,6 +407,7 @@ test("worker admin scheduler respects transient failure retry delay", async () =
       headers: { cookie: `rd_session=${authCookie}` },
     }),
     {
+      ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
     },
@@ -457,6 +462,7 @@ test("worker scheduler skips shared cold targets while GraphQL is backed off", a
   });
   const sentJobs: RefreshJob[] = [];
   const env = {
+    ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
     DASHBOARD_CACHE: cache,
     GITHUB_TOKEN: "shared-token",
@@ -532,6 +538,7 @@ test("worker scheduler keeps repo-only targets runnable during RepoDetails backo
       headers: { cookie: `rd_session=${authCookie}` },
     }),
     {
+      ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
       GITHUB_TOKEN: "shared-token",
@@ -603,6 +610,7 @@ test("worker scheduler keeps dormant shared targets on weekly cadence after succ
       headers: { cookie: `rd_session=${authCookie}` },
     }),
     {
+      ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
       GITHUB_TOKEN: "shared-token",
@@ -665,6 +673,7 @@ test("worker scheduler still rebuilds missing dormant shared caches", async () =
       headers: { cookie: `rd_session=${authCookie}` },
     }),
     {
+      ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
       GITHUB_TOKEN: "shared-token",

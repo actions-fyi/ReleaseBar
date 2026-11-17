@@ -59,6 +59,7 @@ test("worker scheduler preserves queued backlog jobs until reservation expiry", 
   const sentJobs: RefreshJob[] = [];
 
   const env = {
+    ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
     DASHBOARD_CACHE: cache,
     REFRESH_QUEUE: {
@@ -152,6 +153,7 @@ test("worker clears fallback reservations after active-job scans fail", async ()
   };
   const sentJobs: RefreshJob[] = [];
   const env = {
+    ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
     DASHBOARD_CACHE: cache,
     DASHBOARD_LOCKS: unavailableLocks,
@@ -229,6 +231,7 @@ test("worker scheduler falls back when the reservation Durable Object is unavail
       headers: { cookie: `rd_session=${authCookie}` },
     }),
     {
+      ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
       DASHBOARD_LOCKS: unavailableLocks,
@@ -288,6 +291,7 @@ test("worker admin GitHub access ignores expired shared quota cooldowns", async 
       headers: { cookie: `rd_session=${authCookie}` },
     }),
     {
+      ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
     },
@@ -340,6 +344,7 @@ test("worker admin GitHub access keeps longest active shared quota cooldown", as
       headers: { cookie: `rd_session=${authCookie}` },
     }),
     {
+      ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
     },
@@ -394,6 +399,7 @@ test("worker admin scheduler defers shared quota paused targets even with missin
       headers: { cookie: `rd_session=${authCookie}` },
     }),
     {
+      ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
       REFRESH_QUEUE: {
@@ -466,6 +472,7 @@ test("worker admin scheduler lets app-token targets bypass shared quota pauses",
       headers: { cookie: `rd_session=${authCookie}` },
     }),
     {
+      ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
       GITHUB_APP_ID: "123",
@@ -539,6 +546,7 @@ test("worker admin scheduler uses app registry coverage without minting tokens",
       headers: { cookie: `rd_session=${authCookie}` },
     }),
     {
+      ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
       GITHUB_APP_ID: "123",
@@ -621,6 +629,7 @@ test("worker admin scheduler bypasses shared quota defer time with app coverage"
       headers: { cookie: `rd_session=${authCookie}` },
     }),
     {
+      ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
       GITHUB_APP_ID: "123",
@@ -683,6 +692,7 @@ test("worker scheduler marks jobs failed when queue delivery fails", async () =>
         headers: { cookie: `rd_session=${authCookie}` },
       }),
       {
+        ADMIN_LOGINS: "steipete",
         AUTH_COOKIE_SECRET: "test-secret",
         DASHBOARD_CACHE: cache,
         REFRESH_QUEUE: {

@@ -33,7 +33,7 @@ export type RouteOptions = {
 };
 
 export const workerApiOrigin = "";
-export const workersDevApiOrigin = "https://releasedeck-api.steipete.workers.dev";
+export const workersDevApiOrigin = "https://releases.actions.fyi";
 const localWorkerApiPort = "8787";
 const ownerListKey = "owners";
 const repoListKey = "repos";

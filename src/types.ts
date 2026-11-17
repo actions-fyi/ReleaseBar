@@ -110,6 +110,7 @@ export type AuthPayload = {
   configured: boolean;
   quotaConfigured: boolean;
   user: AuthUser | null;
+  admin?: boolean;
   installations: AuthInstallation[];
   installNeeded: boolean;
   installReason: string | null;

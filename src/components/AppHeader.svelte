@@ -38,7 +38,7 @@
 <header class="topline">
   <div class="hero-copy">
     <nav class="eyebrow-nav" aria-label="Page navigation">
-      <a class="eyebrow brand" href="/">release.bar</a>
+      <a class="eyebrow brand" href="/">releases.actions.fyi</a>
       {#if repoRoute}
         <span aria-hidden="true">/</span>
         <a class="eyebrow eyebrow-back" href={ownerDashboardPath(repoRoute.owner)}>

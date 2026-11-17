@@ -73,7 +73,7 @@ This means popular or installed accounts can refresh without burning the shared 
 
 ## Admin And Audit
 
-`/_admin` is available only to the hardcoded `@steipete` admin login. It shows:
+`/_admin` is available only to the GitHub logins listed in the `ADMIN_LOGINS` variable. It shows:
 
 - target count and due target count
 - queued, running, and failed job counts
@@ -113,4 +113,4 @@ Push and release deliveries eagerly invalidate and refresh release-enabled dashb
 - Job records and audit events are retained for 14 days.
 - Target records use the dashboard cache TTL.
 - Manual `run now` uses the same batch limit and due rules as cron.
-- The live deploy smoke checks `/`, `/steipete`, `/openclaw/openclaw`, and `/api/_discover`; admin state is inspected through the admin UI/API.
+- There is no deploy smoke test; admin state is inspected through the admin UI/API.
