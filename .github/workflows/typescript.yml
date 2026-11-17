@@ -8,7 +8,7 @@ name: Test
 # A repository that adds it gets a copy, which doesn't follow later changes to the template.
 on:
   push:
-    branches: ["main"]
+    branches: [main]
 
 permissions: {}
 
