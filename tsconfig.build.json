@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": false,
+    "declaration": false,
+    "noEmit": false,
+    "outDir": "node_modules/.cache/releasebar-build",
+    "rootDir": ".",
+    "sourceMap": false
+  },
+  "include": [
+    "scripts/**/*.ts",
+    "src/auth-ui.ts",
+    "src/dashboard-view.ts",
+    "src/rate-limit.ts",
+    "src/routing.ts",
+    "src/types.ts",
+    "src/wasm.d.ts",
+    "worker/**/*.ts"
+  ]
+}

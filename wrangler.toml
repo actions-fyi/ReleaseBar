@@ -1,0 +1,49 @@
+name = "releasedeck-api"
+main = "node_modules/.cache/releasebar-build/worker/index.js"
+compatibility_date = "2026-07-11"
+account_id = "de09342a728de2c25c85cc6b34d68739"
+workers_dev = true
+
+[vars]
+OPENAI_SUMMARY_MODEL = "chat-latest"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[build]
+command = "npm run build:script && npm run build:app && npm run build:assets"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+html_handling = "none"
+run_worker_first = true
+
+[[kv_namespaces]]
+binding = "DASHBOARD_CACHE"
+id = "687a658593b94897b8cc09d62127d140"
+preview_id = "30e91855eea543e8ad6e0b6f981d529f"
+
+[[queues.producers]]
+binding = "REFRESH_QUEUE"
+queue = "releasebar-refresh"
+
+[[queues.consumers]]
+queue = "releasebar-refresh"
+max_batch_size = 1
+max_batch_timeout = 0
+max_retries = 10
+dead_letter_queue = "releasebar-refresh-dlq"
+max_concurrency = 5
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[[durable_objects.bindings]]
+name = "DASHBOARD_LOCKS"
+class_name = "DashboardBuildLock"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["DashboardBuildLock"]
