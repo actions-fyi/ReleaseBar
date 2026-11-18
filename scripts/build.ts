@@ -33,6 +33,12 @@ async function finishStaticAssets(): Promise<void> {
       path.join(distDir, file),
     );
   }
+  // The OFL asks that each copy of the font comes with its license. The font files only link to
+  // it, so the site serves the text next to them.
+  await copyFile(
+    path.join(root, "node_modules", "@fontsource", "jetbrains-mono", "LICENSE"),
+    path.join(distDir, "jetbrains-mono-LICENSE.txt"),
+  );
 
   await copyFile(path.join(distDir, "index.html"), path.join(distDir, "404.html"));
 }
