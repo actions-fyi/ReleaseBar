@@ -1,0 +1,53 @@
+name = "releasebar"
+main = "node_modules/.cache/releasebar-build/worker/index.js"
+compatibility_date = "2026-07-11"
+workers_dev = true
+
+# The canonical domain. Its zone must be in the Cloudflare account that deploys this Worker.
+[[routes]]
+pattern = "releases.actions.fyi"
+custom_domain = true
+
+[vars]
+OPENAI_SUMMARY_MODEL = "chat-latest"
+RELEASEDECK_CANONICAL_DOMAIN = "releases.actions.fyi"
+ADMIN_LOGINS = "matfax"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[build]
+command = "npm run build"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+html_handling = "none"
+run_worker_first = true
+
+[[kv_namespaces]]
+binding = "DASHBOARD_CACHE"
+
+[[queues.producers]]
+binding = "REFRESH_QUEUE"
+queue = "releasebar-refresh"
+
+[[queues.consumers]]
+queue = "releasebar-refresh"
+max_batch_size = 1
+max_batch_timeout = 0
+max_retries = 10
+dead_letter_queue = "releasebar-refresh-dlq"
+max_concurrency = 5
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[[durable_objects.bindings]]
+name = "DASHBOARD_LOCKS"
+class_name = "DashboardBuildLock"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["DashboardBuildLock"]

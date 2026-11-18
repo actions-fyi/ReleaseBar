@@ -1,0 +1,218 @@
+# Changelog
+
+## Unreleased
+
+- Keep login, logout, and install redirects on this site when return paths normalize to protocol-relative URLs. Thanks @SebTardif.
+- Refresh compatible formatting, lint, and frontend build tooling. Thanks @dependabot.
+
+- Refresh Svelte, Bits UI, type checking, formatting, and lint tooling with compatible fixes while preserving Node.js 22.12 support. Thanks @dependabot.
+
+## 0.2.6 - 2026-10-23
+
+**Highlights:** Refresh Bits UI with compatible upstream fixes and update dashboard build tooling.
+
+- Refresh the Svelte checker, UI dependencies, and build tools with compatible upstream fixes. Thanks @dependabot.
+
+## 0.2.5 - 2026-10-16
+
+**Highlights:** Fixed a source-map-js denial-of-service vulnerability (CVE-2026-93749) and updated UI dependencies for interaction and rendering fixes.
+
+- Updated source-map-js to fix denial of service from malicious indexed source maps (CVE-2026-93749). Thanks @dependabot.
+- Updated Bits UI and Svelte with upstream interaction and rendering fixes, refreshed the Vite integration and build tools, and updated Node.js type definitions. Thanks @dependabot.
+- Updated Vite, Oxfmt, Oxlint, and Node.js type definitions, and refreshed CI and release setup/artifact actions. Thanks @dependabot.
+
+## 0.2.4 - 2026-09-22
+
+**Highlights:** Malformed URLs no longer crash requests, and updated UI dependencies improve accessibility and rendering reliability.
+
+- Reject malformed URL path encoding with a non-cacheable HTTP 400 instead of crashing page, API, and social-card requests; share page route parsing between the browser and Worker.
+- Updated Bits UI, Svelte, and Valibot with upstream accessibility, event cleanup, rendering, reactivity, and validation fixes.
+- Reworked the README into a concise product and quick-start guide, with detailed behavior and self-hosting operations moved into focused docs.
+- Updated Vite, Oxfmt, Oxlint, and Node.js type definitions, and refreshed compatible transitive dependencies.
+
+## 0.2.3 - 2026-08-01
+
+- Refreshed the dashboard design: the UI now ships JetBrains Mono (previously only used for social cards), uppercase micro-labels gained consistent letterspaced styling, dashboard rows show a freshness-colored edge bar and a freshness-tinted state tag, missing commit counts render quietly instead of as large red `n/a`, active filters/periods glow green, big numerals got heavier weights with a subtle phosphor glow, dark mode gained faint CRT scanlines, and the light theme received matching contrast and polish.
+- Updated the frontend compiler, build tools, static-analysis tools, type definitions, and CI Node setup to their latest stable releases.
+- Refreshed the Cloudflare Workers compatibility date after verifying the newly enabled TLS option validation does not affect ReleaseBar.
+
+## 0.2.2 - 2026-07-04
+
+- Kept GitHub logins alive by storing and rotating GitHub App refresh tokens, so expiring eight-hour user access tokens renew automatically instead of silently degrading until the next login.
+- Stopped `/api/me` from rewriting the stored session and installation caches on every request and made those cache writes best-effort, so concurrent tabs (for example after a browser restart) no longer trip Workers KV write limits and render a logged-in user as logged out.
+
+## 0.2.1 - 2026-06-19
+
+- Made anonymous GitHub actions log in first, then detect existing App installations before offering installation for uncovered dashboards.
+- Split the Worker, frontend, dashboard library, styles, and tests into bounded domain modules and added a CI guard that keeps maintained files below 1,000 lines.
+- Served stale Hot dashboards immediately while a durable background refresh rebuilds them with bounded concurrent cache reads, and replaced deletion-prone webhook invalidation with timestamp markers to remove periodic multi-second stalls.
+- Warmed missing, stale, or incomplete public owner caches immediately after GitHub login or App installation so source-owned installation quota can benefit later anonymous viewers.
+- Prominently offers GitHub App installation whenever dashboard, repository, activity, trust, or audience requests hit GitHub rate limits, including for already signed-in users and cached quota failures.
+- Widened the logged-out GitHub App action so its full label remains visible on desktop while preserving the compact mobile label.
+- Reduced shared GitHub quota pressure by partitioning mixed-owner dashboards across per-account GitHub App tokens, bundling App-backed repository core data into GraphQL, revalidating stale REST caches with ETags, coalescing concurrent detail builds, extending webhook-invalidated caches, and deferring nonessential enrichment before the shared bucket becomes critical.
+- Updated CI and local tooling to Node.js 24 LTS and refreshed the Worker compatibility date.
+- Hid contributor-fork activity when the upstream repository belongs to the activity profile, while preserving unrelated external project work.
+- Kept scheduler and admin scans within Workers KV operation limits by rotating bounded current-schema target pages, and reduced authenticated repository work-trend requests from four REST searches to one GraphQL query.
+- Kept the admin console responsive by loading scheduler, quota, and installation summaries independently and bounding installation and auth-counter samples while preserving their totals.
+
+## 0.2.0 - 2026-06-13
+
+- Condensed owner dashboard activity totals, ranked repositories, metadata, and drill-down navigation into a responsive two-row digest.
+- Collapsed repository event logs by default on owner activity pages so the ranked summaries stay compact until expanded.
+- Expanded high-signal repository activity summaries to one or two short sentences while compacting the single batched AI request and using a repository-aware output ceiling with a reasoning-model compatibility floor.
+- Added `/owner/activity` drill-down pages and a documented `GET /api/:owner/activity` OpenAPI endpoint with day, week, and month views, repository ranking by actual activity volume, grouped event logs, overall AI summaries, and bounded per-repository AI summaries while preserving repositories named `activity` under escaped detail routes.
+- Added shared per-owner metadata snapshots with lean 15-minute issue/PR count refreshes, fresh-cache responses before GitHub App token discovery, four-repository release hydration concurrency, independent count/release/CI timestamps, signed GitHub webhooks for issue, pull request, push, release, and archive updates, and stricter archived-repository removal from status views.
+- Prioritized webhook-triggered push and release refreshes by recent dashboard activity and skipped eager deep hydration for variants not viewed in the last day, reducing stale archived and fork variant queue and GitHub quota pressure.
+- Coalesced per-owner webhook bursts so issue and pull request events for the same repository share one authoritative count refresh, push and release bursts share one release refresh, follower deliveries stop contending behind active processing, and terminal fanout deliveries are acknowledged after durable deduplication cleanup.
+- Returned current issue and PR counts before deep release scans when authenticated GitHub quota provides an exact split, marked anonymous REST splits unavailable without per-repository fan-out, moved progressive dashboard hydration to deadline-bounded Queue consumers with Durable Object checkpoints and strongly consistent target backoff state, removed stale cross-request build promises that could freeze scan progress, reduced oversized owner release GraphQL pages without changing prerelease selection, moved audit writes off foreground responses, scoped short upstream backoffs by GraphQL operation, and parallelized admin access-log reads.
+- Updated Svelte, Node.js type definitions, Oxfmt, and Oxlint to their latest compatible patch releases.
+
+## 0.1.0 - 2026-06-11
+
+- Bound GitHub OAuth callbacks to the initiating browser and capped return targets to prevent session-swapping attacks and oversized authorization requests.
+- Kept asynchronously loaded GitHub connection state reactive so configured deployments show the install or connect action instead of a stale unavailable label.
+- Kept dashboards from getting stuck on empty repositories by skipping check-run hydration when GitHub has no commit to check, and stopped passing the Actions `GITHUB_TOKEN` into deploy builds that do not need it.
+- Stopped classifying human audience logins that merely end in `bot` as automation when GitHub account metadata does not identify them as bots. Thanks @devYRPauli.
+- Clarified trust score tooltips for owner, organization, contributor, and stargazer signals. Thanks @vincent-peng.
+- Made dashboard search match separate terms across repository metadata and release names. Thanks @tanish19078.
+- Kept light-mode trust panels on theme-aware surfaces instead of dark translucent backgrounds. Thanks @shubh73.
+- Kept verified crawlers and bot user agents from scheduling dashboard, repository, discover, trust, and activity refresh work while still serving cached or cold data.
+- Made GitHub token-use audit counters durable so admin quota views reflect live Worker requests instead of only console logs.
+- Recorded GitHub App install callbacks even when users start from GitHub's public app page, added install/login funnel counters, and exposed install sync coverage in the admin console.
+- Routed public GitHub connection actions through GitHub App installation instead of OAuth sign-in, while still remembering installed app quota for anonymous dashboards.
+- Kept the mobile status/action bar within the viewport in narrow embedded browsers by using fixed control columns and a shorter GitHub connect label.
+- Reduced repository detail GitHub API usage by caching contributors, languages, releases, live status probes, stats, and issue/PR search counts across rebuilds, with short backoff for warming stats endpoints.
+- Reduced crawler and scheduler GitHub quota waste with cache-only bot misses, repo-wide stats warmup backoff, longer issue/PR count caches, and dormant shared-target throttling.
+- Deferred queued scheduler jobs during GitHub GraphQL backoff instead of recording avoidable failures.
+- Hardened scheduler dashboard rebuilds against empty successful GitHub API responses.
+- Added GitHub token-use monitoring to the admin console and reduced shared-token pressure with quota pause guards, GraphQL backoff, smaller discovery release batches, and capped shared owner scans.
+- Improved mobile dashboards with fixed viewport scaling, a single-row status/theme/login header, denser repository cards, and softer light-mode row colors.
+- Pointed social preview metadata at PNG cards and lengthened preview titles for better crawler compatibility.
+- Embedded social card avatars into generated SVGs and added a monogram fallback when avatar fetching fails.
+- Reduced GitHub Hot shared-token use by hydrating only release metadata instead of full per-repo commit, compare, pull request, and CI details.
+- Reduced GitHub dashboard hydration work by using owner GraphQL commit/status data, prioritizing issue/PR-sorted rows, caching owner identity, and storing hourly GitHub access counters in KV.
+- Split dashboard GraphQL hydration into a cheap owner metadata query plus a small CI rollup detail query to avoid large-owner GraphQL 502s.
+- Placed dashboard cache status before the manual refresh button so the refresh action no longer interrupts the status text.
+- Improved the mobile dashboard layout with scrollable filter/sort rails, compact repository cards, and tighter header/search controls.
+- Added a manual dashboard refresh button that refreshes cheap issue and PR counts first, then continues release hydration in the background.
+- Replaced the generic `</>` favicon with a green release-tag silhouette so the tab icon reads as ReleaseBar at 16px and aligns with the release/version brand.
+- Added browser-side dashboard timing beacons for cached boot renders, API fetches, and streamed updates so client latency can be compared with Worker background tail duration.
+- Logged dashboard sync, progressive refresh, stream delivery, and discover hydration phases so fast visible data and slower GitHub scans can be studied separately.
+- Documented the refresh scheduler's target, queue, quota, retry, and admin audit behavior.
+- Hardcoded admin access to @steipete and moved the admin console link into dashboard settings.
+- Added a quota-aware background refresh scheduler with Cloudflare Queue wiring, cron ticks, audit logs, and an admin console for inspecting refresh targets and jobs.
+- Refreshed live owner dashboard streams when issue or PR totals change so active dev sorting can reorder rows during background updates.
+- Prioritized owner dashboard repository counts so issue and PR totals render before release and CI hydration finishes.
+- Loosened repository evidence spacing between names and language labels.
+- Hide repeated external-link markers in repository table cells until hover or keyboard focus.
+- Kept the owner trust overview action aligned with the factors action by placing the trust tier before the button.
+- Use compact sort arrows in dashboard table headers so narrow metric columns stay on one line.
+- Show repository GitHub, release, issue, and PR links immediately while detail data loads.
+- Reduced owner dashboard layout shift by rendering route-owner hero avatars before cached dashboard data arrives and reserving a stable account-menu width.
+- Simplified owner trust navigation by removing the overview tab buttons and trimming the trust snapshot copy.
+- Matched the trust tab's content spacing to the overview tab.
+- Added a logged-in account menu and command palette shortcut for opening your own dashboard.
+- Embed cached public dashboard and repository payloads in served app shells so warm routes render without an initial loading panel.
+- Added OpenAPI/Swagger JSON endpoints for the public trust and audience APIs.
+- Refined trust UI labels, audience percentage summaries, contributor score pills, and external-link markers.
+- Documented the public REST API contract for cached trust profiles and repository audience signals, including agent PR-triage guidance.
+- Added repository audience analysis from recent public stargazers, with week/month filters, cached trust/klout dimensions, public org signals, and recent repo evidence.
+- Added bounded GitHub trust profiles to owner pages with account age, score dimensions, public orgs, and recent repository evidence.
+- Added weighted trust-score factors so profile scores show the age, profile, org, reach, builder, recency, and account-safety inputs behind the number.
+- Rebalanced trust scoring around trust, builder, reach, and positive account safety, dropping repository fit from the surfaced score.
+- Added GitHub App-only audience backfill for repository stargazer trust caches, keeping batch warming off shared API quota.
+- Moved detailed trust scoring into a profile tab and kept a compact trust snapshot on the main owner page.
+- Skipped release hydration on unsynced public dashboards so stargazer profile links do not burn shared GitHub API quota.
+- Clarify repository activity summaries by showing the selected activity range instead of a misleading commit count.
+- Show repository names in full in repository detail hero titles, with owner context kept in the breadcrumb/avatar.
+- Renamed the header wordmark and page-title suffix from `ReleaseBar` to `release.bar` to match the domain.
+- Added a light mode theme with a sun/moon toggle in the top-right header; defaults to dark and persists per browser.
+- Reused source-owned GitHub App installation quota for anonymous public dashboard refreshes and added structured token-use audit logs.
+- Switched AI summaries to OpenAI's `chat-latest` API alias for GPT-5.5 Instant.
+- Added recent-work AI summaries to repository detail pages, including unreleased repositories and a since-release toggle for released repositories.
+- Made working-on AI summaries focus on concrete work instead of restating that the data came from GitHub activity.
+- Linked working-on repository chips to ReleaseBar repository detail pages and tightened the activity heading spacing.
+- Added a cached working-on activity block to owner dashboards with day, week, and month AI summaries from public GitHub events.
+- Renamed the repository commit graph heading from last 52 weeks to last year.
+- Made repository detail owner names less eager to truncate when the full owner/repo title can fit.
+- Simplified the footer credit to a quieter Peter Steinberger link.
+- Let repository detail metrics shrink to fit their card width before truncating long release tags.
+- Retried warming repository detail statistics after 30 seconds instead of waiting five minutes.
+- Kept long repository detail titles from overlapping the account controls by truncating owner and repository names in the hero.
+- Added optional AI summaries of commit titles since the latest release on repository detail pages.
+- Hid the code churn panel when GitHub code-frequency stats are unavailable.
+- Fetched deeper repository release history so prerelease-heavy projects can still show recent stable releases.
+- Rebuilt repository detail caches for the expanded release and stats metadata.
+- Added owner avatars to repository detail hero headings.
+- Made repository detail stat values shrink for long release names before truncating.
+- Split repository detail releases into recent stable and prerelease groups.
+- Fixed the repository detail grid so the final stats panel spans the full width instead of leaving an empty cell.
+- Limited inline need-attention row text to repositories with an existing release and more than 200 commits since that release.
+- Restored the package emoji in the README heading.
+- Added clearer public dashboard profile state, public-only settings copy, need-attention reasons, scan progress, richer repo detail cadence/work trends, command actions, mobile row cards, longer stale cache retention, and broader deploy smoke checks.
+- Refreshed README and agent notes for ReleaseBar routing, cache behavior, deploys, and renamed config.
+- Updated project metadata and links for the renamed `steipete/ReleaseBar` repository.
+- Added a footer with Peter Steinberger, GitHub, and MIT license links.
+- Simplified the dev-mode toggle so the selected border carries the state without a duplicate checkbox glyph.
+- Show visible repository rows before release data finishes scanning, then progressively hydrate them.
+- Added avatar, release version, and commits-since-release detail to social cards.
+- Added compact owner avatars to mixed-owner repository lists.
+- Added GitHub owner avatars to owner dashboard hero headings.
+- Added pointer cursors to account menu entries.
+- Reduced oversized dashboard and repository detail headline typography.
+- Fixed GitHub App install detection for signed-in users and stopped prompting installs for unrelated third-party repos.
+- Made the account menu size to its content and softened oversized dashboard headlines.
+- Added obvious GitHub, release, issue, and PR links to repository detail pages.
+- Scanned release data for every repository shown on the GitHub Hot root dashboard instead of only the first batch.
+- Kept the GitHub App menu state stable immediately after installation while GitHub installation data catches up.
+- Added repo detail breadcrumbs back to the owner dashboard.
+- Improved repository commit graph hover states with styled, keyboard-accessible tooltips.
+- Added repository detail pages with cached releases, contributors, language mix, commit graphs, and churn stats.
+- Clarified GitHub Hot release scan placeholders while background hydration is queued or skipped.
+- Added a stars table column, repository topic tags, clearer GitHub Hot placeholders, and automatic release scanning for the top Hot repositories.
+- Improved responsive table and settings controls, including a compact `since` header and centered settings close button.
+- Let fresh public dashboard API responses use a short edge cache and compact JSON payloads.
+- Kept dashboard cache entries longer, limited very old stale fallbacks, and auto-refreshed stale dashboards while rebuilds finish.
+- Renamed the table `since` header to `commits since`.
+- Combined the version and release table columns and removed version sorting.
+- Added a GitHub Hot root dashboard backed by cached GitHub repository search, with today/week/month/year and language filters.
+- Show signed-in GitHub avatars in the account menu trigger.
+- Linked single-owner dashboard subtitles to the GitHub user or organization.
+- Progressively cache API owner scans in 12-repository batches so huge organizations show rows while the dashboard keeps updating.
+- Improved version-column wrapping so long release tags do not collide with release dates in dev mode.
+- Made project owners link to their ReleaseBar dashboards while repository names still open GitHub.
+- Show cached partial source data while cold combined dashboards rebuild in the background.
+- Added owner-only public dashboard defaults so saved sources and visibility apply at clean owner URLs.
+- Added a close button to the dashboard settings panel.
+- Kept the dashboard timestamp compact and moved cache/quota details into an accessible tooltip.
+- Exposed GitHub API quota source, remaining calls, and reset time in dashboard cache status.
+- Reduced GitHub API fanout with GraphQL repository metadata, KV-backed repo fragments, and Durable Object rebuild locking.
+- Made repository language tags clickable filters and exposed language filters in the command palette.
+- Added a dedicated loading state while empty dashboards are still being fetched and cached.
+- Improved account dropdown menu vertical alignment and item spacing.
+- Replaced GitHub Pages deploys with automatic Cloudflare Worker deploys and live asset smoke checks.
+- Added URL-restored dashboard view state for search, filters, sort order, and dev columns.
+- Added a `need attention` dashboard filter for hot and busy repositories, with the metric tile acting as a shortcut.
+- Migrated the app shell to Svelte/Vite with keyboard-accessible account dropdowns, a Cmd-K command palette, and tighter ReleaseBar-themed controls.
+- Hardened GitHub auth, cache, and rate-limit handling with validated API payloads, cached installation tokens, scoped visibility settings, and PR commit linting.
+- Raised owner dashboard builds from 8 to 200 recent public repositories with progressive 12-repository batches and visible progress.
+- Filtered GitHub App selected repositories to public repos before auth state, coverage checks, or dashboards can use them.
+- Fixed GitHub App install redirects to use the real `releasebar-app` app slug while keeping `release.bar` OAuth callbacks.
+- Changed the root dashboard to `ReleaseBar Hot`, built from cached public dashboards instead of the maintainer snapshot.
+- Replaced raw GitHub rate-limit failures with dashboard-shaped quota guidance.
+- Changed the canonical public domain to `release.bar` and renamed the public dashboard to ReleaseBar.
+- Added a combined GitHub connection flow that detects GitHub App installations and prompts installation for dedicated API quota only when needed.
+- Removed the always-on GitHub App install action from the account menu and tightened account menu styling.
+- Moved GitHub login state into a top-right account menu with settings and logout actions.
+- Added GitHub App login endpoints and settings UI state for signed-in users and app installation.
+- Added customizable public dashboard sources for extra owners and explicit repositories, plus dynamic owner social preview cards.
+- Added Worker static-asset hosting so owner routes can return the app shell with HTTP 200 once the domain is proxied through Cloudflare.
+- Added route-aware owner dashboards, local visibility settings, and a cached Worker API for generic public GitHub dashboards.
+- Added favicon and social preview card assets.
+- Prevented cached dashboard data from showing archived repositories.
+- Hid archived repositories from the dashboard.
+- Updated the header owner label to `@steipete`.
+- Added a dev mode toggle for open issues, open pull requests, and latest CI status.
+- Skipped repositories that do not have any GitHub releases.
+- Added CI for static checks and dependency updates.
+- Added TypeScript sources, Oxlint/Oxfmt checks, sortable dashboard columns, and day-level relative dates.

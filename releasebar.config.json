@@ -1,0 +1,14 @@
+{
+  "title": "ReleaseBar",
+  "subtitle": "Open source release freshness across actions-fyi.",
+  "canonicalDomain": "releases.actions.fyi",
+  "owners": [
+    {
+      "type": "org",
+      "login": "actions-fyi"
+    }
+  ],
+  "includeForks": false,
+  "includeArchived": false,
+  "excludeRepos": []
+}
