@@ -2,8 +2,6 @@
 # The interfaces of the remote reusable workflows and actions this repository uses, at the commit each resolved to.
 version: 1
 remotes:
-  actions-fyi/shared-workflows/.github/workflows/_cloudflare.yml@v1.2.0:
-    sha: 9c28dc1011cea6d3d171b1d981012e8b609ba9f4
   actions-fyi/shared-workflows/.github/workflows/_actions-lock.yml@v2.2.0:
     sha: e4d71e047d0051ddc91e05ba2367d962b98ad537
     kind: workflow
@@ -50,8 +48,6 @@ remotes:
         contents: read
       dry-run:
         contents: read
-  actions-fyi/shared-workflows/.github/workflows/_typescript.yml@v1.2.0:
-    sha: 9c28dc1011cea6d3d171b1d981012e8b609ba9f4
   actions-fyi/shared-workflows/.github/workflows/_codeql.yml@v2.2.0:
     sha: e4d71e047d0051ddc91e05ba2367d962b98ad537
     kind: workflow
