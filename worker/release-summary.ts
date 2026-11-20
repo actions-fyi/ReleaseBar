@@ -34,7 +34,7 @@ export function repoDetailCacheKey(owner: string, repo: string): string {
 }
 
 export function releaseSummaryModel(env: Env): string {
-  return env.ANTHROPIC_SUMMARY_MODEL || "claude-opus-5-5";
+  return env.ANTHROPIC_SUMMARY_MODEL || "claude-haiku-5-5";
 }
 
 export function releaseSummaryCacheKey(project: Project, model: string): string | null {
@@ -231,11 +231,9 @@ export async function claudeSummaryText(
   },
 ): Promise<string> {
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, fetch: workerFetch });
-  const response = await client.beta.messages.create({
+  const response = await client.messages.create({
     model: request.model,
     max_tokens: request.maxTokens + summaryThinkingHeadroomTokens,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
     system: request.system,
     output_config: {
       effort: "low",

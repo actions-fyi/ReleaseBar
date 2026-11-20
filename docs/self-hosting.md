@@ -97,7 +97,7 @@ Set `ANTHROPIC_API_KEY` as a Worker secret to summarize public owner activity an
 wrangler secret put ANTHROPIC_API_KEY
 ```
 
-`ANTHROPIC_SUMMARY_MODEL` is optional and defaults to `claude-opus-5-5`. Summaries run server-side through the Anthropic Messages API, remain subordinate to public source data, and are cached with the model and prompt version.
+`ANTHROPIC_SUMMARY_MODEL` is optional and defaults to `claude-haiku-5-5`. Summaries run server-side through the Anthropic Messages API, remain subordinate to public source data, and are cached with the model and prompt version.
 
 ## Deploy
 

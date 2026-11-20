@@ -534,7 +534,7 @@ export async function publicOwnerActivity(
 }
 
 export function activitySummaryModel(env: Env): string {
-  return env.ANTHROPIC_SUMMARY_MODEL || "claude-opus-5-5";
+  return env.ANTHROPIC_SUMMARY_MODEL || "claude-haiku-5-5";
 }
 
 export type ActivitySummaryPayload = Pick<OwnerActivityPayload, "events" | "repositories">;

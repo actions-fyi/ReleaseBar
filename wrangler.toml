@@ -9,7 +9,7 @@ pattern = "releases.actions.fyi"
 custom_domain = true
 
 [vars]
-ANTHROPIC_SUMMARY_MODEL = "claude-opus-5-5"
+ANTHROPIC_SUMMARY_MODEL = "claude-haiku-5-5"
 RELEASEDECK_CANONICAL_DOMAIN = "releases.actions.fyi"
 ADMIN_LOGINS = "matfax"
 

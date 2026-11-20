@@ -234,7 +234,7 @@ test("worker summarizes commits since release in the background", async () => {
     if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
       assert.equal(new Headers(init?.headers).get("authorization"), "Bearer anthropic-token");
       const body = JSON.parse(String(init?.body ?? "{}"));
-      assert.equal(body.model, "claude-opus-5-5");
+      assert.equal(body.model, "claude-haiku-5-5");
       assert.equal(body.output_config?.effort, "low");
       assert.match(JSON.stringify(body.messages), /Add release summary panel/);
       return Response.json({
@@ -267,14 +267,14 @@ test("worker summarizes commits since release in the background", async () => {
       (await cache.get("repo-detail:v4:acme/releasebar")) ?? "{}",
     ) as RepoDetailPayload;
     assert.equal(cached.releaseSummary?.state, "ready");
-    assert.equal(cached.releaseSummary?.model, "claude-opus-5-5");
+    assert.equal(cached.releaseSummary?.model, "claude-haiku-5-5");
     assert.match(cached.releaseSummary?.text ?? "", /AI summary panel/);
     assert.equal(cached.releaseSummary?.commitsUsed, 2);
     assert.equal(cached.generatedAt, generatedAt);
     assert.equal(cached.cache.state, "warming");
     assert.equal(cached.cache.generatedAt, generatedAt);
     assert.notEqual(
-      await cache.get("release-summary:v1:acme/releasebar:v1.0.0:abcdef1:claude-opus-5-5"),
+      await cache.get("release-summary:v1:acme/releasebar:v1.0.0:abcdef1:claude-haiku-5-5"),
       null,
     );
   } finally {
@@ -345,7 +345,7 @@ test("worker summarizes recent repository activity in the background", async () 
     if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
       assert.equal(new Headers(init?.headers).get("authorization"), "Bearer anthropic-token");
       const body = JSON.parse(String(init?.body ?? "{}"));
-      assert.equal(body.model, "claude-opus-5-5");
+      assert.equal(body.model, "claude-haiku-5-5");
       assert.equal(body.output_config?.effort, "low");
       assert.match(JSON.stringify(body.messages), /Repository: acme\/unreleased/);
       assert.match(JSON.stringify(body.messages), /Add repository activity summary/);
@@ -378,7 +378,7 @@ test("worker summarizes recent repository activity in the background", async () 
       (await cache.get("repo-activity:v1:acme/unreleased:month")) ?? "{}",
     ) as RepoDetailActivityPayload;
     assert.equal(cached.summary?.state, "ready", cached.summary?.message ?? "");
-    assert.equal(cached.summary?.model, "claude-opus-5-5");
+    assert.equal(cached.summary?.model, "claude-haiku-5-5");
     assert.match(cached.summary?.text ?? "", /recent-work panel/);
     assert.equal(cached.summary?.promptVersion, 4);
   } finally {
@@ -602,7 +602,7 @@ test("worker summarizes public owner activity in the background", async () => {
       summaryCalls += 1;
       assert.equal(new Headers(init?.headers).get("authorization"), "Bearer anthropic-token");
       const body = JSON.parse(String(init?.body ?? "{}"));
-      assert.equal(body.model, "claude-opus-5-5");
+      assert.equal(body.model, "claude-haiku-5-5");
       assert.equal(body.output_config?.effort, "low");
       assert.equal(body.max_tokens, 4200);
       assert.equal(body.output_config?.format?.type, "json_schema");

@@ -62,7 +62,7 @@ test("worker includes lower-ranked repositories in the overall activity summary 
       state: "ready" as const,
       text: "Old summary.",
       generatedAt,
-      model: "claude-opus-5-5",
+      model: "claude-haiku-5-5",
       inputHash: "old-hash",
       eventsUsed: 31,
       promptVersion: 3,
@@ -177,7 +177,7 @@ test("worker trims expired events from cached owner activity", async () => {
       state: "ready",
       text: "Acme worked on an old cached change.",
       generatedAt,
-      model: "claude-opus-5-5",
+      model: "claude-haiku-5-5",
       inputHash: "expired-hash",
       eventsUsed: 1,
       promptVersion: 4,
@@ -253,7 +253,7 @@ test("worker trims expired events from cached repository activity", async () => 
       state: "ready",
       text: "ReleaseBar had an old cached change.",
       generatedAt,
-      model: "claude-opus-5-5",
+      model: "claude-haiku-5-5",
       inputHash: "expired-hash",
       eventsUsed: 1,
       promptVersion: 4,
@@ -500,7 +500,7 @@ test("worker refreshes cached owner activity summaries from older prompt version
     ) as OwnerActivityPayload;
     assert.equal(cached.summary?.state, "ready");
     assert.equal(cached.summary?.promptVersion, 4);
-    assert.equal(cached.summary?.model, "claude-opus-5-5");
+    assert.equal(cached.summary?.model, "claude-haiku-5-5");
     assert.notEqual(cached.summary?.inputHash, "old-prompt-hash");
     assert.equal(cached.summary?.text, "@acme's work refined working-on summaries.");
   } finally {
@@ -667,7 +667,7 @@ test("worker rejects incomplete structured owner activity summaries", async () =
       (await cache.get("owner-activity:v2:acme:week")) ?? "{}",
     ) as OwnerActivityPayload;
     assert.equal(cached.summary?.state, "unavailable");
-    assert.equal(cached.summary?.model, "claude-opus-5-5");
+    assert.equal(cached.summary?.model, "claude-haiku-5-5");
     assert.match(cached.summary?.message ?? "", /complete structured activity summaries/);
     assert.notEqual(cached.summary?.inputHash, "activity-hash");
     assert.equal(cached.summary?.promptVersion, 4);
@@ -819,7 +819,7 @@ test("worker skips stale release summaries when repository detail changed", asyn
     assert.equal(cached.releaseSummary?.releaseTag, "v1.0.1");
     assert.equal(cached.releaseSummary?.text, null);
     assert.notEqual(
-      await cache.get("release-summary:v1:acme/releasebar:v1.0.0:abcdef1:claude-opus-5-5"),
+      await cache.get("release-summary:v1:acme/releasebar:v1.0.0:abcdef1:claude-haiku-5-5"),
       null,
     );
   } finally {
