@@ -534,7 +534,7 @@ export async function publicOwnerActivity(
 }
 
 export function activitySummaryModel(env: Env): string {
-  return env.OPENAI_SUMMARY_MODEL || "chat-latest";
+  return env.ANTHROPIC_SUMMARY_MODEL || "claude-opus-5-5";
 }
 
 export type ActivitySummaryPayload = Pick<OwnerActivityPayload, "events" | "repositories">;
@@ -647,7 +647,7 @@ export async function activitySummaryState(
   if (cached?.state === "ready" && cached.promptVersion === activitySummaryPromptVersion) {
     return cached;
   }
-  if (!env.OPENAI_API_KEY) {
+  if (!env.ANTHROPIC_API_KEY) {
     return unavailableActivitySummary(
       model,
       inputHash,

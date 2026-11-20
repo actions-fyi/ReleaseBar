@@ -268,3 +268,7 @@ export function testDashboard(owner: string, projects: Project[]): DashboardPayl
     projects,
   };
 }
+
+export function claudeMessage(text: string): Record<string, unknown> {
+  return { stop_reason: "end_turn", content: [{ type: "text", text }] };
+}

@@ -98,8 +98,8 @@ export type Env = {
   GITHUB_APP_SLUG?: string;
   GITHUB_WEBHOOK_SECRET?: string;
   GITHUB_TOKEN?: string;
-  OPENAI_API_KEY?: string;
-  OPENAI_SUMMARY_MODEL?: string;
+  ANTHROPIC_API_KEY?: string;
+  ANTHROPIC_SUMMARY_MODEL?: string;
   RELEASEDECK_CANONICAL_DOMAIN?: string;
   REFRESH_QUEUE?: Queue<WorkerQueueMessage>;
 };

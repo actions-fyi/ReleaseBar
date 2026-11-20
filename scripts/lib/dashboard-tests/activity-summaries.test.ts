@@ -6,7 +6,7 @@ import type {
   RepoDetailPayload,
 } from "../../../src/types.js";
 import worker from "../../../worker/index.js";
-import { kvStore, testProject } from "../dashboard-test-harness.js";
+import { claudeMessage, kvStore, testProject } from "../dashboard-test-harness.js";
 
 test("worker includes lower-ranked repositories in the overall activity summary batch", async () => {
   const generatedAt = new Date().toISOString();
@@ -62,7 +62,7 @@ test("worker includes lower-ranked repositories in the overall activity summary 
       state: "ready" as const,
       text: "Old summary.",
       generatedAt,
-      model: "chat-latest",
+      model: "claude-opus-5-5",
       inputHash: "old-hash",
       eventsUsed: 31,
       promptVersion: 3,
@@ -73,43 +73,45 @@ test("worker includes lower-ranked repositories in the overall activity summary 
   });
   const queued: Promise<unknown>[] = [];
   const originalFetch = globalThis.fetch;
-  let openAICalls = 0;
+  let summaryCalls = 0;
   globalThis.fetch = async (input, init) => {
     const url = new URL(String(input));
-    if (url.hostname === "api.openai.com" && url.pathname === "/v1/responses") {
-      openAICalls += 1;
+    if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
+      summaryCalls += 1;
       const body = JSON.parse(String(init?.body ?? "{}"));
-      const inputText = JSON.stringify(body.input);
-      assert.equal(body.max_output_tokens, 3050);
+      const inputText = JSON.stringify(body.messages);
+      assert.equal(body.max_tokens, 5050);
       assert.match(inputText, /Repository: acme\/repo-31\\nSummary target: no \(overall only\)/);
       assert.equal(inputText.match(/Summary target: yes/g)?.length, 30);
       assert.equal(inputText.match(/Summary target: no \(overall only\)/g)?.length, 1);
-      const targetNames = body.text.format.schema.properties.repositories.items.properties.fullName
-        .enum as string[];
+      const targetNames = body.output_config.format.schema.properties.repositories.items.properties
+        .fullName.enum as string[];
       assert.equal(targetNames.length, 30);
       assert.equal(targetNames.includes("acme/repo-31"), false);
-      return Response.json({
-        output_text: JSON.stringify({
-          summary:
-            "Work spanned all 31 repositories, including the lower-ranked improvements in acme/repo-31.",
-          repositories: targetNames.map((fullName) => ({
-            fullName,
-            summary: `Improved ${fullName}.`,
-          })),
-        }),
-      });
+      return Response.json(
+        claudeMessage(
+          JSON.stringify({
+            summary:
+              "Work spanned all 31 repositories, including the lower-ranked improvements in acme/repo-31.",
+            repositories: targetNames.map((fullName) => ({
+              fullName,
+              summary: `Improved ${fullName}.`,
+            })),
+          }),
+        ),
+      );
     }
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week"),
-      { DASHBOARD_CACHE: cache, OPENAI_API_KEY: "openai-token" },
+      { DASHBOARD_CACHE: cache, ANTHROPIC_API_KEY: "anthropic-token" },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
     await Promise.all(queued);
-    assert.equal(openAICalls, 1);
+    assert.equal(summaryCalls, 1);
     const cached = JSON.parse(
       (await cache.get("owner-activity:v2:acme:week")) ?? "{}",
     ) as OwnerActivityPayload;
@@ -175,7 +177,7 @@ test("worker trims expired events from cached owner activity", async () => {
       state: "ready",
       text: "Acme worked on an old cached change.",
       generatedAt,
-      model: "chat-latest",
+      model: "claude-opus-5-5",
       inputHash: "expired-hash",
       eventsUsed: 1,
       promptVersion: 4,
@@ -251,7 +253,7 @@ test("worker trims expired events from cached repository activity", async () => 
       state: "ready",
       text: "ReleaseBar had an old cached change.",
       generatedAt,
-      model: "chat-latest",
+      model: "claude-opus-5-5",
       inputHash: "expired-hash",
       eventsUsed: 1,
       promptVersion: 4,
@@ -366,18 +368,20 @@ test("worker skips stale public owner activity summaries when events changed", a
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
-    if (url.hostname === "api.openai.com" && url.pathname === "/v1/responses") {
+    if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
       await cache.put("owner-activity:v2:acme:week", JSON.stringify(newPayload));
-      return Response.json({
-        output_text: "Acme worked on old activity.",
-      });
+      return Response.json(claudeMessage("Acme worked on old activity."));
     }
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", OPENAI_API_KEY: "openai-token" },
+      {
+        DASHBOARD_CACHE: cache,
+        GITHUB_TOKEN: "shared-token",
+        ANTHROPIC_API_KEY: "anthropic-token",
+      },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -459,25 +463,31 @@ test("worker refreshes cached owner activity summaries from older prompt version
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
-    if (url.hostname === "api.openai.com" && url.pathname === "/v1/responses") {
-      return Response.json({
-        output_text: JSON.stringify({
-          summary: "@acme's public GitHub activity refined working-on summaries.",
-          repositories: [
-            {
-              fullName: "acme/releasebar",
-              summary: "ReleaseBar refined its working-on summaries.",
-            },
-          ],
-        }),
-      });
+    if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
+      return Response.json(
+        claudeMessage(
+          JSON.stringify({
+            summary: "@acme's public GitHub activity refined working-on summaries.",
+            repositories: [
+              {
+                fullName: "acme/releasebar",
+                summary: "ReleaseBar refined its working-on summaries.",
+              },
+            ],
+          }),
+        ),
+      );
     }
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", OPENAI_API_KEY: "openai-token" },
+      {
+        DASHBOARD_CACHE: cache,
+        GITHUB_TOKEN: "shared-token",
+        ANTHROPIC_API_KEY: "anthropic-token",
+      },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -490,7 +500,7 @@ test("worker refreshes cached owner activity summaries from older prompt version
     ) as OwnerActivityPayload;
     assert.equal(cached.summary?.state, "ready");
     assert.equal(cached.summary?.promptVersion, 4);
-    assert.equal(cached.summary?.model, "chat-latest");
+    assert.equal(cached.summary?.model, "claude-opus-5-5");
     assert.notEqual(cached.summary?.inputHash, "old-prompt-hash");
     assert.equal(cached.summary?.text, "@acme's work refined working-on summaries.");
   } finally {
@@ -545,7 +555,11 @@ test("worker does not summarize empty owner activity", async () => {
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", OPENAI_API_KEY: "openai-token" },
+      {
+        DASHBOARD_CACHE: cache,
+        GITHUB_TOKEN: "shared-token",
+        ANTHROPIC_API_KEY: "anthropic-token",
+      },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -625,20 +639,26 @@ test("worker rejects incomplete structured owner activity summaries", async () =
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
-    if (url.hostname === "api.openai.com" && url.pathname === "/v1/responses") {
-      return Response.json({
-        output_text: JSON.stringify({
-          summary: "ReleaseBar added activity summaries.",
-          repositories: [],
-        }),
-      });
+    if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
+      return Response.json(
+        claudeMessage(
+          JSON.stringify({
+            summary: "ReleaseBar added activity summaries.",
+            repositories: [],
+          }),
+        ),
+      );
     }
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", OPENAI_API_KEY: "openai-token" },
+      {
+        DASHBOARD_CACHE: cache,
+        GITHUB_TOKEN: "shared-token",
+        ANTHROPIC_API_KEY: "anthropic-token",
+      },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -647,7 +667,7 @@ test("worker rejects incomplete structured owner activity summaries", async () =
       (await cache.get("owner-activity:v2:acme:week")) ?? "{}",
     ) as OwnerActivityPayload;
     assert.equal(cached.summary?.state, "unavailable");
-    assert.equal(cached.summary?.model, "chat-latest");
+    assert.equal(cached.summary?.model, "claude-opus-5-5");
     assert.match(cached.summary?.message ?? "", /complete structured activity summaries/);
     assert.notEqual(cached.summary?.inputHash, "activity-hash");
     assert.equal(cached.summary?.promptVersion, 4);
@@ -765,17 +785,14 @@ test("worker skips stale release summaries when repository detail changed", asyn
         commits: [{ commit: { message: "Add stale summary guard" } }],
       });
     }
-    if (url.hostname === "api.openai.com" && url.pathname === "/v1/responses") {
+    if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
       await cache.put("repo-detail:v4:acme/releasebar", JSON.stringify(latestPayload));
       return Response.json({
-        output: [
+        stop_reason: "end_turn",
+        content: [
           {
-            content: [
-              {
-                type: "output_text",
-                text: "ReleaseBar added a stale summary guard.",
-              },
-            ],
+            type: "text",
+            text: "ReleaseBar added a stale summary guard.",
           },
         ],
       });
@@ -785,7 +802,11 @@ test("worker skips stale release summaries when repository detail changed", asyn
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/releasebar"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", OPENAI_API_KEY: "openai-token" },
+      {
+        DASHBOARD_CACHE: cache,
+        GITHUB_TOKEN: "shared-token",
+        ANTHROPIC_API_KEY: "anthropic-token",
+      },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 200);
@@ -798,7 +819,7 @@ test("worker skips stale release summaries when repository detail changed", asyn
     assert.equal(cached.releaseSummary?.releaseTag, "v1.0.1");
     assert.equal(cached.releaseSummary?.text, null);
     assert.notEqual(
-      await cache.get("release-summary:v1:acme/releasebar:v1.0.0:abcdef1:chat-latest"),
+      await cache.get("release-summary:v1:acme/releasebar:v1.0.0:abcdef1:claude-opus-5-5"),
       null,
     );
   } finally {
