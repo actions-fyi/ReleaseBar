@@ -362,8 +362,8 @@ export async function socialRendererBytes(request: Request, env: Env): Promise<U
       const url = new URL(request.url);
       url.pathname = pathname;
       url.search = "";
-      const response = await env.ASSETS!.fetch(new Request(url, request));
-      if (!response.ok) throw new Error(`missing social renderer asset ${pathname}`);
+      const response = await env.ASSETS?.fetch(new Request(url, request));
+      if (!response?.ok) throw new Error(`missing social renderer asset ${pathname}`);
       return new Uint8Array(await response.arrayBuffer());
     };
     const isNode = typeof process !== "undefined" && Boolean(process.versions?.node);

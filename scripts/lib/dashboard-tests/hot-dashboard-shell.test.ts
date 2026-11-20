@@ -498,9 +498,9 @@ test("worker embeds cached metadata-only owner dashboard data in the app shell",
       compareUrl: null,
     }),
   ]);
-  payload.options = { ...payload.options!, includeUnreleased: true };
+  payload.options = { ...payload.options, includeUnreleased: true };
   payload.cache = {
-    ...payload.cache!,
+    ...payload.cache,
     message: "release scan skipped until GitHub App quota is available",
   };
   const metadataKey = dashboardCacheKey({

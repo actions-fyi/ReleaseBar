@@ -179,7 +179,9 @@ test("worker queues shared cache warming after login discovers an installation",
   const staleDashboard = testDashboard("openclaw", []);
   const staleAt = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
   staleDashboard.generatedAt = staleAt;
-  staleDashboard.cache!.generatedAt = staleAt;
+  if (staleDashboard.cache) {
+    staleDashboard.cache.generatedAt = staleAt;
+  }
   const cache = kvStore({
     "profile:v1:openclaw": JSON.stringify(profile),
     [cacheKey]: JSON.stringify(staleDashboard),

@@ -48,6 +48,7 @@ export function applyOwnerMetadataMutation(
     if (safeIso(mutation.observedAt) < latestObservation) {
       return existing;
     }
+    const countOverlay = existing.countOverlays[mutation.fullName];
     return {
       ...existing,
       generatedAt:
@@ -63,20 +64,20 @@ export function applyOwnerMetadataMutation(
         [mutation.fullName]:
           safeIso(existing.projectMetadataUpdatedAt[mutation.fullName]) >
           safeIso(mutation.observedAt)
-            ? existing.projectMetadataUpdatedAt[mutation.fullName]!
+            ? (existing.projectMetadataUpdatedAt[mutation.fullName] ?? mutation.observedAt)
             : mutation.observedAt,
       },
-      countOverlays: existing.countOverlays[mutation.fullName]
+      countOverlays: countOverlay
         ? {
             ...existing.countOverlays,
             [mutation.fullName]: {
-              ...existing.countOverlays[mutation.fullName]!,
+              ...countOverlay,
               archived: mutation.archived,
               updatedAt:
                 safeIso(mutation.repositoryUpdatedAt) >=
-                safeIso(existing.countOverlays[mutation.fullName]!.updatedAt)
+                safeIso(countOverlay.updatedAt)
                   ? mutation.repositoryUpdatedAt
-                  : existing.countOverlays[mutation.fullName]!.updatedAt,
+                  : countOverlay.updatedAt,
             },
           }
         : existing.countOverlays,
@@ -113,11 +114,11 @@ export function applyOwnerMetadataMutation(
       owner,
       generatedAt:
         safeIso(existing?.generatedAt) > safeIso(mutation.observedAt)
-          ? existing!.generatedAt
+          ? (existing?.generatedAt ?? mutation.observedAt)
           : mutation.observedAt,
       metadataUpdatedAt:
         safeIso(existing?.metadataUpdatedAt) > safeIso(mutation.observedAt)
-          ? existing!.metadataUpdatedAt
+          ? (existing?.metadataUpdatedAt ?? mutation.observedAt)
           : mutation.observedAt,
       countsUpdatedAt: existing?.countsUpdatedAt ?? null,
       countsAttemptedAt: existing?.countsAttemptedAt ?? null,
@@ -127,14 +128,14 @@ export function applyOwnerMetadataMutation(
         ...existing?.privateRepos,
         [mutation.fullName]:
           safeIso(existing?.privateRepos?.[mutation.fullName]) > safeIso(mutation.observedAt)
-            ? existing!.privateRepos[mutation.fullName]!
+            ? (existing?.privateRepos?.[mutation.fullName] ?? mutation.observedAt)
             : mutation.observedAt,
       },
       removedRepos: {
         ...existing?.removedRepos,
         [mutation.fullName]:
           safeIso(existing?.removedRepos?.[mutation.fullName]) > safeIso(mutation.observedAt)
-            ? existing!.removedRepos[mutation.fullName]!
+            ? (existing?.removedRepos?.[mutation.fullName] ?? mutation.observedAt)
             : mutation.observedAt,
       },
       projectMetadataUpdatedAt: {
@@ -142,7 +143,7 @@ export function applyOwnerMetadataMutation(
         [mutation.fullName]:
           safeIso(existing?.projectMetadataUpdatedAt?.[mutation.fullName]) >
           safeIso(mutation.observedAt)
-            ? existing!.projectMetadataUpdatedAt[mutation.fullName]!
+            ? (existing?.projectMetadataUpdatedAt?.[mutation.fullName] ?? mutation.observedAt)
             : mutation.observedAt,
       },
       projectCountsUpdatedAt: {
@@ -189,7 +190,7 @@ export function applyOwnerMetadataMutation(
         [mutation.fullName]:
           safeIso(existing.projectMetadataUpdatedAt[mutation.fullName]) >
           safeIso(mutation.observedAt)
-            ? existing.projectMetadataUpdatedAt[mutation.fullName]!
+            ? (existing.projectMetadataUpdatedAt[mutation.fullName] ?? mutation.observedAt)
             : mutation.observedAt,
       },
     };
@@ -281,13 +282,19 @@ export function applyOwnerMetadataMutation(
     if (
       incomingHasCounts &&
       !preserveCurrentCounts &&
+      mutation.countsUpdatedAt !== null &&
+      mutation.countsUpdatedAt !== undefined &&
+      project.openIssues !== null &&
+      project.openIssues !== undefined &&
+      project.openPullRequests !== null &&
+      project.openPullRequests !== undefined &&
       safeIso(mutation.countsUpdatedAt) >= safeIso(projectCountsUpdatedAt[fullName])
     ) {
-      projectCountsUpdatedAt[fullName] = mutation.countsUpdatedAt!;
+      projectCountsUpdatedAt[fullName] = mutation.countsUpdatedAt;
       countOverlays[fullName] = {
         fullName,
-        openIssues: project.openIssues!,
-        openPullRequests: project.openPullRequests!,
+        openIssues: project.openIssues,
+        openPullRequests: project.openPullRequests,
         archived: project.archived,
         fork: project.fork === true,
         private: false,
@@ -299,16 +306,16 @@ export function applyOwnerMetadataMutation(
   return {
     owner,
     generatedAt:
-      safeIso(existing?.generatedAt) > safeIso(mutation.generatedAt)
-        ? existing!.generatedAt
+      existing && safeIso(existing.generatedAt) > safeIso(mutation.generatedAt)
+        ? existing.generatedAt
         : mutation.generatedAt,
     metadataUpdatedAt:
-      safeIso(existing?.metadataUpdatedAt) > safeIso(mutation.observedAt)
-        ? existing!.metadataUpdatedAt
+      existing && safeIso(existing.metadataUpdatedAt) > safeIso(mutation.observedAt)
+        ? existing.metadataUpdatedAt
         : mutation.observedAt,
     countsUpdatedAt:
-      safeIso(existing?.countsUpdatedAt) > safeIso(incomingCountsUpdatedAt)
-        ? existing!.countsUpdatedAt
+      existing && safeIso(existing.countsUpdatedAt) > safeIso(incomingCountsUpdatedAt)
+        ? existing.countsUpdatedAt
         : incomingCountsUpdatedAt,
     countsAttemptedAt: newestOwnerTimestamp(existing?.countsAttemptedAt, mutation.countsUpdatedAt),
     releaseDataComplete: existing?.releaseDataComplete === true || mutation.releaseDataComplete,

@@ -634,7 +634,7 @@ export async function githubAccessSummary(
   }
   const pages = await Promise.all(
     githubAccessHours(hours).map((hour) =>
-      env.DASHBOARD_CACHE!.list!({
+      env.DASHBOARD_CACHE?.list?.({
         prefix: `${githubAccessPrefix}${hour}:`,
         limit: 1000,
       }),

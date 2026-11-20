@@ -86,7 +86,7 @@ export async function recordAuthFunnelEvent(
         expirationTtl: storageTtlSeconds,
       }),
       readCounter(env, counterKey).then((count) =>
-        env.DASHBOARD_CACHE!.put(counterKey, String(count + 1), {
+        env.DASHBOARD_CACHE?.put(counterKey, String(count + 1), {
           expirationTtl: storageTtlSeconds,
         }),
       ),

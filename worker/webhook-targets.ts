@@ -90,7 +90,7 @@ export function webhookRepo(payload: Record<string, unknown>): {
   if (!validRepoSlug(fullName)) return null;
   return {
     fullName,
-    owner: fullName.split("/")[0]!,
+    owner: fullName.split("/")[0] ?? "",
     archived: typeof repo.archived === "boolean" ? repo.archived : null,
     private:
       typeof repo.private === "boolean"
@@ -206,7 +206,7 @@ export function mergePendingWebhook(
     job,
     deliveries:
       existingIndex >= 0
-        ? [...new Set([...pending[existingIndex]!.deliveries, job.delivery])]
+        ? [...new Set([...(pending[existingIndex]?.deliveries ?? []), job.delivery])]
         : [job.delivery],
   };
   if (existingIndex < 0) return [...pending, next];
@@ -394,8 +394,11 @@ export async function prioritizedIndexedWebhookTargets(
 ): Promise<WebhookTargetPage> {
   if (!env.DASHBOARD_LOCKS) return { targets: [], next: null };
   const read = async (source: "owner" | "repo", value: string): Promise<RefreshTarget[]> => {
-    const id = env.DASHBOARD_LOCKS!.idFromName(`refresh-target-index:${source}:${value}`);
-    const response = await env.DASHBOARD_LOCKS!.get(id).fetch(
+    if (!env.DASHBOARD_LOCKS) {
+      throw new Error("durable refresh target index is not configured");
+    }
+    const id = env.DASHBOARD_LOCKS.idFromName(`refresh-target-index:${source}:${value}`);
+    const response = await env.DASHBOARD_LOCKS.get(id).fetch(
       new Request("https://releasebar.internal/target-index/list", {
         method: "POST",
       }),
@@ -628,7 +631,7 @@ export async function deleteCachePrefix(env: Env, prefix: string): Promise<void>
       limit: 1_000,
       ...(cursor ? { cursor } : {}),
     });
-    await mapConcurrent(page.keys, 16, (key) => env.DASHBOARD_CACHE!.delete!(key.name));
+    await mapConcurrent(page.keys, 16, (key) => env.DASHBOARD_CACHE?.delete?.(key.name));
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
 }

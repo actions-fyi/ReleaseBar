@@ -470,13 +470,14 @@ export class DashboardBuildLock {
           ]);
           const pending = (storedPending ?? []).flatMap((entry) => {
             const deliveries = entry.deliveries.filter((item) => item !== delivery);
-            if (deliveries.length === 0) return [];
+            const lastDelivery = deliveries.at(-1);
+            if (lastDelivery === undefined) return [];
             return [
               {
                 ...entry,
                 job:
                   entry.job.delivery === delivery
-                    ? { ...entry.job, delivery: deliveries.at(-1)! }
+                    ? { ...entry.job, delivery: lastDelivery }
                     : entry.job,
                 deliveries,
               },
@@ -500,7 +501,8 @@ export class DashboardBuildLock {
             if (!this.env.REFRESH_QUEUE) {
               throw new Error("webhook queue unavailable");
             }
-            const next = pendingWebhookBatch(pending, "")[0]!;
+            const next = pendingWebhookBatch(pending, "")[0];
+            if (!next) throw new Error("webhook batch unavailable");
             await this.env.REFRESH_QUEUE.send({
               ...next.job,
               id: randomNonce(),
@@ -529,12 +531,14 @@ export class DashboardBuildLock {
               "cache-control": "no-store",
             });
           }
-          await this.env.REFRESH_QUEUE!.send({
+          if (payload == null) return new Response(null, { status: 400 });
+          if (!this.env.REFRESH_QUEUE) return new Response(null, { status: 503 });
+          await this.env.REFRESH_QUEUE.send({
             kind: "github-webhook",
             id: randomNonce(),
             event,
             delivery,
-            payload: payload!,
+            payload: payload,
             createdAt: new Date(now).toISOString(),
             attempts: 0,
           });
@@ -550,12 +554,13 @@ export class DashboardBuildLock {
           : enqueueDelivery();
       }
       if (!jobId) return new Response(null, { status: 400 });
+      if (payload == null) return new Response(null, { status: 400 });
       const job = {
         kind: "github-webhook",
         id: jobId,
         event,
         delivery,
-        payload: payload!,
+        payload: payload,
         createdAt: typeof body?.createdAt === "string" ? body.createdAt : new Date().toISOString(),
         attempts: typeof body?.attempts === "number" ? body.attempts : 0,
       } satisfies GitHubWebhookJob;
@@ -697,7 +702,8 @@ export class DashboardBuildLock {
             (await this.state.storage.get<StoredWebhookPending[]>("webhook-pending")) ?? [];
           if (pending.length > 0) {
             if (!this.env.REFRESH_QUEUE) throw new Error("webhook queue unavailable");
-            const next = pendingWebhookBatch(pending, "")[0]!;
+            const next = pendingWebhookBatch(pending, "")[0];
+            if (!next) throw new Error("webhook batch unavailable");
             await this.env.REFRESH_QUEUE.send({
               ...next.job,
               id: randomNonce(),

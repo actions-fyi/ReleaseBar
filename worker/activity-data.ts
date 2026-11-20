@@ -740,6 +740,6 @@ export function parseOwnerActivitySummaryText(
   if ([...expected.keys()].some((key) => !summaries.has(key))) return null;
   return {
     text: polishActivitySummaryText(record.summary),
-    repositories: [...expected.keys()].map((key) => summaries.get(key)!),
+    repositories: [...expected.keys()].map((key) => summaries.get(key)),
   };
 }

@@ -242,7 +242,7 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
     const existingIndex = projects.findIndex(
       (project) => project.fullName.toLowerCase() === repo.full_name.toLowerCase(),
     );
-    if (existingIndex >= 0 && !isRepoSearchProject(projects[existingIndex]!)) {
+    if (existingIndex >= 0 && projects[existingIndex] !== undefined && !isRepoSearchProject(projects[existingIndex])) {
       return true;
     }
     if (
@@ -399,8 +399,9 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
               (project) => project.fullName.toLowerCase() === fullName,
             );
             let visibleForHydration = false;
-            if (existingIndex >= 0) {
-              projects[existingIndex] = mergeRepoMetadata(projects[existingIndex]!, repo);
+            const existing = projects[existingIndex];
+            if (existingIndex >= 0 && existing) {
+              projects[existingIndex] = mergeRepoMetadata(existing, repo);
               metadataChanged = true;
               visibleForHydration = true;
             } else if (ownerVisible < options.repoLimit) {
@@ -425,14 +426,15 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
                   return oldestIndex;
                 }
                 if (oldestIndex < 0) return projectIndex;
-                const oldest = projects[oldestIndex]!;
+                const oldest = projects[oldestIndex];
                 const projectDate = Date.parse(project.pushedAt ?? project.updatedAt ?? "") || 0;
-                const oldestDate = Date.parse(oldest.pushedAt ?? oldest.updatedAt ?? "") || 0;
+                const oldestDate = Date.parse(oldest?.pushedAt ?? oldest?.updatedAt ?? "") || 0;
                 return projectDate <= oldestDate ? projectIndex : oldestIndex;
               }, -1);
               if (replaceIndex >= 0) {
                 const [removed] = projects.splice(replaceIndex, 1);
-                const removedFullName = removed!.fullName.toLowerCase();
+                if (!removed) continue;
+                const removedFullName = removed.fullName.toLowerCase();
                 seen.delete(removedFullName);
                 skippedRepos.delete(removedFullName);
                 removedRepos.push(removedFullName);
@@ -479,7 +481,8 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
         }
         if (enumerationComplete) {
           for (let index = projects.length - 1; index >= 0; index -= 1) {
-            const project = projects[index]!;
+            const project = projects[index];
+            if (!project) continue;
             const fullName = project.fullName.toLowerCase();
             if (
               project.owner.toLowerCase() !== owner.login.toLowerCase() ||

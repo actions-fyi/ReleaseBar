@@ -604,7 +604,8 @@ export async function continueProgressiveBuild(
   if (await progressiveBuildPausedForSharedQuota(dashboard, env)) return null;
   const startedAt = Date.now();
   const deadlineController = externalSignal ? null : new AbortController();
-  const signal = externalSignal ?? deadlineController!.signal;
+  const signal = externalSignal ?? deadlineController?.signal;
+  if (!signal) return null;
   const deadlineTimer = deadlineController
     ? globalThis.setTimeout(() => deadlineController.abort(), budgetMs)
     : null;

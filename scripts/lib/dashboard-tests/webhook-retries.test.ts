@@ -162,7 +162,7 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
     new Request("https://releasebar.internal/job/release", {
       method: "POST",
       body: JSON.stringify({
-        jobId: activeJob!.id,
+        jobId: activeJob?.id,
         consumeDirty: true,
       }),
     }),

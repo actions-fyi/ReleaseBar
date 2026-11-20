@@ -339,7 +339,7 @@ export function normalizeOwnerMetadataSnapshot(
         snapshot.countsUpdatedAt
           ? snapshot.projects.map((project) => [
               project.fullName.toLowerCase(),
-              snapshot.countsUpdatedAt!,
+              snapshot.countsUpdatedAt,
             ])
           : [],
       );

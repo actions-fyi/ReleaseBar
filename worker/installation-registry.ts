@@ -141,7 +141,7 @@ export async function writeInstallationRegistry(
   ).filter((installation): installation is StoredInstallationRecord => installation !== null);
   await Promise.all(
     stale.map((installation) => {
-      return env.DASHBOARD_CACHE!.put(
+      return env.DASHBOARD_CACHE?.put(
         installationRegistryKey(installation.accountLogin),
         JSON.stringify(installation),
         { expirationTtl: dashboardStorageTtlSeconds },

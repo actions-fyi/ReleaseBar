@@ -87,8 +87,9 @@ export async function writeDurableRefreshTargetIndexes(
   try {
     const writes = await Promise.all(
       refreshTargetSources(target).map(async ({ kind, value }) => {
-        const id = env.DASHBOARD_LOCKS!.idFromName(`refresh-target-index:${kind}:${value}`);
-        const stub = env.DASHBOARD_LOCKS!.get(id);
+        if (!env.DASHBOARD_LOCKS) throw new Error("DASHBOARD_LOCKS is not configured");
+        const id = env.DASHBOARD_LOCKS.idFromName(`refresh-target-index:${kind}:${value}`);
+        const stub = env.DASHBOARD_LOCKS.get(id);
         const response = await stub
           .fetch(
             new Request("https://releasebar.internal/target-index/upsert", {
@@ -132,7 +133,7 @@ export async function writeRefreshTargetIndexes(
   await Promise.all(
     env.DASHBOARD_CACHE
       ? sources.map(({ kind, value }) =>
-          env.DASHBOARD_CACHE!.put(
+          env.DASHBOARD_CACHE?.put(
             `${refreshTargetIndexSource(kind, value)}${hash}`,
             JSON.stringify(target.key),
             { expirationTtl: dashboardStorageTtlSeconds },
