@@ -56,7 +56,7 @@ export async function refreshReleaseSummary(
   request: Request,
   env: Env,
 ): Promise<void> {
-  if (!env.OPENAI_API_KEY || !releaseSummaryNeedsRefresh(payload, env)) return;
+  if (!env.ANTHROPIC_API_KEY || !releaseSummaryNeedsRefresh(payload, env)) return;
   const lock = await acquireBuildLock(env, `${key}:release-summary`);
   if (!lock) return;
   try {

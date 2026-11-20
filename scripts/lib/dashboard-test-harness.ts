@@ -268,3 +268,11 @@ export function testDashboard(owner: string, projects: Project[]): DashboardPayl
     projects,
   };
 }
+
+export function claudeText(text: string): Array<{ type: "text"; text: string }> {
+  return [{ type: "text", text }];
+}
+
+export function claudeJson(value: unknown): Array<{ type: "text"; text: string }> {
+  return claudeText(JSON.stringify(value));
+}

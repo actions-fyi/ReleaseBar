@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { slugOwner } from "../scripts/lib/dashboard.js";
 import type {
   ApiQuota,
@@ -33,7 +34,7 @@ export function repoDetailCacheKey(owner: string, repo: string): string {
 }
 
 export function releaseSummaryModel(env: Env): string {
-  return env.OPENAI_SUMMARY_MODEL || "chat-latest";
+  return env.ANTHROPIC_SUMMARY_MODEL || "claude-haiku-5-5";
 }
 
 export function releaseSummaryCacheKey(project: Project, model: string): string | null {
@@ -161,7 +162,7 @@ export async function releaseSummaryState(
   const key = releaseSummaryCacheKey(project, model);
   const cached = await readReleaseSummary(env, key);
   if (cached?.state === "ready") return cached;
-  if (!env.OPENAI_API_KEY) {
+  if (!env.ANTHROPIC_API_KEY) {
     return unavailableReleaseSummary(project, model, "AI release summaries are not configured.");
   }
   return {
@@ -216,24 +217,35 @@ export async function compareCommitTitles(
   return { titles: titles.slice(0, releaseSummaryCommitLimit), total };
 }
 
-export function openAIOutputText(body: unknown): string {
-  if (body && typeof body === "object" && "output_text" in body) {
-    const text = (body as { output_text?: unknown }).output_text;
-    if (typeof text === "string" && text.trim()) return text.trim();
+// Thinking is always on for current Claude models and counts against max_tokens.
+const summaryThinkingHeadroomTokens = 2_000;
+
+export async function claudeSummaryText(
+  env: Env,
+  request: {
+    model: string;
+    maxTokens: number;
+    system: string;
+    user: string;
+    schema?: Record<string, unknown>;
+  },
+): Promise<string> {
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, fetch: workerFetch });
+  const response = await client.messages.create({
+    model: request.model,
+    max_tokens: request.maxTokens + summaryThinkingHeadroomTokens,
+    system: request.system,
+    output_config: {
+      effort: "low",
+      ...(request.schema ? { format: { type: "json_schema", schema: request.schema } } : {}),
+    },
+    messages: [{ role: "user", content: request.user }],
+  });
+  if (response.stop_reason === "refusal" || response.stop_reason === "max_tokens") {
+    throw new Error(`Claude summary stopped early: ${response.stop_reason}`);
   }
-  const output = body && typeof body === "object" ? (body as { output?: unknown }).output : null;
-  if (!Array.isArray(output)) return "";
-  return output
-    .flatMap((item) => {
-      const content =
-        item && typeof item === "object" ? (item as { content?: unknown }).content : null;
-      return Array.isArray(content) ? content : [];
-    })
-    .map((item) => {
-      if (!item || typeof item !== "object") return "";
-      const text = (item as { text?: unknown }).text;
-      return typeof text === "string" ? text : "";
-    })
+  return response.content
+    .map((block) => (block.type === "text" ? block.text : ""))
     .filter(Boolean)
     .join("\n")
     .trim();
@@ -246,7 +258,7 @@ export async function summarizeReleaseDelta(
   env: Env,
 ): Promise<RepoDetailReleaseSummary> {
   const model = releaseSummaryModel(env);
-  if (!env.OPENAI_API_KEY) {
+  if (!env.ANTHROPIC_API_KEY) {
     return unavailableReleaseSummary(project, model, "AI release summaries are not configured.");
   }
   if (!project.releaseDate || project.version === "unreleased" || !project.latestCommitSha) {
@@ -277,47 +289,21 @@ export async function summarizeReleaseDelta(
       "No commit titles were available to summarize.",
     );
   }
-  const response = await workerFetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${env.OPENAI_API_KEY}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      max_output_tokens: 450,
-      instructions:
-        "You summarize public GitHub commit titles for release dashboards. Write 2-4 concise sentences, past tense, no bullets, no hype, no markdown. Mention broad themes and user-visible changes when commit titles support them. Do not invent details beyond the commit titles.",
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: [
-                `Repository: ${project.fullName}`,
-                `Latest release: ${project.version}`,
-                `Default branch head: ${project.latestCommitSha}`,
-                `Commit titles included: ${titles.length} of ${total ?? project.commitsSinceRelease ?? titles.length}`,
-                "",
-                titles.map((title, index) => `${index + 1}. ${title}`).join("\n"),
-              ].join("\n"),
-            },
-          ],
-        },
-      ],
-    }),
+  const text = await claudeSummaryText(env, {
+    model,
+    maxTokens: 450,
+    system:
+      "You summarize public GitHub commit titles for release dashboards. Write 2-4 concise sentences, past tense, no bullets, no hype, no markdown. Mention broad themes and user-visible changes when commit titles support them. Do not invent details beyond the commit titles.",
+    user: [
+      `Repository: ${project.fullName}`,
+      `Latest release: ${project.version}`,
+      `Default branch head: ${project.latestCommitSha}`,
+      `Commit titles included: ${titles.length} of ${total ?? project.commitsSinceRelease ?? titles.length}`,
+      "",
+      titles.map((title, index) => `${index + 1}. ${title}`).join("\n"),
+    ].join("\n"),
   });
-  const body = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message =
-      body && typeof body === "object" && "error" in body
-        ? String((body as { error?: { message?: string } }).error?.message ?? "OpenAI API error")
-        : `OpenAI API ${response.status}`;
-    throw new Error(message);
-  }
-  const text = openAIOutputText(body);
-  if (!text) throw new Error("OpenAI response did not include summary text");
+  if (!text) throw new Error("Claude response did not include summary text");
   return {
     state: "ready",
     text,

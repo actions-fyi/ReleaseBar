@@ -6,7 +6,13 @@ import type {
   RepoDetailPayload,
 } from "../../../src/types.js";
 import worker from "../../../worker/index.js";
-import { crawlerRequest, kvStore, testProject } from "../dashboard-test-harness.js";
+import {
+  claudeJson,
+  claudeText,
+  crawlerRequest,
+  kvStore,
+  testProject,
+} from "../dashboard-test-harness.js";
 
 test("worker throttles cached warming repository detail refreshes", async () => {
   const generatedAt = new Date().toISOString();
@@ -231,25 +237,17 @@ test("worker summarizes commits since release in the background", async () => {
         ],
       });
     }
-    if (url.hostname === "api.openai.com" && url.pathname === "/v1/responses") {
-      const headers = init?.headers as Record<string, string> | undefined;
-      assert.equal(headers?.authorization, "Bearer openai-token");
+    if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
+      const headers = new Headers(init?.headers);
+      assert.equal(headers.get("authorization"), "Bearer claude-key");
       const body = JSON.parse(String(init?.body ?? "{}"));
-      assert.equal(body.model, "chat-latest");
-      assert.equal(body.reasoning, undefined);
-      assert.match(JSON.stringify(body.input), /Add release summary panel/);
+      assert.equal(body.model, "claude-haiku-5-5");
+      assert.equal(body.output_config?.effort, "low");
+      assert.match(JSON.stringify(body.messages), /Add release summary panel/);
       return Response.json({
-        output_text: "",
-        output: [
-          {
-            content: [
-              {
-                type: "output_text",
-                text: "ReleaseBar added an AI summary panel and tightened the cache key for generated summaries.",
-              },
-            ],
-          },
-        ],
+        content: claudeText(
+          "ReleaseBar added an AI summary panel and tightened the cache key for generated summaries.",
+        ),
       });
     }
     throw new Error(`unexpected fetch ${url.toString()}`);
@@ -257,7 +255,7 @@ test("worker summarizes commits since release in the background", async () => {
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/releasebar"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", OPENAI_API_KEY: "openai-token" },
+      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -268,14 +266,14 @@ test("worker summarizes commits since release in the background", async () => {
       (await cache.get("repo-detail:v4:acme/releasebar")) ?? "{}",
     ) as RepoDetailPayload;
     assert.equal(cached.releaseSummary?.state, "ready");
-    assert.equal(cached.releaseSummary?.model, "chat-latest");
+    assert.equal(cached.releaseSummary?.model, "claude-haiku-5-5");
     assert.match(cached.releaseSummary?.text ?? "", /AI summary panel/);
     assert.equal(cached.releaseSummary?.commitsUsed, 2);
     assert.equal(cached.generatedAt, generatedAt);
     assert.equal(cached.cache.state, "warming");
     assert.equal(cached.cache.generatedAt, generatedAt);
     assert.notEqual(
-      await cache.get("release-summary:v1:acme/releasebar:v1.0.0:abcdef1:chat-latest"),
+      await cache.get("release-summary:v1:acme/releasebar:v1.0.0:abcdef1:claude-haiku-5-5"),
       null,
     );
   } finally {
@@ -343,17 +341,18 @@ test("worker summarizes recent repository activity in the background", async () 
         },
       ]);
     }
-    if (url.hostname === "api.openai.com" && url.pathname === "/v1/responses") {
-      const headers = init?.headers as Record<string, string> | undefined;
-      assert.equal(headers?.authorization, "Bearer openai-token");
+    if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
+      const headers = new Headers(init?.headers);
+      assert.equal(headers.get("authorization"), "Bearer claude-key");
       const body = JSON.parse(String(init?.body ?? "{}"));
-      assert.equal(body.model, "chat-latest");
-      assert.equal(body.reasoning, undefined);
-      assert.match(JSON.stringify(body.input), /Repository: acme\/unreleased/);
-      assert.match(JSON.stringify(body.input), /Add repository activity summary/);
+      assert.equal(body.model, "claude-haiku-5-5");
+      assert.equal(body.output_config?.effort, "low");
+      assert.match(JSON.stringify(body.messages), /Repository: acme\/unreleased/);
+      assert.match(JSON.stringify(body.messages), /Add repository activity summary/);
       return Response.json({
-        output_text:
+        content: claudeText(
           "acme/unreleased added a recent-work panel for unreleased projects and polished the copy around that flow.",
+        ),
       });
     }
     throw new Error(`unexpected fetch ${url.toString()}`);
@@ -361,7 +360,7 @@ test("worker summarizes recent repository activity in the background", async () 
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/unreleased/activity?range=month"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", OPENAI_API_KEY: "openai-token" },
+      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -375,7 +374,7 @@ test("worker summarizes recent repository activity in the background", async () 
       (await cache.get("repo-activity:v1:acme/unreleased:month")) ?? "{}",
     ) as RepoDetailActivityPayload;
     assert.equal(cached.summary?.state, "ready", cached.summary?.message ?? "");
-    assert.equal(cached.summary?.model, "chat-latest");
+    assert.equal(cached.summary?.model, "claude-haiku-5-5");
     assert.match(cached.summary?.text ?? "", /recent-work panel/);
     assert.equal(cached.summary?.promptVersion, 4);
   } finally {
@@ -499,7 +498,7 @@ test("worker summarizes public owner activity in the background", async () => {
   const queued: Promise<unknown>[] = [];
   const originalFetch = globalThis.fetch;
   const generatedAt = new Date().toISOString();
-  let openAICalls = 0;
+  let summaryCalls = 0;
   globalThis.fetch = async (input, init) => {
     const url = new URL(String(input));
     if (url.hostname === "api.github.com" && url.pathname === "/users/acme") {
@@ -595,20 +594,19 @@ test("worker summarizes public owner activity in the background", async () => {
       }
       return Response.json(events);
     }
-    if (url.hostname === "api.openai.com" && url.pathname === "/v1/responses") {
-      openAICalls += 1;
-      const headers = init?.headers as Record<string, string> | undefined;
-      assert.equal(headers?.authorization, "Bearer openai-token");
+    if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
+      summaryCalls += 1;
+      const headers = new Headers(init?.headers);
+      assert.equal(headers.get("authorization"), "Bearer claude-key");
       const body = JSON.parse(String(init?.body ?? "{}"));
-      assert.equal(body.model, "chat-latest");
-      assert.equal(body.reasoning, undefined);
-      assert.equal(body.max_output_tokens, 2200);
-      assert.equal(body.text?.format?.type, "json_schema");
-      assert.equal(body.text?.format?.schema?.properties?.repositories?.minItems, 2);
-      assert.match(body.instructions, /do not restate those facts/i);
-      assert.match(body.instructions, /one or two short sentences/i);
-      assert.doesNotMatch(body.instructions, /Say this is public activity/i);
-      const inputText = JSON.stringify(body.input);
+      assert.equal(body.model, "claude-haiku-5-5");
+      assert.equal(body.output_config?.effort, "low");
+      assert.equal(body.max_tokens, 4200);
+      assert.equal(body.output_config?.format?.type, "json_schema");
+      assert.match(body.system, /do not restate those facts/i);
+      assert.match(body.system, /one or two short sentences/i);
+      assert.doesNotMatch(body.system, /Say this is public activity/i);
+      const inputText = JSON.stringify(body.messages);
       assert.match(inputText, /Repository: acme\/releasebar/);
       assert.match(inputText, /Summary target: yes/);
       assert.match(inputText, /Totals: 127 items; 4 commits; 1 PR; 122 comments/);
@@ -618,7 +616,7 @@ test("worker summarizes public owner activity in the background", async () => {
       assert.match(inputText, /Events included: 125/);
       assert.equal(inputText.match(/Repository: acme\/releasebar/g)?.length, 1);
       return Response.json({
-        output_text: JSON.stringify({
+        content: claudeJson({
           summary:
             "ReleaseBar activity summaries, cache behavior, and dashboard copy moved forward together. A second repository removed a redundant refresh path.",
           repositories: [
@@ -640,7 +638,7 @@ test("worker summarizes public owner activity in the background", async () => {
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", OPENAI_API_KEY: "openai-token" },
+      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -663,7 +661,7 @@ test("worker summarizes public owner activity in the background", async () => {
     );
     assert.equal(body.summary?.state, "warming");
     await Promise.all(queued);
-    assert.equal(openAICalls, 1);
+    assert.equal(summaryCalls, 1);
     const cached = JSON.parse(
       (await cache.get("owner-activity:v2:acme:week")) ?? "{}",
     ) as OwnerActivityPayload;

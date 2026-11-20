@@ -13,10 +13,11 @@ import type {
 } from "../src/types.js";
 import { sha256Base64Url } from "./crypto.js";
 import { auditGitHubFetch } from "./github-audit.js";
-import { jsonResponse, workerFetch } from "./http.js";
+import { jsonResponse } from "./http.js";
 import type { Env, ExecutionContext } from "./runtime.js";
 import { gitHubRepositorySchema } from "./schemas.js";
 import {
+  type ActivitySummaryPayload,
   activityEventsForCurrentRange,
   activityRepositories,
   activitySummaryEvents,
@@ -59,7 +60,7 @@ import {
 import { acquireBuildLock } from "./dashboard-rebuild.js";
 import { repositoryPublicCacheBarrier } from "./owner-metadata-read.js";
 import { allowRequestRefresh, crawlerCacheOnlyResponse } from "./owner-metadata-write.js";
-import { openAIOutputText } from "./release-summary.js";
+import { claudeSummaryText } from "./release-summary.js";
 import {
   activityCacheTtlMs,
   activityRangeFromUrl,
@@ -68,101 +69,82 @@ import {
   ownerActivityCacheKey,
 } from "./repo-github.js";
 
+async function prepareActivitySummary(
+  payload: ActivitySummaryPayload,
+  env: Env,
+): Promise<
+  | { summary: OwnerActivitySummary }
+  | { model: string; input: string; inputHash: string; eventsUsed: number }
+> {
+  const model = activitySummaryModel(env);
+  const input = activitySummaryInput(payload);
+  if (!input.trim()) {
+    return {
+      summary: unavailableActivitySummary(model, null, "Not enough recent work to summarize."),
+    };
+  }
+  const inputHash = (await sha256Base64Url(input)).slice(0, 32);
+  if (!env.ANTHROPIC_API_KEY) {
+    return {
+      summary: unavailableActivitySummary(
+        model,
+        inputHash,
+        "AI activity summaries are not configured.",
+      ),
+    };
+  }
+  return { model, input, inputHash, eventsUsed: activitySummaryEvents(payload).length };
+}
+
 export async function summarizeOwnerActivity(
   payload: OwnerActivityPayload,
   env: Env,
 ): Promise<OwnerActivitySummary> {
-  const model = activitySummaryModel(env);
-  const input = activitySummaryInput(payload);
-  if (!input.trim()) {
-    return unavailableActivitySummary(model, null, "Not enough recent work to summarize.");
-  }
-  const inputHash = (await sha256Base64Url(input)).slice(0, 32);
-  const eventsUsed = activitySummaryEvents(payload).length;
-  if (!env.OPENAI_API_KEY) {
-    return unavailableActivitySummary(
-      model,
-      inputHash,
-      "AI activity summaries are not configured.",
-    );
-  }
-  const response = await workerFetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${env.OPENAI_API_KEY}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      max_output_tokens: ownerActivitySummaryOutputTokens(payload.repositories.length),
-      instructions: activitySummaryInstructions(true),
-      text: {
-        format: {
-          type: "json_schema",
-          name: "owner_activity_summary",
-          strict: true,
-          schema: {
+  const prepared = await prepareActivitySummary(payload, env);
+  if ("summary" in prepared) return prepared.summary;
+  const { model, input, inputHash, eventsUsed } = prepared;
+  const text = await claudeSummaryText(env, {
+    model,
+    maxTokens: ownerActivitySummaryOutputTokens(payload.repositories.length),
+    system: activitySummaryInstructions(true),
+    schema: {
+      type: "object",
+      properties: {
+        summary: { type: "string" },
+        repositories: {
+          type: "array",
+          items: {
             type: "object",
             properties: {
-              summary: { type: "string", minLength: 1 },
-              repositories: {
-                type: "array",
-                minItems: Math.min(payload.repositories.length, activityRepositorySummaryLimit),
-                maxItems: Math.min(payload.repositories.length, activityRepositorySummaryLimit),
-                items: {
-                  type: "object",
-                  properties: {
-                    fullName: {
-                      type: "string",
-                      enum: payload.repositories
-                        .slice(0, activityRepositorySummaryLimit)
-                        .map((repository) => repository.fullName),
-                    },
-                    summary: { type: "string", minLength: 1 },
-                  },
-                  required: ["fullName", "summary"],
-                  additionalProperties: false,
-                },
+              fullName: {
+                type: "string",
+                enum: payload.repositories
+                  .slice(0, activityRepositorySummaryLimit)
+                  .map((repository) => repository.fullName),
               },
+              summary: { type: "string" },
             },
-            required: ["summary", "repositories"],
+            required: ["fullName", "summary"],
             additionalProperties: false,
           },
         },
       },
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: [
-                `Owner: @${payload.owner.login}`,
-                `Owner type: ${payload.owner.type}`,
-                `Range: ${payload.range}`,
-                `Events included: ${eventsUsed}`,
-                "",
-                input,
-              ].join("\n"),
-            },
-          ],
-        },
-      ],
-    }),
+      required: ["summary", "repositories"],
+      additionalProperties: false,
+    },
+    user: [
+      `Owner: @${payload.owner.login}`,
+      `Owner type: ${payload.owner.type}`,
+      `Range: ${payload.range}`,
+      `Events included: ${eventsUsed}`,
+      "",
+      input,
+    ].join("\n"),
   });
-  const body = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message =
-      body && typeof body === "object" && "error" in body
-        ? String((body as { error?: { message?: string } }).error?.message ?? "OpenAI API error")
-        : `OpenAI API ${response.status}`;
-    throw new Error(message);
-  }
-  const text = openAIOutputText(body);
-  if (!text) throw new Error("OpenAI response did not include activity summary text");
+  if (!text) throw new Error("Claude response did not include activity summary text");
   const parsed = parseOwnerActivitySummaryText(text, payload.repositories);
   if (!parsed) {
-    throw new Error("OpenAI response did not include complete structured activity summaries");
+    throw new Error("Claude response did not include complete structured activity summaries");
   }
   const summary = {
     state: "ready",
@@ -263,7 +245,7 @@ export async function repoActivitySummaryState(
   if (cached?.state === "ready" && cached.promptVersion === activitySummaryPromptVersion) {
     return cached;
   }
-  if (!env.OPENAI_API_KEY) {
+  if (!env.ANTHROPIC_API_KEY) {
     return unavailableActivitySummary(
       model,
       inputHash,
@@ -286,59 +268,22 @@ export async function summarizeRepoActivity(
   payload: RepoDetailActivityPayload,
   env: Env,
 ): Promise<OwnerActivitySummary> {
-  const model = activitySummaryModel(env);
-  const input = activitySummaryInput(payload);
-  if (!input.trim()) {
-    return unavailableActivitySummary(model, null, "Not enough recent work to summarize.");
-  }
-  const inputHash = (await sha256Base64Url(input)).slice(0, 32);
-  const eventsUsed = activitySummaryEvents(payload).length;
-  if (!env.OPENAI_API_KEY) {
-    return unavailableActivitySummary(
-      model,
-      inputHash,
-      "AI activity summaries are not configured.",
-    );
-  }
-  const response = await workerFetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${env.OPENAI_API_KEY}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      max_output_tokens: 420,
-      instructions: activitySummaryInstructions(),
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: [
-                `Repository: ${payload.fullName}`,
-                `Range: ${payload.range}`,
-                `Events included: ${eventsUsed}`,
-                "",
-                input,
-              ].join("\n"),
-            },
-          ],
-        },
-      ],
-    }),
+  const prepared = await prepareActivitySummary(payload, env);
+  if ("summary" in prepared) return prepared.summary;
+  const { model, input, inputHash, eventsUsed } = prepared;
+  const text = await claudeSummaryText(env, {
+    model,
+    maxTokens: 420,
+    system: activitySummaryInstructions(),
+    user: [
+      `Repository: ${payload.fullName}`,
+      `Range: ${payload.range}`,
+      `Events included: ${eventsUsed}`,
+      "",
+      input,
+    ].join("\n"),
   });
-  const body = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message =
-      body && typeof body === "object" && "error" in body
-        ? String((body as { error?: { message?: string } }).error?.message ?? "OpenAI API error")
-        : `OpenAI API ${response.status}`;
-    throw new Error(message);
-  }
-  const text = openAIOutputText(body);
-  if (!text) throw new Error("OpenAI response did not include activity summary text");
+  if (!text) throw new Error("Claude response did not include activity summary text");
   const summary = {
     state: "ready",
     text: polishActivitySummaryText(text),

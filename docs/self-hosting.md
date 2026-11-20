@@ -91,13 +91,13 @@ Signed webhook payloads up to 2 MiB enter Cloudflare Queue before acknowledgemen
 
 ## AI summaries
 
-Set `OPENAI_API_KEY` as a Worker secret to summarize public owner activity and commit titles since the latest release:
+Set `ANTHROPIC_API_KEY` as a Worker secret to summarize public owner activity and commit titles since the latest release:
 
 ```sh
-wrangler secret put OPENAI_API_KEY
+wrangler secret put ANTHROPIC_API_KEY
 ```
 
-`OPENAI_SUMMARY_MODEL` is optional and defaults to `chat-latest`. Summaries run server-side through the OpenAI Responses API, remain subordinate to public source data, and are cached with the model and prompt version.
+`ANTHROPIC_SUMMARY_MODEL` is optional and defaults to `claude-haiku-5-5`. Summaries run server-side through the Anthropic Messages API, remain subordinate to public source data, and are cached with the model and prompt version.
 
 ## Deploy
 
