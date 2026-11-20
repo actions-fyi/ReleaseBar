@@ -17,6 +17,7 @@ import { jsonResponse } from "./http.js";
 import type { Env, ExecutionContext } from "./runtime.js";
 import { gitHubRepositorySchema } from "./schemas.js";
 import {
+  type ActivitySummaryPayload,
   activityEventsForCurrentRange,
   activityRepositories,
   activitySummaryEvents,
@@ -68,24 +69,40 @@ import {
   ownerActivityCacheKey,
 } from "./repo-github.js";
 
+async function prepareActivitySummary(
+  payload: ActivitySummaryPayload,
+  env: Env,
+): Promise<
+  | { summary: OwnerActivitySummary }
+  | { model: string; input: string; inputHash: string; eventsUsed: number }
+> {
+  const model = activitySummaryModel(env);
+  const input = activitySummaryInput(payload);
+  if (!input.trim()) {
+    return {
+      summary: unavailableActivitySummary(model, null, "Not enough recent work to summarize."),
+    };
+  }
+  const inputHash = (await sha256Base64Url(input)).slice(0, 32);
+  if (!env.ANTHROPIC_API_KEY) {
+    return {
+      summary: unavailableActivitySummary(
+        model,
+        inputHash,
+        "AI activity summaries are not configured.",
+      ),
+    };
+  }
+  return { model, input, inputHash, eventsUsed: activitySummaryEvents(payload).length };
+}
+
 export async function summarizeOwnerActivity(
   payload: OwnerActivityPayload,
   env: Env,
 ): Promise<OwnerActivitySummary> {
-  const model = activitySummaryModel(env);
-  const input = activitySummaryInput(payload);
-  if (!input.trim()) {
-    return unavailableActivitySummary(model, null, "Not enough recent work to summarize.");
-  }
-  const inputHash = (await sha256Base64Url(input)).slice(0, 32);
-  const eventsUsed = activitySummaryEvents(payload).length;
-  if (!env.ANTHROPIC_API_KEY) {
-    return unavailableActivitySummary(
-      model,
-      inputHash,
-      "AI activity summaries are not configured.",
-    );
-  }
+  const prepared = await prepareActivitySummary(payload, env);
+  if ("summary" in prepared) return prepared.summary;
+  const { model, input, inputHash, eventsUsed } = prepared;
   const text = await claudeSummaryText(env, {
     model,
     maxTokens: ownerActivitySummaryOutputTokens(payload.repositories.length),
@@ -251,20 +268,9 @@ export async function summarizeRepoActivity(
   payload: RepoDetailActivityPayload,
   env: Env,
 ): Promise<OwnerActivitySummary> {
-  const model = activitySummaryModel(env);
-  const input = activitySummaryInput(payload);
-  if (!input.trim()) {
-    return unavailableActivitySummary(model, null, "Not enough recent work to summarize.");
-  }
-  const inputHash = (await sha256Base64Url(input)).slice(0, 32);
-  const eventsUsed = activitySummaryEvents(payload).length;
-  if (!env.ANTHROPIC_API_KEY) {
-    return unavailableActivitySummary(
-      model,
-      inputHash,
-      "AI activity summaries are not configured.",
-    );
-  }
+  const prepared = await prepareActivitySummary(payload, env);
+  if ("summary" in prepared) return prepared.summary;
+  const { model, input, inputHash, eventsUsed } = prepared;
   const text = await claudeSummaryText(env, {
     model,
     maxTokens: 420,
