@@ -111,7 +111,7 @@ export async function listStoredInstallations(env: Env): Promise<AuthInstallatio
   let cursor: string | undefined;
   do {
     const page = await env.DASHBOARD_CACHE.list({
-      prefix: 'auth:installation:v1:',
+      prefix: "auth:installation:v1:",
       limit: 1000,
       ...(cursor ? { cursor } : {}),
     });
@@ -138,7 +138,7 @@ async function storedInstallationInventory(
   let cursor: string | undefined;
   do {
     const page = await env.DASHBOARD_CACHE.list({
-      prefix: 'auth:installation:v1:',
+      prefix: "auth:installation:v1:",
       limit: 1000,
       ...(cursor ? { cursor } : {}),
     });
