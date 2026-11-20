@@ -3,13 +3,13 @@ import { jsonResponse, workerFetch } from "./http.js";
 import type { Env, ExecutionContext } from "./runtime.js";
 import { tryJsonParse } from "./schemas.js";
 
-const githubAccessPrefix = `github:access:v1:`;
+const githubAccessPrefix = "github:access:v1:";
 const githubAccessTtlSeconds = 14 * 24 * 60 * 60;
 const githubAccessShardCount = 16;
 export const githubAccessAdminHours = 24;
 const githubAccessAdminRouteLimit = 30;
-const githubSharedBudgetPrefix = `github:budget:v1:shared:`;
-const githubGraphqlBackoffPrefix = `github:backoff:v2:graphql:`;
+const githubSharedBudgetPrefix = "github:budget:v1:shared:";
+const githubGraphqlBackoffPrefix = "github:backoff:v2:graphql:";
 export const githubGraphqlBackoffSeconds = 2 * 60;
 export const githubGraphqlOwnerReleaseOperation = "ReleaseBarOwnerRepos.release";
 const sharedQuotaCooldownFallbackSeconds = 30 * 60;

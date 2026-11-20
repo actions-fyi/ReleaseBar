@@ -727,7 +727,7 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
     }
     if (repo) {
       observeCounts([repo]);
-      await addRepo(repo, `custom`, true);
+      await addRepo(repo, "custom", true);
     }
   }
 

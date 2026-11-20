@@ -143,7 +143,7 @@ export async function githubGraphql<T>(
   if (body.errors?.length) {
     const message = body.errors.map((error) => error.message ?? error.type).join("; ");
     if (/rate limit|secondary rate|api rate limit/i.test(message)) {
-      throw new GitHubRateLimitError(`GitHub rate limit hit for /graphql`, null);
+      throw new GitHubRateLimitError("GitHub rate limit hit for /graphql", null);
     }
     return null;
   }
