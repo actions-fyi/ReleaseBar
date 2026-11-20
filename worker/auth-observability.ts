@@ -11,8 +11,8 @@ import { randomNonce } from "./crypto.js";
 import type { Env } from "./runtime.js";
 import { safeJsonParse, tryJsonParse } from "./schemas.js";
 
-const authFunnelPrefix = `auth:funnel:v1:`;
-const authFunnelCounterPrefix = `auth:funnel-counter:v1:`;
+const authFunnelPrefix = "auth:funnel:v1:";
+const authFunnelCounterPrefix = "auth:funnel-counter:v1:";
 const authFunnelListLimit = 80;
 const adminInstallationListLimit = 80;
 const adminAuthCounterListLimit = 80;
@@ -111,7 +111,7 @@ export async function listStoredInstallations(env: Env): Promise<AuthInstallatio
   let cursor: string | undefined;
   do {
     const page = await env.DASHBOARD_CACHE.list({
-      prefix: `auth:installation:v1:`,
+      prefix: "auth:installation:v1:",
       limit: 1000,
       ...(cursor ? { cursor } : {}),
     });
@@ -138,7 +138,7 @@ async function storedInstallationInventory(
   let cursor: string | undefined;
   do {
     const page = await env.DASHBOARD_CACHE.list({
-      prefix: `auth:installation:v1:`,
+      prefix: "auth:installation:v1:",
       limit: 1000,
       ...(cursor ? { cursor } : {}),
     });
