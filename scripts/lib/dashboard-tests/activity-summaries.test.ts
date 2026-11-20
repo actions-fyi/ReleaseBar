@@ -6,7 +6,7 @@ import type {
   RepoDetailPayload,
 } from "../../../src/types.js";
 import worker from "../../../worker/index.js";
-import { claudeMessage, kvStore, testProject } from "../dashboard-test-harness.js";
+import { claudeJson, claudeText, kvStore, testProject } from "../dashboard-test-harness.js";
 
 test("worker includes lower-ranked repositories in the overall activity summary batch", async () => {
   const generatedAt = new Date().toISOString();
@@ -88,25 +88,23 @@ test("worker includes lower-ranked repositories in the overall activity summary 
         .fullName.enum as string[];
       assert.equal(targetNames.length, 30);
       assert.equal(targetNames.includes("acme/repo-31"), false);
-      return Response.json(
-        claudeMessage(
-          JSON.stringify({
-            summary:
-              "Work spanned all 31 repositories, including the lower-ranked improvements in acme/repo-31.",
-            repositories: targetNames.map((fullName) => ({
-              fullName,
-              summary: `Improved ${fullName}.`,
-            })),
-          }),
-        ),
-      );
+      return Response.json({
+        content: claudeJson({
+          summary:
+            "Work spanned all 31 repositories, including the lower-ranked improvements in acme/repo-31.",
+          repositories: targetNames.map((fullName) => ({
+            fullName,
+            summary: `Improved ${fullName}.`,
+          })),
+        }),
+      });
     }
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week"),
-      { DASHBOARD_CACHE: cache, ANTHROPIC_API_KEY: "anthropic-token" },
+      { DASHBOARD_CACHE: cache, ANTHROPIC_API_KEY: "claude-key" },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -370,18 +368,16 @@ test("worker skips stale public owner activity summaries when events changed", a
     const url = new URL(String(input));
     if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
       await cache.put("owner-activity:v2:acme:week", JSON.stringify(newPayload));
-      return Response.json(claudeMessage("Acme worked on old activity."));
+      return Response.json({
+        content: claudeText("Acme worked on old activity."),
+      });
     }
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week"),
-      {
-        DASHBOARD_CACHE: cache,
-        GITHUB_TOKEN: "shared-token",
-        ANTHROPIC_API_KEY: "anthropic-token",
-      },
+      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -464,30 +460,24 @@ test("worker refreshes cached owner activity summaries from older prompt version
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
     if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
-      return Response.json(
-        claudeMessage(
-          JSON.stringify({
-            summary: "@acme's public GitHub activity refined working-on summaries.",
-            repositories: [
-              {
-                fullName: "acme/releasebar",
-                summary: "ReleaseBar refined its working-on summaries.",
-              },
-            ],
-          }),
-        ),
-      );
+      return Response.json({
+        content: claudeJson({
+          summary: "@acme's public GitHub activity refined working-on summaries.",
+          repositories: [
+            {
+              fullName: "acme/releasebar",
+              summary: "ReleaseBar refined its working-on summaries.",
+            },
+          ],
+        }),
+      });
     }
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week"),
-      {
-        DASHBOARD_CACHE: cache,
-        GITHUB_TOKEN: "shared-token",
-        ANTHROPIC_API_KEY: "anthropic-token",
-      },
+      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -555,11 +545,7 @@ test("worker does not summarize empty owner activity", async () => {
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week"),
-      {
-        DASHBOARD_CACHE: cache,
-        GITHUB_TOKEN: "shared-token",
-        ANTHROPIC_API_KEY: "anthropic-token",
-      },
+      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -640,25 +626,19 @@ test("worker rejects incomplete structured owner activity summaries", async () =
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
     if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
-      return Response.json(
-        claudeMessage(
-          JSON.stringify({
-            summary: "ReleaseBar added activity summaries.",
-            repositories: [],
-          }),
-        ),
-      );
+      return Response.json({
+        content: claudeJson({
+          summary: "ReleaseBar added activity summaries.",
+          repositories: [],
+        }),
+      });
     }
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week"),
-      {
-        DASHBOARD_CACHE: cache,
-        GITHUB_TOKEN: "shared-token",
-        ANTHROPIC_API_KEY: "anthropic-token",
-      },
+      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -788,13 +768,7 @@ test("worker skips stale release summaries when repository detail changed", asyn
     if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
       await cache.put("repo-detail:v4:acme/releasebar", JSON.stringify(latestPayload));
       return Response.json({
-        stop_reason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: "ReleaseBar added a stale summary guard.",
-          },
-        ],
+        content: claudeText("ReleaseBar added a stale summary guard."),
       });
     }
     throw new Error(`unexpected fetch ${url.toString()}`);
@@ -802,11 +776,7 @@ test("worker skips stale release summaries when repository detail changed", asyn
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/releasebar"),
-      {
-        DASHBOARD_CACHE: cache,
-        GITHUB_TOKEN: "shared-token",
-        ANTHROPIC_API_KEY: "anthropic-token",
-      },
+      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 200);

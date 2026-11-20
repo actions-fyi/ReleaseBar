@@ -6,7 +6,13 @@ import type {
   RepoDetailPayload,
 } from "../../../src/types.js";
 import worker from "../../../worker/index.js";
-import { claudeMessage, crawlerRequest, kvStore, testProject } from "../dashboard-test-harness.js";
+import {
+  claudeJson,
+  claudeText,
+  crawlerRequest,
+  kvStore,
+  testProject,
+} from "../dashboard-test-harness.js";
 
 test("worker throttles cached warming repository detail refreshes", async () => {
   const generatedAt = new Date().toISOString();
@@ -232,19 +238,16 @@ test("worker summarizes commits since release in the background", async () => {
       });
     }
     if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
-      assert.equal(new Headers(init?.headers).get("authorization"), "Bearer anthropic-token");
+      const headers = new Headers(init?.headers);
+      assert.equal(headers.get("authorization"), "Bearer claude-key");
       const body = JSON.parse(String(init?.body ?? "{}"));
       assert.equal(body.model, "claude-haiku-5-5");
       assert.equal(body.output_config?.effort, "low");
       assert.match(JSON.stringify(body.messages), /Add release summary panel/);
       return Response.json({
-        stop_reason: "end_turn",
-        content: [
-          {
-            type: "text",
-            text: "ReleaseBar added an AI summary panel and tightened the cache key for generated summaries.",
-          },
-        ],
+        content: claudeText(
+          "ReleaseBar added an AI summary panel and tightened the cache key for generated summaries.",
+        ),
       });
     }
     throw new Error(`unexpected fetch ${url.toString()}`);
@@ -252,11 +255,7 @@ test("worker summarizes commits since release in the background", async () => {
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/releasebar"),
-      {
-        DASHBOARD_CACHE: cache,
-        GITHUB_TOKEN: "shared-token",
-        ANTHROPIC_API_KEY: "anthropic-token",
-      },
+      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -343,28 +342,25 @@ test("worker summarizes recent repository activity in the background", async () 
       ]);
     }
     if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
-      assert.equal(new Headers(init?.headers).get("authorization"), "Bearer anthropic-token");
+      const headers = new Headers(init?.headers);
+      assert.equal(headers.get("authorization"), "Bearer claude-key");
       const body = JSON.parse(String(init?.body ?? "{}"));
       assert.equal(body.model, "claude-haiku-5-5");
       assert.equal(body.output_config?.effort, "low");
       assert.match(JSON.stringify(body.messages), /Repository: acme\/unreleased/);
       assert.match(JSON.stringify(body.messages), /Add repository activity summary/);
-      return Response.json(
-        claudeMessage(
+      return Response.json({
+        content: claudeText(
           "acme/unreleased added a recent-work panel for unreleased projects and polished the copy around that flow.",
         ),
-      );
+      });
     }
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/unreleased/activity?range=month"),
-      {
-        DASHBOARD_CACHE: cache,
-        GITHUB_TOKEN: "shared-token",
-        ANTHROPIC_API_KEY: "anthropic-token",
-      },
+      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -600,7 +596,8 @@ test("worker summarizes public owner activity in the background", async () => {
     }
     if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
       summaryCalls += 1;
-      assert.equal(new Headers(init?.headers).get("authorization"), "Bearer anthropic-token");
+      const headers = new Headers(init?.headers);
+      assert.equal(headers.get("authorization"), "Bearer claude-key");
       const body = JSON.parse(String(init?.body ?? "{}"));
       assert.equal(body.model, "claude-haiku-5-5");
       assert.equal(body.output_config?.effort, "low");
@@ -618,36 +615,30 @@ test("worker summarizes public owner activity in the background", async () => {
       assert.match(inputText, /Add owner activity panel/);
       assert.match(inputText, /Events included: 125/);
       assert.equal(inputText.match(/Repository: acme\/releasebar/g)?.length, 1);
-      return Response.json(
-        claudeMessage(
-          JSON.stringify({
-            summary:
-              "ReleaseBar activity summaries, cache behavior, and dashboard copy moved forward together. A second repository removed a redundant refresh path.",
-            repositories: [
-              {
-                fullName: "acme/releasebar",
-                summary:
-                  "ReleaseBar gained grouped activity summaries and refined dashboard copy. The cache path now keeps that generated work reusable.",
-              },
-              {
-                fullName: "acme/other",
-                summary: "Closed an issue after removing a redundant refresh path.",
-              },
-            ],
-          }),
-        ),
-      );
+      return Response.json({
+        content: claudeJson({
+          summary:
+            "ReleaseBar activity summaries, cache behavior, and dashboard copy moved forward together. A second repository removed a redundant refresh path.",
+          repositories: [
+            {
+              fullName: "acme/releasebar",
+              summary:
+                "ReleaseBar gained grouped activity summaries and refined dashboard copy. The cache path now keeps that generated work reusable.",
+            },
+            {
+              fullName: "acme/other",
+              summary: "Closed an issue after removing a redundant refresh path.",
+            },
+          ],
+        }),
+      });
     }
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week"),
-      {
-        DASHBOARD_CACHE: cache,
-        GITHUB_TOKEN: "shared-token",
-        ANTHROPIC_API_KEY: "anthropic-token",
-      },
+      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
