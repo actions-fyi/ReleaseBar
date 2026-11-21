@@ -3,6 +3,7 @@ import "./dashboard-tests/routing-view.test.js";
 import "./dashboard-tests/route-encoding.test.js";
 import "./dashboard-tests/hot-dashboard-shell.test.js";
 import "./dashboard-tests/app-shell-caches.test.js";
+import "./dashboard-tests/canonical-domain.test.js";
 import "./dashboard-tests/repo-detail-core.test.js";
 import "./dashboard-tests/audience.test.js";
 import "./dashboard-tests/trust-profiles.test.js";

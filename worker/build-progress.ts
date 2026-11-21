@@ -2,7 +2,7 @@ import { dashboardCacheKey, slugOwner, validOwnerSlug } from "../scripts/lib/das
 import type { DashboardPayload, DashboardProfile, Project } from "../src/types.js";
 import { mapConcurrent } from "./concurrency.js";
 import { jsonResponse } from "./http.js";
-import type { Env, ExecutionContext } from "./runtime.js";
+import { canonicalDomain, type Env, type ExecutionContext } from "./runtime.js";
 import { hotIndexSchema, safeJsonParse, tryJsonParse } from "./schemas.js";
 import type { InitialPageData } from "./app-shell.js";
 import {
@@ -546,7 +546,7 @@ export async function partialDashboardPayload(
     {
       title: "ReleaseBar",
       subtitle: dashboard.subtitle,
-      canonicalDomain: env.RELEASEDECK_CANONICAL_DOMAIN ?? "release.bar",
+      canonicalDomain: canonicalDomain(env),
       generatedAt: generatedAt ?? new Date().toISOString(),
       owners: dashboard.owners,
       options: {
@@ -673,7 +673,7 @@ export function hotDashboardPayload(
   return {
     title: "ReleaseBar Hot",
     subtitle: "Release debt across recently requested public dashboards.",
-    canonicalDomain: env.RELEASEDECK_CANONICAL_DOMAIN ?? "release.bar",
+    canonicalDomain: canonicalDomain(env),
     generatedAt,
     owners: [],
     options: {

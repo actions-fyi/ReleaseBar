@@ -70,6 +70,8 @@ The Worker runs before static assets so `/api/*` stays dynamic and owner routes 
 
 `wrangler.toml` names no account and no KV namespace ID: the deploying Cloudflare account is the one Workers Builds is connected to, and Wrangler creates the `DASHBOARD_CACHE` namespace on the first deploy. The queues `releasebar-refresh` and `releasebar-refresh-dlq` must exist before that deploy (`wrangler queues create <name>`), and the zone of the custom domain in `[[routes]]` must be in the same account.
 
+No host is compiled in. The Worker var `RELEASEDECK_CANONICAL_DOMAIN` (a bare host such as `releasebar.example.com`) sets the domain in page titles, the canonical link, social cards, dashboard payloads and the browser's fallback API origin; the app shell passes it to the frontend in a `releasebar:canonical-domain` meta tag. Unset, the Worker uses the request's host. To move a deployment, change it together with the `[[routes]]` pattern, or override both per environment (`wrangler deploy --var RELEASEDECK_CANONICAL_DOMAIN:<host> --route <host>`, or a `[env.<name>]` section).
+
 The shared `GITHUB_TOKEN` is the fallback quota bucket for sources without GitHub App coverage. Installed accounts use their own App quota. ReleaseBar defers optional enrichment before core release-health work when shared GitHub quota becomes constrained. Detailed cache, queue, and retry behavior is in [the refresh scheduler](refresh-scheduler.md).
 
 ## GitHub App
@@ -85,7 +87,7 @@ Configure these Worker secrets to enable login and installation:
 
 `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` enable dedicated installation quota. Without them, users can still sign in, but dashboard rebuilds use the shared server token and cache. `GITHUB_APP_SLUG` is optional and defaults to `releasebar-app`.
 
-Set the GitHub App setup URL to `https://releases.actions.fyi/api/auth/install` and enable redirect-on-update. Set the webhook URL to `https://releases.actions.fyi/api/github/webhook`, use the same webhook secret in GitHub and Cloudflare, and subscribe to Issues, Pull requests, Push, Releases, and Repository events.
+Set the GitHub App setup URL to `https://releasebar.actions.fyi/api/auth/install` and enable redirect-on-update. Set the webhook URL to `https://releasebar.actions.fyi/api/github/webhook`, use the same webhook secret in GitHub and Cloudflare, and subscribe to Issues, Pull requests, Push, Releases, and Repository events.
 
 Signed webhook payloads up to 2 MiB enter Cloudflare Queue before acknowledgement. Issue and pull-request bursts coalesce into authoritative count refreshes; push and release bursts coalesce into release refreshes. Privacy and archive transitions remain separate so visibility changes apply promptly.
 

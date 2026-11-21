@@ -1,7 +1,7 @@
 import { slugOwner, validOwnerSlug, validRepoSlug } from "../scripts/lib/dashboard.js";
 import type { ApiQuota, Project } from "../src/types.js";
 import { workerFetch } from "./http.js";
-import type { Env, ExecutionContext } from "./runtime.js";
+import { canonicalDomain, type Env, type ExecutionContext } from "./runtime.js";
 import {
   gitHubCompareSchema,
   gitHubReleaseSchema,
@@ -69,6 +69,7 @@ export type SocialCard = {
   avatarUrl: string | null;
   detail: string;
   metric: string;
+  domain: string;
 };
 
 export const socialNumberFormat = new Intl.NumberFormat("en", { notation: "compact" });
@@ -307,6 +308,7 @@ export async function socialCardForLabel(
     avatarUrl: owner ? ownerAvatarUrl(owner) : null,
     detail: project?.description ?? "Open source release freshness",
     metric: socialRepoMetric(project),
+    domain: canonicalDomain(env, new URL(request.url)),
   };
 }
 
@@ -340,7 +342,7 @@ export async function socialSvg(card: SocialCard): Promise<string> {
   <text x="${titleX}" y="318" fill="#f2ffe9" font-family="JetBrains Mono, SFMono-Regular, ui-monospace, Menlo, Consolas, monospace" font-size="${titleSize}" font-weight="700" letter-spacing="0">${title}</text>
   <text x="96" y="424" fill="#a8ff6b" font-family="JetBrains Mono, SFMono-Regular, ui-monospace, Menlo, Consolas, monospace" font-size="34" font-weight="700" letter-spacing="0">${metric}</text>
   <text x="96" y="474" fill="#8f9b89" font-family="JetBrains Mono, SFMono-Regular, ui-monospace, Menlo, Consolas, monospace" font-size="28" letter-spacing="0">${detail}</text>
-  <text x="96" y="506" fill="#52604d" font-family="JetBrains Mono, SFMono-Regular, ui-monospace, Menlo, Consolas, monospace" font-size="24" letter-spacing="0">releases.actions.fyi</text>
+  <text x="96" y="506" fill="#52604d" font-family="JetBrains Mono, SFMono-Regular, ui-monospace, Menlo, Consolas, monospace" font-size="24" letter-spacing="0">${escapeHtml(card.domain)}</text>
 </svg>`;
 }
 

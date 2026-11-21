@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Moved to `releasebar.actions.fyi`. Page titles, the canonical link, social cards and the frontend's fallback API origin now follow `RELEASEDECK_CANONICAL_DOMAIN` (or the request host when unset) instead of a hard-coded host.
 - Switched AI summaries from the OpenAI Responses API to the Anthropic Messages API (`claude-haiku-5-5` by default); the Worker now reads `ANTHROPIC_API_KEY` and `ANTHROPIC_SUMMARY_MODEL`.
 - Keep login, logout, and install redirects on this site when return paths normalize to protocol-relative URLs. Thanks @SebTardif.
 - Refresh compatible formatting, lint, and frontend build tooling. Thanks @dependabot.

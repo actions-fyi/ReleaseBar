@@ -6,7 +6,7 @@ import {
   sharedQuotaCooldown,
   sharedQuotaDeferUntil,
 } from "./github-audit.js";
-import type { Env } from "./runtime.js";
+import { canonicalDomain, type Env } from "./runtime.js";
 import { tryJsonParse } from "./schemas.js";
 import { resolveOwners } from "./app-shell.js";
 import { sourceInstallationToken } from "./auth-tokens.js";
@@ -277,10 +277,7 @@ export async function processRefreshJob(
     if (!owners) {
       throw new Error("owner not found");
     }
-    const url = new URL(
-      target.path,
-      `https://${env.RELEASEDECK_CANONICAL_DOMAIN ?? "release.bar"}`,
-    );
+    const url = new URL(target.path, `https://${canonicalDomain(env)}`);
     const dashboard = dashboardRequest(
       owners,
       target.repos,

@@ -13,7 +13,7 @@ import {
   sharedQuotaDeferUntil,
 } from "./github-audit.js";
 import { corsHeaders, jsonResponse } from "./http.js";
-import type { Env, ExecutionContext } from "./runtime.js";
+import { canonicalDomain, type Env, type ExecutionContext } from "./runtime.js";
 import { statusPayload } from "./admin.js";
 import { ownerListFromUrl, repoListFromUrl, uniqueSorted } from "./app-shell.js";
 import { appTokenConfigured, dashboardReleaseDataAllowed } from "./auth-oauth.js";
@@ -431,7 +431,7 @@ export async function rebuild(
     const payload = await buildDashboard({
       title: "ReleaseBar",
       subtitle: dashboard.subtitle,
-      canonicalDomain: env.RELEASEDECK_CANONICAL_DOMAIN ?? "release.bar",
+      canonicalDomain: canonicalDomain(env),
       owners: dashboard.owners,
       includeRepos: dashboard.includeRepos,
       excludeRepos: dashboard.profile?.hiddenRepos,
@@ -747,7 +747,7 @@ export async function refreshDashboardMetadataFirst(
     const payload = await buildDashboard({
       title: "ReleaseBar",
       subtitle: dashboard.subtitle,
-      canonicalDomain: env.RELEASEDECK_CANONICAL_DOMAIN ?? "release.bar",
+      canonicalDomain: canonicalDomain(env),
       owners: dashboard.owners,
       includeRepos: dashboard.includeRepos,
       excludeRepos: dashboard.profile?.hiddenRepos,

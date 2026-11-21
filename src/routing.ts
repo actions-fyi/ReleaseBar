@@ -32,8 +32,29 @@ export type RouteOptions = {
   includeUnreleased: boolean;
 };
 
+type SiteGlobals = {
+  document?: {
+    querySelector(selector: string): { getAttribute(name: string): string | null } | null;
+  };
+  location?: { host: string; origin: string };
+};
+
+// The Worker writes RELEASEDECK_CANONICAL_DOMAIN into this meta tag of the app shell.
+function configuredSiteDomain(): string {
+  const meta = (globalThis as SiteGlobals).document?.querySelector(
+    'meta[name="releasebar:canonical-domain"]',
+  );
+  return meta?.getAttribute("content")?.trim() ?? "";
+}
+
+export function siteDomain(): string {
+  return configuredSiteDomain() || (globalThis as SiteGlobals).location?.host || "";
+}
+
 export const workerApiOrigin = "";
-export const workersDevApiOrigin = "https://releases.actions.fyi";
+export const workersDevApiOrigin = configuredSiteDomain()
+  ? `https://${configuredSiteDomain()}`
+  : ((globalThis as SiteGlobals).location?.origin ?? "");
 const localWorkerApiPort = "8787";
 const ownerListKey = "owners";
 const repoListKey = "repos";

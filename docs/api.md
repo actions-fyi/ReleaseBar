@@ -9,7 +9,7 @@ The trust and org signal APIs only use public GitHub profile, organization, repo
 ## Base URL
 
 ```text
-https://releases.actions.fyi
+https://releasebar.actions.fyi
 ```
 
 Local development may serve the app from Vite and the Worker API from Wrangler. Browser fallback routes use port `8787` for local Worker API calls.
@@ -210,7 +210,7 @@ Agents should use the dimensions, factors, and reasons instead of only the headl
 ### Example
 
 ```sh
-curl -s https://releases.actions.fyi/api/users/octocat/trust
+curl -s https://releasebar.actions.fyi/api/users/octocat/trust
 ```
 
 ```json

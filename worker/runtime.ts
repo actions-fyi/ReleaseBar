@@ -104,6 +104,15 @@ export type Env = {
   REFRESH_QUEUE?: Queue<WorkerQueueMessage>;
 };
 
+// The host the deployment is served from, without scheme: RELEASEDECK_CANONICAL_DOMAIN, else
+// the request's host, else localhost.
+export function canonicalDomain(env: Env, url?: URL): string {
+  const configured = env.RELEASEDECK_CANONICAL_DOMAIN?.trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/+$/, "");
+  return configured || url?.host || "localhost";
+}
+
 export type ExecutionContext = {
   waitUntil(promise: Promise<unknown>): void;
 };

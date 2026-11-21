@@ -12,7 +12,7 @@ import {
   sharedQuotaCooldown,
 } from "./github-audit.js";
 import { jsonResponse, workerFetch } from "./http.js";
-import type { Env, ExecutionContext } from "./runtime.js";
+import { canonicalDomain, type Env, type ExecutionContext } from "./runtime.js";
 import {
   gitHubReleaseSchema,
   type GitHubSearchRepository,
@@ -139,7 +139,7 @@ export function discoverErrorPayload(
   return {
     title: "GitHub Hot",
     subtitle: `GitHub repository search for ${language ? `${language} projects ` : "projects "}${discoverPeriodLabel(period)}.`,
-    canonicalDomain: env.RELEASEDECK_CANONICAL_DOMAIN ?? "release.bar",
+    canonicalDomain: canonicalDomain(env),
     generatedAt,
     owners: [],
     options: {
@@ -222,7 +222,7 @@ export async function discoverPayload(
     subtitle: `Popular public GitHub repositories active ${discoverPeriodLabel(period)}${
       language ? ` in ${language}` : ""
     }.`,
-    canonicalDomain: env.RELEASEDECK_CANONICAL_DOMAIN ?? "release.bar",
+    canonicalDomain: canonicalDomain(env),
     generatedAt,
     owners: [],
     options: {

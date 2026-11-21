@@ -15,7 +15,7 @@ import type {
 import { hmac, verifySignedJson } from "./crypto.js";
 import { auditGitHubFetch } from "./github-audit.js";
 import { jsonResponse } from "./http.js";
-import type { Env, ExecutionContext } from "./runtime.js";
+import { canonicalDomain, type Env, type ExecutionContext } from "./runtime.js";
 import { safeJsonParse, storedAuthSessionSchema, tryJsonParse } from "./schemas.js";
 import { authDependentAppShellHeaders } from "./auth-oauth.js";
 import { cachedHotInitialData } from "./build-progress.js";
@@ -349,12 +349,21 @@ export async function assetResponse(request: Request, env: Env): Promise<Respons
     const label = socialLabel(originalUrl);
     const title = socialPreviewTitle(label);
     const image = `${originalUrl.origin}/og/${encodeURIComponent(label)}.png`;
+    const domain = canonicalDomain(env, originalUrl);
     const initialData = await initialPageData(request, originalUrl, env).catch(() => null);
     const html = injectInitialPageData(
       (await response.text())
         .replace(
           /<title>.*?<\/title>/,
-          `<title>${escapeHtml(title)} · ${env.RELEASEDECK_CANONICAL_DOMAIN ?? "release.bar"}</title>`,
+          `<title>${escapeHtml(title)} · ${escapeHtml(domain)}</title>`,
+        )
+        .replace(
+          /<link rel="canonical" href="[^"]*" \/>/,
+          `<link rel="canonical" href="https://${escapeHtml(domain)}/" />`,
+        )
+        .replace(
+          /<meta name="releasebar:canonical-domain" content="[^"]*" \/>/,
+          `<meta name="releasebar:canonical-domain" content="${escapeHtml(domain)}" />`,
         )
         .replace(
           /<meta property="og:title" content="[^"]*" \/>/,
