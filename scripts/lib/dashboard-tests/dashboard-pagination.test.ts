@@ -218,7 +218,10 @@ test("dashboard reconciliation follows GraphQL pagination when a page contains n
             repositories: {
               pageInfo: finalPage
                 ? { hasNextPage: false, endCursor: null }
-                : { hasNextPage: true, endCursor: after === "page-2" ? "page-3" : "page-2" },
+                : {
+                    hasNextPage: true,
+                    endCursor: after === "page-2" ? "page-3" : "page-2",
+                  },
               nodes: finalPage ? [repoNode("keep"), repoNode("later")] : [null],
             },
           },
@@ -286,7 +289,10 @@ test("dashboard metadata scan follows GraphQL pagination past all-null pages", a
             repositories: {
               pageInfo: finalPage
                 ? { hasNextPage: false, endCursor: null }
-                : { hasNextPage: true, endCursor: after === "page-2" ? "page-3" : "page-2" },
+                : {
+                    hasNextPage: true,
+                    endCursor: after === "page-2" ? "page-3" : "page-2",
+                  },
               nodes: finalPage ? [repoNode] : [null],
             },
           },
@@ -421,7 +427,11 @@ test("dashboard repo scan cap stops giant owners after recent repos", async () =
     fetch: async (url) => {
       const path = new URL(String(url)).pathname;
       if (path === "/users/owner/repos") {
-        return Response.json([repo("empty-a"), repo("empty-b"), repo("released")]);
+        return Response.json([
+          repo("empty-a"),
+          repo("empty-b"),
+          repo("released"),
+        ]);
       }
       if (path.endsWith("/releases")) {
         releaseFetches.push(path.split("/")[3] ?? "");
@@ -574,7 +584,9 @@ test("dashboard shared owner page cap finishes as fresh capped data", async () =
         const page = parsed.searchParams.get("page") ?? "";
         pages.push(page);
         return Response.json(
-          Array.from({ length: 100 }, (_, index) => repo(`page-${page}-${index}`)),
+          Array.from({ length: 100 }, (_, index) =>
+            repo(`page-${page}-${index}`),
+          ),
         );
       }
       throw new Error(`unexpected ${path}`);
@@ -625,7 +637,9 @@ test("dashboard repo scan cap marks full page boundary truncation as capped", as
       if (path === "/users/owner/repos") {
         pages.push(parsed.searchParams.get("page") ?? "");
         pageSizes.push(parsed.searchParams.get("per_page") ?? "");
-        return Response.json(Array.from({ length: 100 }, (_, index) => repo(`empty-${index}`)));
+        return Response.json(
+          Array.from({ length: 100 }, (_, index) => repo(`empty-${index}`)),
+        );
       }
       if (path.endsWith("/releases")) {
         return Response.json([]);
@@ -650,7 +664,10 @@ test("dashboard repo scan cap marks full page boundary truncation as capped", as
   assert.deepEqual(pageSizes, ["100"]);
   assert.equal(payload.totals.repos, 100);
   assert.equal(payload.cache?.capped, true);
-  assert.match(payload.cache?.message ?? "", /scanned 100 recently pushed repos/);
+  assert.match(
+    payload.cache?.message ?? "",
+    /scanned 100 recently pushed repos/,
+  );
 });
 
 test("dashboard resume stops paging when visible cap is already scanned", async () => {
@@ -775,7 +792,9 @@ test("dashboard repo cap keeps paginating until eligible repos survive filters",
       const page = parsed.searchParams.get("page");
       if (path === "/users/owner/repos" && page === "1") {
         return Response.json(
-          Array.from({ length: 100 }, (_, index) => repo(`fork-${index}`, { fork: true })),
+          Array.from({ length: 100 }, (_, index) =>
+            repo(`fork-${index}`, { fork: true }),
+          ),
         );
       }
       if (path === "/users/owner/repos" && page === "2") {

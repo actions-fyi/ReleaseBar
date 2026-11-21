@@ -2,9 +2,17 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
-import type { DashboardPayload, Project, RefreshJob } from "../../../src/types.js";
+import type {
+  DashboardPayload,
+  Project,
+  RefreshJob,
+} from "../../../src/types.js";
 import worker from "../../../worker/index.js";
-import { kvStore, testDashboard, testProject } from "../dashboard-test-harness.js";
+import {
+  kvStore,
+  testDashboard,
+  testProject,
+} from "../dashboard-test-harness.js";
 
 test("worker filters shared owner snapshots for cold combined dashboards", async () => {
   const originalFetch = globalThis.fetch;
@@ -48,7 +56,9 @@ test("worker filters shared owner snapshots for cold combined dashboards", async
     });
   try {
     const response = await worker.fetch(
-      new Request("https://release.bar/api/alpha?owners=beta,stale&unreleased=false"),
+      new Request(
+        "https://release.bar/api/alpha?owners=beta,stale&unreleased=false",
+      ),
       {
         DASHBOARD_CACHE: kvStore({
           "owner-metadata:v1:alpha": snapshot(
@@ -66,7 +76,9 @@ test("worker filters shared owner snapshots for cold combined dashboards", async
               testProject({ owner: "alpha", name: "expired", fork: false }),
             ],
             {
-              "alpha/expired": new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
+              "alpha/expired": new Date(
+                Date.now() - 31 * 24 * 60 * 60 * 1000,
+              ).toISOString(),
             },
           ),
           "owner-metadata:v1:beta": snapshot("beta", [
@@ -74,10 +86,16 @@ test("worker filters shared owner snapshots for cold combined dashboards", async
           ]),
           "owner-metadata:v1:stale": JSON.stringify({
             owner: "stale",
-            generatedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
-            metadataUpdatedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
+            generatedAt: new Date(
+              Date.now() - 31 * 24 * 60 * 60 * 1000,
+            ).toISOString(),
+            metadataUpdatedAt: new Date(
+              Date.now() - 31 * 24 * 60 * 60 * 1000,
+            ).toISOString(),
             countsUpdatedAt: now,
-            projects: [testProject({ owner: "stale", name: "private-now", fork: false })],
+            projects: [
+              testProject({ owner: "stale", name: "private-now", fork: false }),
+            ],
           }),
         }),
         DASHBOARD_LOCKS: busyLocks,
@@ -311,7 +329,11 @@ test("worker progressively resumes large owner dashboard builds from partial cac
   };
 
   try {
-    const first = await worker.fetch(new Request("https://release.bar/api/big"), env, context);
+    const first = await worker.fetch(
+      new Request("https://release.bar/api/big"),
+      env,
+      context,
+    );
     const firstBody = (await first.json()) as DashboardPayload;
     assert.equal(first.headers.get("cache-control"), "no-store");
     assert.equal(firstBody.cache?.state, "partial");
@@ -319,21 +341,30 @@ test("worker progressively resumes large owner dashboard builds from partial cac
     assert.equal(firstBody.cache?.progress?.done, false);
     assert.equal(firstBody.projects.length, 25);
     assert.equal(
-      firstBody.projects.filter((project) => project.version === "repo search").length,
+      firstBody.projects.filter((project) => project.version === "repo search")
+        .length,
       25,
     );
 
     await Promise.all(waitUntil.splice(0));
 
-    const second = await worker.fetch(new Request("https://release.bar/api/big"), env, context);
+    const second = await worker.fetch(
+      new Request("https://release.bar/api/big"),
+      env,
+      context,
+    );
     const secondBody = (await second.json()) as DashboardPayload;
     assert.equal(secondBody.cache?.state, "fresh");
     assert.equal(secondBody.cache?.progress?.done, true);
     assert.equal(secondBody.projects.length, 25);
     assert.equal(typeof secondBody.cache?.releasesUpdatedAt, "string");
-    assert.equal(secondBody.cache?.ciUpdatedAt, secondBody.cache?.releasesUpdatedAt);
     assert.equal(
-      secondBody.projects.filter((project) => project.version === "repo search").length,
+      secondBody.cache?.ciUpdatedAt,
+      secondBody.cache?.releasesUpdatedAt,
+    );
+    assert.equal(
+      secondBody.projects.filter((project) => project.version === "repo search")
+        .length,
       0,
     );
   } finally {
@@ -356,7 +387,10 @@ test("worker bounds cold owner resolution by the response deadline", async () =>
   const cache = kvStore();
 
   globalThis.setTimeout = ((callback: TimerHandler, delay?: number) =>
-    originalSetTimeout(callback, delay === 15_000 ? 0 : delay)) as typeof setTimeout;
+    originalSetTimeout(
+      callback,
+      delay === 15_000 ? 0 : delay,
+    )) as typeof setTimeout;
   globalThis.fetch = async (input, init) => {
     const path = new URL(String(input)).pathname;
     if (path === "/users/slowmeta") {
@@ -427,7 +461,10 @@ test("worker bounds cold GitHub App token lookup by the response deadline", asyn
   const cache = kvStore();
 
   globalThis.setTimeout = ((callback: TimerHandler, delay?: number) =>
-    originalSetTimeout(callback, delay === 15_000 ? 0 : delay)) as typeof setTimeout;
+    originalSetTimeout(
+      callback,
+      delay === 15_000 ? 0 : delay,
+    )) as typeof setTimeout;
   globalThis.fetch = async (input, init) => {
     const path = new URL(String(input)).pathname;
     if (path === "/app/installations") {
@@ -486,7 +523,10 @@ test("worker resumes durable progress on cold metadata cache misses", async () =
   const sentJobs: RefreshJob[] = [];
   const project = testProject({ owner: "checkpoint", name: "repo" });
   const progress = {
-    scannedRepos: Array.from({ length: 43 }, (_, index) => `checkpoint/repo-${index}`),
+    scannedRepos: Array.from(
+      { length: 43 },
+      (_, index) => `checkpoint/repo-${index}`,
+    ),
     projects: [project],
     updatedAt: new Date().toISOString(),
   };
@@ -612,7 +652,10 @@ test("worker chains direct progressive continuation after a cold build timeout",
   });
 
   globalThis.setTimeout = ((callback: TimerHandler, delay?: number) =>
-    originalSetTimeout(callback, delay === 15_000 ? 0 : delay)) as typeof setTimeout;
+    originalSetTimeout(
+      callback,
+      delay === 15_000 ? 0 : delay,
+    )) as typeof setTimeout;
   globalThis.fetch = async (input) => {
     const path = new URL(String(input)).pathname;
     if (path === "/users/slow") {
@@ -671,7 +714,9 @@ test("worker chains direct progressive continuation after a cold build timeout",
       await Promise.all(waits.splice(0));
     }
 
-    const stored = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
+    const stored = JSON.parse(
+      (await cache.get(key)) ?? "{}",
+    ) as DashboardPayload;
     assert.equal(stored.cache?.state, "fresh");
     assert.equal(stored.cache?.progress?.done, true);
     assert.equal(stored.cache?.progress?.scanned, 13);
@@ -760,9 +805,13 @@ test("worker deduplicates queued refreshes for partial dashboards", async () => 
   await Promise.all(
     Array.from({ length: 2 }, async () => {
       const waits: Promise<unknown>[] = [];
-      const response = await worker.fetch(new Request("https://release.bar/api/owner"), env, {
-        waitUntil: (promise) => waits.push(promise),
-      });
+      const response = await worker.fetch(
+        new Request("https://release.bar/api/owner"),
+        env,
+        {
+          waitUntil: (promise) => waits.push(promise),
+        },
+      );
       assert.equal(response.status, 200);
       await Promise.all(waits);
     }),
@@ -780,5 +829,8 @@ test("worker deduplicates queued refreshes for partial dashboards", async () => 
     (await cache.get(sentJobs[0]?.targetSnapshotKey ?? "")) ?? "{}",
   ) as RefreshJob;
   assert.equal(snapshot.target?.key, key);
-  assert.equal((await cache.list({ prefix: "refresh:job:v1:" })).keys.length, 0);
+  assert.equal(
+    (await cache.list({ prefix: "refresh:job:v1:" })).keys.length,
+    0,
+  );
 });

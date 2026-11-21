@@ -146,7 +146,9 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
         ...target,
         key: legacyKey,
         path: `/owner?priority=${suffix}`,
-        lastSeenAt: new Date(Date.parse(now) - (30 - index) * 1_000).toISOString(),
+        lastSeenAt: new Date(
+          Date.parse(now) - (30 - index) * 1_000,
+        ).toISOString(),
       } satisfies RefreshTarget,
     };
   });
@@ -159,10 +161,12 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       ]),
     ),
     ...Object.fromEntries(
-      ownerLegacyPriorityTargets.map(({ storageKey, target: priorityTarget }) => [
-        storageKey,
-        JSON.stringify(priorityTarget),
-      ]),
+      ownerLegacyPriorityTargets.map(
+        ({ storageKey, target: priorityTarget }) => [
+          storageKey,
+          JSON.stringify(priorityTarget),
+        ],
+      ),
     ),
     "owner:v1:owner": JSON.stringify({ type: "user", login: "owner" }),
     [key]: JSON.stringify(dashboard),
@@ -223,7 +227,9 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
           (message as { kind?: unknown }).kind === "dashboard" &&
           typeof (message as { targetKey?: unknown }).targetKey === "string"
         ) {
-          queuedDashboardTargets.push((message as { targetKey: string }).targetKey);
+          queuedDashboardTargets.push(
+            (message as { targetKey: string }).targetKey,
+          );
         }
         if (
           message &&
@@ -290,10 +296,13 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
   const releaseQueuedDashboardJobs = async () => {
-    for (let queuedIndex = queued.length - 1; queuedIndex >= 0; queuedIndex -= 1) {
+    for (
+      let queuedIndex = queued.length - 1;
+      queuedIndex >= 0;
+      queuedIndex -= 1
+    ) {
       const queuedJob = queued[queuedIndex] as
-        | { id?: unknown; kind?: unknown; targetKey?: unknown }
-        | undefined;
+        { id?: unknown; kind?: unknown; targetKey?: unknown } | undefined;
       if (
         queuedJob?.kind !== "dashboard" ||
         typeof queuedJob.id !== "string" ||
@@ -303,7 +312,9 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       }
       queued.splice(queuedIndex, 1);
       assert.ok(env.DASHBOARD_LOCKS);
-      await env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName(queuedJob.targetKey)).fetch(
+      await env.DASHBOARD_LOCKS.get(
+        env.DASHBOARD_LOCKS.idFromName(queuedJob.targetKey),
+      ).fetch(
         new Request("https://releasebar.internal/job/release", {
           method: "POST",
           body: JSON.stringify({ jobId: queuedJob.id }),
@@ -331,7 +342,8 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       (message) =>
         Boolean(message) &&
         typeof message === "object" &&
-        (message as { kind?: unknown; delivery?: unknown }).kind === "github-webhook" &&
+        (message as { kind?: unknown; delivery?: unknown }).kind ===
+          "github-webhook" &&
         (message as { delivery?: unknown }).delivery === delivery,
     );
     if (index >= 0) {
@@ -356,7 +368,8 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
           (queuedMessage) =>
             Boolean(queuedMessage) &&
             typeof queuedMessage === "object" &&
-            (queuedMessage as { kind?: unknown }).kind === "github-webhook-fanout",
+            (queuedMessage as { kind?: unknown }).kind ===
+              "github-webhook-fanout",
         );
         if (fanoutIndex < 0) break;
         const [fanout] = queued.splice(fanoutIndex, 1);
@@ -415,7 +428,8 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     assert.equal(oversized.status, 413);
 
     assert.equal(
-      (await send("ping", "delivery-ping", { zen: "Approachable is better" })).status,
+      (await send("ping", "delivery-ping", { zen: "Approachable is better" }))
+        .status,
       200,
     );
 
@@ -431,20 +445,32 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     );
     const counted = await readDashboard();
     assert.equal(counted.projects[0]?.openIssues, 3);
-    const combinedCounted = await readDashboard("https://release.bar/api/owner?owners=other");
+    const combinedCounted = await readDashboard(
+      "https://release.bar/api/owner?owners=other",
+    );
     assert.equal(combinedCounted.projects[0]?.openIssues, 3);
-    assert.equal(combinedCounted.cache?.countsUpdatedAt, combinedCountsUpdatedAt);
-    const countedSnapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+    assert.equal(
+      combinedCounted.cache?.countsUpdatedAt,
+      combinedCountsUpdatedAt,
+    );
+    const countedSnapshot = JSON.parse(
+      (await cache.get("owner-metadata:v1:owner")) ?? "{}",
+    ) as {
       countsUpdatedAt?: string;
       projects?: Project[];
     };
-    assert.ok(Date.parse(countedSnapshot.countsUpdatedAt ?? "") >= Date.parse(now));
+    assert.ok(
+      Date.parse(countedSnapshot.countsUpdatedAt ?? "") >= Date.parse(now),
+    );
     assert.equal(
-      countedSnapshot.projects?.find((candidate) => candidate.name === "repo")?.openIssues,
+      countedSnapshot.projects?.find((candidate) => candidate.name === "repo")
+        ?.openIssues,
       3,
     );
     assert.ok(
-      countedSnapshot.projects?.find((candidate) => candidate.name === "old-repo")?.openIssues === undefined
+      countedSnapshot.projects?.find(
+        (candidate) => candidate.name === "old-repo",
+      )?.openIssues === undefined,
     );
 
     exactIssues = 4;
@@ -469,7 +495,10 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     assert.equal(serialized.projects[0]?.openIssues, 5);
 
     failCounts = true;
-    await send("issues", "delivery-redelivery", { action: "opened", repository });
+    await send("issues", "delivery-redelivery", {
+      action: "opened",
+      repository,
+    });
     assert.equal(queuedWebhookDelays.at(-1), 5 * 60);
     assert.equal(
       (
@@ -477,7 +506,8 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
           (message) =>
             Boolean(message) &&
             typeof message === "object" &&
-            (message as { delivery?: unknown }).delivery === "delivery-redelivery",
+            (message as { delivery?: unknown }).delivery ===
+              "delivery-redelivery",
         ) as { attempts?: number } | undefined
       )?.attempts,
       1,
@@ -488,7 +518,10 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     assert.equal(redeliveryJobs.at(-1)?.id, redeliveryJobs[0]?.id);
     failCounts = false;
     exactIssues = 6;
-    await send("issues", "delivery-redelivery", { action: "opened", repository });
+    await send("issues", "delivery-redelivery", {
+      action: "opened",
+      repository,
+    });
     const redelivered = await readDashboard();
     assert.equal(redelivered.projects[0]?.openIssues, 6);
 
@@ -498,11 +531,15 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       repository: observedRepository({ archived: true }),
     });
     failCounts = false;
-    const fallbackSnapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+    const fallbackSnapshot = JSON.parse(
+      (await cache.get("owner-metadata:v1:owner")) ?? "{}",
+    ) as {
       projects?: Project[];
     };
     assert.equal(
-      fallbackSnapshot.projects?.find((candidate) => candidate.fullName === "owner/repo")?.archived,
+      fallbackSnapshot.projects?.find(
+        (candidate) => candidate.fullName === "owner/repo",
+      )?.archived,
       true,
     );
     assert.notEqual(await cache.get(key), null);
@@ -538,7 +575,9 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       })),
       repository,
     });
-    const featurePush = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
+    const featurePush = JSON.parse(
+      (await cache.get(key)) ?? "{}",
+    ) as DashboardPayload;
     assert.equal(featurePush.projects[0]?.latestCommitSha, "abcdef1");
 
     queuedDashboardTargets.length = 0;
@@ -559,8 +598,14 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     assert.equal(delivery7ImmediateTargets.length <= 25, true);
     const newestLegacyPriorityTarget = ownerLegacyPriorityTargets.at(-1);
     assert.ok(newestLegacyPriorityTarget);
-    assert.equal(delivery7ImmediateTargets.includes(newestLegacyPriorityTarget.key), true);
-    assert.equal(delivery7ImmediateTargets.includes(ownerLegacyPriorityTargets[0].key), false);
+    assert.equal(
+      delivery7ImmediateTargets.includes(newestLegacyPriorityTarget.key),
+      true,
+    );
+    assert.equal(
+      delivery7ImmediateTargets.includes(ownerLegacyPriorityTargets[0].key),
+      false,
+    );
     assert.equal(
       ownerLegacyPriorityTargets.every(({ key: priorityKey }) =>
         queuedDashboardTargets.includes(priorityKey),
@@ -662,7 +707,9 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       "trust-profile:v4:owner",
       "audience-user-repos:v2:owner",
     ];
-    await Promise.all(privateCacheKeys.map((cacheKey) => cache.put(cacheKey, "cached")));
+    await Promise.all(
+      privateCacheKeys.map((cacheKey) => cache.put(cacheKey, "cached")),
+    );
     await cache.delete("owner-metadata:v1:owner");
     await send("repository", "delivery-10", {
       action: "privatized",
@@ -671,7 +718,9 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     assert.equal(await cache.get(key), null);
     await cache.put(key, JSON.stringify(dashboard));
     assert.equal((await readDashboard()).projects.length, 0);
-    const privateSnapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+    const privateSnapshot = JSON.parse(
+      (await cache.get("owner-metadata:v1:owner")) ?? "{}",
+    ) as {
       privateRepos?: Record<string, string>;
       removedRepos?: Record<string, string>;
       projects?: Project[];
@@ -697,7 +746,10 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       { waitUntil: () => undefined },
     );
     assert.equal(privateDiscover.status, 200);
-    assert.equal(((await privateDiscover.json()) as DashboardPayload).projects.length, 0);
+    assert.equal(
+      ((await privateDiscover.json()) as DashboardPayload).projects.length,
+      0,
+    );
 
     const leakedAt = new Date(Date.parse(now) + 10_000).toISOString();
     await cache.put(
@@ -757,10 +809,14 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       { waitUntil: () => undefined },
     );
     assert.equal(privateActivity.status, 200);
-    const privateActivityBody = (await privateActivity.json()) as OwnerActivityPayload;
+    const privateActivityBody =
+      (await privateActivity.json()) as OwnerActivityPayload;
     assert.equal(privateActivityBody.events.length, 0);
     assert.equal(privateActivityBody.repositories.length, 0);
-    assert.doesNotMatch(JSON.stringify(privateActivityBody), /owner\/repo|private repository work/);
+    assert.doesNotMatch(
+      JSON.stringify(privateActivityBody),
+      /owner\/repo|private repository work/,
+    );
 
     await Promise.all([
       cache.put(key, JSON.stringify(dashboard)),
@@ -825,14 +881,20 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     });
     assert.equal((await readDashboard()).projects.length, 1);
 
-    const compactPush = queuedWebhooks.find((message) => message.delivery === "delivery-6")
-      ?.payload as Record<string, unknown> | undefined;
+    const compactPush = queuedWebhooks.find(
+      (message) => message.delivery === "delivery-6",
+    )?.payload as Record<string, unknown> | undefined;
     assert.equal("commits" in (compactPush ?? {}), false);
     assert.equal(JSON.stringify(compactPush).length < 2_000, true);
-    const indexes = await cache.list({ prefix: "refresh:target-index:v1:owner:owner:" });
+    const indexes = await cache.list({
+      prefix: "refresh:target-index:v1:owner:owner:",
+    });
     assert.equal(indexes.keys.length > 0, true);
     assert.equal(durableObjectNames.includes("github-webhook-admission"), true);
-    assert.equal(durableObjectNames.includes("github-webhook-process:owner"), true);
+    assert.equal(
+      durableObjectNames.includes("github-webhook-process:owner"),
+      true,
+    );
     assert.equal(durableObjectNames.includes("github-webhooks"), false);
   } finally {
     globalThis.fetch = originalFetch;

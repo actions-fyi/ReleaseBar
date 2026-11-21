@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
-import type { DashboardPayload, Project, RefreshTarget } from "../../../src/types.js";
+import type {
+  DashboardPayload,
+  Project,
+  RefreshTarget,
+} from "../../../src/types.js";
 import worker, { DashboardBuildLock } from "../../../worker/index.js";
-import { durableLocks, kvStore, testDashboard, testProject } from "../dashboard-test-harness.js";
+import {
+  durableLocks,
+  kvStore,
+  testDashboard,
+  testProject,
+} from "../dashboard-test-harness.js";
 
 test("worker serves fresh dashboard cache before GitHub App token discovery", async () => {
   const now = new Date().toISOString();
@@ -21,7 +30,11 @@ test("worker serves fresh dashboard cache before GitHub App token discovery", as
   });
   const project = testProject({ owner: "owner", name: "repo", openIssues: 1 });
   const cachedProject = { ...project, archived: true };
-  const removedProject = testProject({ owner: "owner", name: "removed", openIssues: 4 });
+  const removedProject = testProject({
+    owner: "owner",
+    name: "removed",
+    openIssues: 4,
+  });
   const cached: DashboardPayload = {
     ...testDashboard("owner", [cachedProject, removedProject]),
     generatedAt: now,
@@ -42,7 +55,9 @@ test("worker serves fresh dashboard cache before GitHub App token discovery", as
       ciUpdatedAt: now,
     },
   };
-  const staleMetadataAt = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+  const staleMetadataAt = new Date(
+    Date.now() - 31 * 24 * 60 * 60 * 1000,
+  ).toISOString();
   const freshCountsAt = new Date(Date.now() + 1_000).toISOString();
   const ownerSnapshot = {
     owner: "owner",
@@ -50,7 +65,14 @@ test("worker serves fresh dashboard cache before GitHub App token discovery", as
     metadataUpdatedAt: staleMetadataAt,
     countsUpdatedAt: freshCountsAt,
     knownRepos: [project.fullName.toLowerCase()],
-    projects: [{ ...project, description: "stale description", archived: false, openIssues: 9 }],
+    projects: [
+      {
+        ...project,
+        description: "stale description",
+        archived: false,
+        openIssues: 9,
+      },
+    ],
   };
   const cache = kvStore({
     [metadataKey]: JSON.stringify(cached),
@@ -58,7 +80,9 @@ test("worker serves fresh dashboard cache before GitHub App token discovery", as
   });
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => {
-    throw new Error("fresh cache should not discover or mint GitHub App tokens");
+    throw new Error(
+      "fresh cache should not discover or mint GitHub App tokens",
+    );
   };
   try {
     const waits: Promise<unknown>[] = [];
@@ -91,7 +115,9 @@ test("worker serves fresh dashboard cache before GitHub App token discovery", as
 test("owner metadata does not overwrite newer dashboard counts", async () => {
   const now = new Date().toISOString();
   const newerMetadataAt = new Date(Date.now() + 1_000).toISOString();
-  const staleCountsAt = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+  const staleCountsAt = new Date(
+    Date.now() - 31 * 24 * 60 * 60 * 1000,
+  ).toISOString();
   const key = dashboardCacheKey({
     owner: "owner",
     includeUnreleased: true,
@@ -233,53 +259,67 @@ test("owner count overlays update repositories absent from a narrow metadata sna
   };
   const locks = durableLocks(env);
   env.DASHBOARD_LOCKS = locks;
-  const response = await locks.get(locks.idFromName("owner-metadata:owner")).fetch(
-    new Request("https://releasebar.internal/owner-metadata/mutate", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        owner: "owner",
-        mutation: {
-          kind: "counts",
-          updatedAt: observedAt,
-          complete: true,
-          counts: [
-            {
-              fullName: "owner/inside-filter",
-              openIssues: 0,
-              openPullRequests: 0,
-              archived: false,
-              fork: false,
-              private: false,
-              pushedAt: observedAt,
-              updatedAt: observedAt,
-            },
-            {
-              fullName: "owner/outside-filter",
-              openIssues: 9,
-              openPullRequests: 2,
-              archived: true,
-              fork: false,
-              private: false,
-              pushedAt: observedAt,
-              updatedAt: observedAt,
-            },
-          ],
-        },
+  const response = await locks
+    .get(locks.idFromName("owner-metadata:owner"))
+    .fetch(
+      new Request("https://releasebar.internal/owner-metadata/mutate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          owner: "owner",
+          mutation: {
+            kind: "counts",
+            updatedAt: observedAt,
+            complete: true,
+            counts: [
+              {
+                fullName: "owner/inside-filter",
+                openIssues: 0,
+                openPullRequests: 0,
+                archived: false,
+                fork: false,
+                private: false,
+                pushedAt: observedAt,
+                updatedAt: observedAt,
+              },
+              {
+                fullName: "owner/outside-filter",
+                openIssues: 9,
+                openPullRequests: 2,
+                archived: true,
+                fork: false,
+                private: false,
+                pushedAt: observedAt,
+                updatedAt: observedAt,
+              },
+            ],
+          },
+        }),
       }),
-    }),
-  );
+    );
   assert.equal(response.ok, true);
 
-  const dashboard = await worker.fetch(new Request("https://release.bar/api/owner"), env, {
-    waitUntil: () => undefined,
-  });
+  const dashboard = await worker.fetch(
+    new Request("https://release.bar/api/owner"),
+    env,
+    {
+      waitUntil: () => undefined,
+    },
+  );
   assert.equal(dashboard.status, 200);
-  assert.equal(((await dashboard.json()) as DashboardPayload).projects.length, 0);
-  const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  assert.equal(
+    ((await dashboard.json()) as DashboardPayload).projects.length,
+    0,
+  );
+  const snapshot = JSON.parse(
+    (await cache.get("owner-metadata:v1:owner")) ?? "{}",
+  ) as {
     countOverlays?: Record<string, { archived?: boolean; openIssues?: number }>;
   };
-  assert.equal(snapshot.countOverlays?.["owner/outside-filter"]?.archived, true);
+  assert.equal(
+    snapshot.countOverlays?.["owner/outside-filter"]?.archived,
+    true,
+  );
   assert.equal(snapshot.countOverlays?.["owner/outside-filter"]?.openIssues, 9);
 });
 
@@ -293,7 +333,11 @@ test("owner snapshots only advance count freshness when they cover every display
     schemaVersion: 6,
   });
   const repo = testProject({ owner: "owner", name: "repo", openIssues: 1 });
-  const sibling = testProject({ owner: "owner", name: "sibling", openIssues: 2 });
+  const sibling = testProject({
+    owner: "owner",
+    name: "sibling",
+    openIssues: 2,
+  });
   const cache = kvStore({
     [key]: JSON.stringify({
       ...testDashboard("owner", [repo, sibling]),
@@ -327,8 +371,14 @@ test("owner snapshots only advance count freshness when they cover every display
   );
   assert.equal(response.status, 200);
   const body = (await response.json()) as DashboardPayload;
-  assert.equal(body.projects.find((project) => project.name === "repo")?.openIssues, 9);
-  assert.equal(body.projects.find((project) => project.name === "sibling")?.openIssues, 2);
+  assert.equal(
+    body.projects.find((project) => project.name === "repo")?.openIssues,
+    9,
+  );
+  assert.equal(
+    body.projects.find((project) => project.name === "sibling")?.openIssues,
+    2,
+  );
   assert.equal(body.cache?.countsUpdatedAt, cachedAt);
 });
 
@@ -343,7 +393,11 @@ test("partial owner count scans expose matched repository counts without advanci
     schemaVersion: 6,
   });
   const repo = testProject({ owner: "owner", name: "repo", openIssues: 1 });
-  const sibling = testProject({ owner: "owner", name: "sibling", openIssues: 2 });
+  const sibling = testProject({
+    owner: "owner",
+    name: "sibling",
+    openIssues: 2,
+  });
   const cache = kvStore({
     [key]: JSON.stringify({
       ...testDashboard("owner", [repo, sibling]),
@@ -384,7 +438,9 @@ test("partial owner count scans expose matched repository counts without advanci
     idFromName: locks.idFromName,
     get: locks.get,
   };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
+  const stub = env.DASHBOARD_LOCKS.get(
+    env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"),
+  );
   const mutation = await stub.fetch(
     new Request("https://releasebar.internal/owner-metadata/mutate", {
       method: "POST",
@@ -421,13 +477,23 @@ test("partial owner count scans expose matched repository counts without advanci
   assert.equal(snapshot.projectCountsUpdatedAt?.["owner/repo"], partialAt);
   assert.equal(snapshot.projectCountsUpdatedAt?.["owner/sibling"], initialAt);
 
-  const response = await worker.fetch(new Request("https://release.bar/api/owner"), env, {
-    waitUntil: () => undefined,
-  });
+  const response = await worker.fetch(
+    new Request("https://release.bar/api/owner"),
+    env,
+    {
+      waitUntil: () => undefined,
+    },
+  );
   assert.equal(response.status, 200);
   const body = (await response.json()) as DashboardPayload;
-  assert.equal(body.projects.find((project) => project.name === "repo")?.openIssues, 9);
-  assert.equal(body.projects.find((project) => project.name === "sibling")?.openIssues, 2);
+  assert.equal(
+    body.projects.find((project) => project.name === "repo")?.openIssues,
+    9,
+  );
+  assert.equal(
+    body.projects.find((project) => project.name === "sibling")?.openIssues,
+    2,
+  );
   assert.equal(body.cache?.countsUpdatedAt, initialAt);
 });
 
@@ -435,7 +501,11 @@ test("stale archive observations do not override newer count observations", asyn
   const metadataAt = "2026-06-11T01:00:00Z";
   const archiveAt = "2026-06-11T02:00:00Z";
   const countsAt = "2026-06-11T03:00:00Z";
-  const project = testProject({ owner: "owner", name: "repo", archived: false });
+  const project = testProject({
+    owner: "owner",
+    name: "repo",
+    archived: false,
+  });
   const cache = kvStore({
     "owner-metadata:v1:owner": JSON.stringify({
       owner: "owner",
@@ -509,7 +579,9 @@ test("partial owner count scans cannot make an incomplete repository set authori
     idFromName: locks.idFromName,
     get: locks.get,
   };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
+  const stub = env.DASHBOARD_LOCKS.get(
+    env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"),
+  );
   const response = await stub.fetch(
     new Request("https://releasebar.internal/owner-metadata/mutate", {
       method: "POST",
@@ -547,8 +619,12 @@ test("partial owner count scans cannot make an incomplete repository set authori
 
 test("combined dashboards do not merge counts using another owner's oldest timestamp", async () => {
   const generatedAt = new Date().toISOString();
-  const oldestOwnerCountAt = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-  const intermediateCountAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const oldestOwnerCountAt = new Date(
+    Date.now() - 2 * 60 * 60 * 1000,
+  ).toISOString();
+  const intermediateCountAt = new Date(
+    Date.now() - 60 * 60 * 1000,
+  ).toISOString();
   const key = dashboardCacheKey({
     owner: "owner",
     owners: ["other"],
@@ -556,8 +632,16 @@ test("combined dashboards do not merge counts using another owner's oldest times
     includeReleaseData: true,
     schemaVersion: 6,
   });
-  const ownerProject = testProject({ owner: "owner", name: "repo", openIssues: 10 });
-  const otherProject = testProject({ owner: "other", name: "repo", openIssues: 2 });
+  const ownerProject = testProject({
+    owner: "owner",
+    name: "repo",
+    openIssues: 10,
+  });
+  const otherProject = testProject({
+    owner: "other",
+    name: "repo",
+    openIssues: 2,
+  });
   const cache = kvStore({
     "owner:v1:owner": JSON.stringify({ type: "user", login: "owner" }),
     "owner:v1:other": JSON.stringify({ type: "user", login: "other" }),
@@ -597,7 +681,11 @@ test("combined dashboards do not merge counts using another owner's oldest times
   );
   assert.equal(response.status, 200);
   const body = (await response.json()) as DashboardPayload;
-  assert.equal(body.projects.find((project) => project.fullName === "owner/repo")?.openIssues, 10);
+  assert.equal(
+    body.projects.find((project) => project.fullName === "owner/repo")
+      ?.openIssues,
+    10,
+  );
   assert.equal(body.cache?.countsUpdatedAt, oldestOwnerCountAt);
 });
 
@@ -657,10 +745,16 @@ test("older owner snapshots do not overwrite newer dashboard fields", async () =
 
 test("targeted owner metadata updates do not refresh sibling repositories", async () => {
   const dashboardAt = new Date().toISOString();
-  const olderAt = new Date(Date.parse(dashboardAt) - 60 * 60 * 1000).toISOString();
+  const olderAt = new Date(
+    Date.parse(dashboardAt) - 60 * 60 * 1000,
+  ).toISOString();
   const eventAt = new Date(Date.parse(dashboardAt) + 1_000).toISOString();
   const repo = testProject({ owner: "owner", name: "repo" });
-  const sibling = testProject({ owner: "owner", name: "sibling", description: "fresh sibling" });
+  const sibling = testProject({
+    owner: "owner",
+    name: "sibling",
+    description: "fresh sibling",
+  });
   const key = dashboardCacheKey({
     owner: "owner",
     includeUnreleased: true,
@@ -708,7 +802,8 @@ test("targeted owner metadata updates do not refresh sibling repositories", asyn
     false,
   );
   assert.equal(
-    body.projects.find((project) => project.fullName === "owner/sibling")?.description,
+    body.projects.find((project) => project.fullName === "owner/sibling")
+      ?.description,
     "fresh sibling",
   );
 });
@@ -726,7 +821,9 @@ test("owner removal tombstones survive older refresh observations", async () => 
     idFromName: locks.idFromName,
     get: locks.get,
   };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
+  const stub = env.DASHBOARD_LOCKS.get(
+    env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"),
+  );
   const mutate = async (mutation: Record<string, unknown>) => {
     const response = await stub.fetch(
       new Request("https://releasebar.internal/owner-metadata/mutate", {
@@ -738,7 +835,11 @@ test("owner removal tombstones survive older refresh observations", async () => 
     assert.equal(response.ok || response.status === 204, true);
   };
 
-  await mutate({ kind: "remove", fullName: "owner/repo", observedAt: removedAt });
+  await mutate({
+    kind: "remove",
+    fullName: "owner/repo",
+    observedAt: removedAt,
+  });
   await mutate({
     kind: "counts",
     updatedAt: olderAt,
@@ -756,14 +857,26 @@ test("owner removal tombstones survive older refresh observations", async () => 
       },
     ],
   });
-  await mutate({ kind: "restore", fullName: "owner/repo", observedAt: olderAt });
-  let snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  await mutate({
+    kind: "restore",
+    fullName: "owner/repo",
+    observedAt: olderAt,
+  });
+  let snapshot = JSON.parse(
+    (await cache.get("owner-metadata:v1:owner")) ?? "{}",
+  ) as {
     removedRepos?: Record<string, string>;
   };
   assert.equal(snapshot.removedRepos?.["owner/repo"], removedAt);
 
-  await mutate({ kind: "restore", fullName: "owner/repo", observedAt: newerAt });
-  snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  await mutate({
+    kind: "restore",
+    fullName: "owner/repo",
+    observedAt: newerAt,
+  });
+  snapshot = JSON.parse(
+    (await cache.get("owner-metadata:v1:owner")) ?? "{}",
+  ) as {
     removedRepos?: Record<string, string>;
   };
   assert.equal(snapshot.removedRepos?.["owner/repo"]);
@@ -783,7 +896,9 @@ test("owner mutations reconcile newer KV fallback state before updating durable 
     idFromName: locks.idFromName,
     get: locks.get,
   };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
+  const stub = env.DASHBOARD_LOCKS.get(
+    env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"),
+  );
   const mutate = async (mutation: Record<string, unknown>) => {
     const response = await stub.fetch(
       new Request("https://releasebar.internal/owner-metadata/mutate", {
@@ -835,7 +950,9 @@ test("owner mutations reconcile newer KV fallback state before updating durable 
   };
   assert.equal(snapshot.removedRepos?.["owner/repo"], removedAt);
   assert.equal(
-    snapshot.projects?.some((candidate) => candidate.fullName === project.fullName),
+    snapshot.projects?.some(
+      (candidate) => candidate.fullName === project.fullName,
+    ),
     false,
   );
 });

@@ -10,7 +10,11 @@ import type {
   SchedulerAdminPayload,
 } from "../../../src/types.js";
 import worker from "../../../worker/index.js";
-import { kvStore, signedJson, testDashboard } from "../dashboard-test-harness.js";
+import {
+  kvStore,
+  signedJson,
+  testDashboard,
+} from "../dashboard-test-harness.js";
 
 test("worker discovers and stores source-owned app installs for anonymous dashboards", async () => {
   const { privateKey } = generateKeyPairSync("rsa", {
@@ -43,7 +47,8 @@ test("worker discovers and stores source-owned app installs for anonymous dashbo
             avatar_url: "https://avatars.githubusercontent.com/u/2",
             html_url: "https://github.com/openclaw",
           },
-          html_url: "https://github.com/organizations/openclaw/settings/installations/7",
+          html_url:
+            "https://github.com/organizations/openclaw/settings/installations/7",
           repository_selection: "all",
           target_type: "Organization",
         },
@@ -74,15 +79,21 @@ test("worker discovers and stores source-owned app installs for anonymous dashbo
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
   try {
-    const response = await worker.fetch(new Request("https://release.bar/api/openclaw"), env, {
-      waitUntil: (promise) => waits.push(promise),
-    });
+    const response = await worker.fetch(
+      new Request("https://release.bar/api/openclaw"),
+      env,
+      {
+        waitUntil: (promise) => waits.push(promise),
+      },
+    );
     assert.equal(response.status, 200);
     const body = (await response.json()) as DashboardPayload;
     await Promise.all(waits);
     assert.equal(body.cache?.quota?.source, "app");
     assert.equal(body.cache?.quota?.account, "openclaw");
-    const stored = JSON.parse((await cache.get("auth:installation:v1:openclaw")) ?? "{}");
+    const stored = JSON.parse(
+      (await cache.get("auth:installation:v1:openclaw")) ?? "{}",
+    );
     assert.equal(stored.id, 7);
     assert.equal(stored.repositorySelection, "all");
   } finally {
@@ -209,9 +220,13 @@ test("worker saves owner public defaults and applies them to clean owner URLs", 
     const saved = await save.json();
     assert.deepEqual(saved.profile.includeRepos, ["openclaw/peekaboo"]);
 
-    const response = await worker.fetch(new Request("https://release.bar/api/steipete"), env, {
-      waitUntil: (promise) => waits.push(promise),
-    });
+    const response = await worker.fetch(
+      new Request("https://release.bar/api/steipete"),
+      env,
+      {
+        waitUntil: (promise) => waits.push(promise),
+      },
+    );
     assert.equal(response.status, 200, await response.clone().text());
     const body = (await response.json()) as DashboardPayload;
     await Promise.all(waits);
@@ -296,7 +311,10 @@ test("worker logout deletes the stored session and clears the cookie", async () 
 
   assert.equal(response.status, 302);
   assert.equal(response.headers.get("location"), "/openclaw");
-  assert.match(response.headers.get("set-cookie") ?? "", /rd_session=;.*Max-Age=0/);
+  assert.match(
+    response.headers.get("set-cookie") ?? "",
+    /rd_session=;.*Max-Age=0/,
+  );
   assert.equal(await cache.get(`auth:session:${sessionId}`), null);
 });
 
@@ -315,7 +333,10 @@ test("worker admin scheduler requires an admin session and reports refresh targe
   const exp = Math.floor(Date.now() / 1000) + 600;
   const activeAt = new Date().toISOString();
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
-  const otherAuthCookie = await signedJson("test-secret", { id: otherSessionId, exp });
+  const otherAuthCookie = await signedJson("test-secret", {
+    id: otherSessionId,
+    exp,
+  });
   const target: RefreshTarget = {
     key: "dashboard:v6:owner=openclaw",
     kind: "dashboard",
@@ -331,7 +352,11 @@ test("worker admin scheduler requires an admin session and reports refresh targe
     nextDueAt: "2026-05-15T13:00:00Z",
     failureCount: 0,
   };
-  const legacyTarget = { ...target, key: "dashboard:v5:owner=legacy", owner: "legacy" };
+  const legacyTarget = {
+    ...target,
+    key: "dashboard:v5:owner=legacy",
+    owner: "legacy",
+  };
   const activeJob: RefreshJob = {
     id: "job-active",
     targetKey: target.key,
@@ -375,17 +400,18 @@ test("worker admin scheduler requires an admin session and reports refresh targe
     [`refresh:target:v1:${legacyTarget.key}`]: JSON.stringify(legacyTarget),
     [`refresh:job:v1:${activeJob.id}`]: JSON.stringify(activeJob),
     "refresh:jobs:index:v1": JSON.stringify([activeJob.id]),
-    [`github:access:v1:${accessHour}:dashboard:shared:_:graphql:200:graphql`]: JSON.stringify({
-      area: "dashboard",
-      route: "graphql",
-      status: 200,
-      source: "shared",
-      account: null,
-      resource: "graphql",
-      count: 3,
-      lastPath: "/graphql",
-      lastAt: `${accessHour}:00:00.000Z`,
-    }),
+    [`github:access:v1:${accessHour}:dashboard:shared:_:graphql:200:graphql`]:
+      JSON.stringify({
+        area: "dashboard",
+        route: "graphql",
+        status: 200,
+        source: "shared",
+        account: null,
+        resource: "graphql",
+        count: 3,
+        lastPath: "/graphql",
+        lastAt: `${accessHour}:00:00.000Z`,
+      }),
   });
   const sentJobs: RefreshJob[] = [];
   const env = {
@@ -502,8 +528,9 @@ test("worker admin installation summary bounds record and counter reads", async 
       repositories: [],
       updatedAt: new Date(index * 1000).toISOString(),
     });
-    entries[`auth:funnel-counter:v1:2026-06-13:event-${String(index).padStart(3, "0")}:_:ok`] =
-      String(index + 1);
+    entries[
+      `auth:funnel-counter:v1:2026-06-13:event-${String(index).padStart(3, "0")}:_:ok`
+    ] = String(index + 1);
   }
   const baseCache = kvStore(entries);
   let installationReads = 0;
@@ -610,17 +637,35 @@ test("worker scheduler rotates bounded current-schema target pages", async () =>
       { waitUntil: () => undefined },
     );
     assert.equal(response.status, 200);
-    return (await response.json()) as { considered: number; due: number; enqueued: number };
+    return (await response.json()) as {
+      considered: number;
+      due: number;
+      enqueued: number;
+    };
   };
 
-  assert.deepEqual(await run(), { ok: true, considered: 120, due: 0, enqueued: 0 });
-  const firstState = JSON.parse((await cache.get("refresh:state:v1")) ?? "{}") as {
+  assert.deepEqual(await run(), {
+    ok: true,
+    considered: 120,
+    due: 0,
+    enqueued: 0,
+  });
+  const firstState = JSON.parse(
+    (await cache.get("refresh:state:v1")) ?? "{}",
+  ) as {
     targetCursor?: string;
   };
   assert.equal(firstState.targetCursor, "120");
 
-  assert.deepEqual(await run(), { ok: true, considered: 1, due: 0, enqueued: 0 });
-  const secondState = JSON.parse((await cache.get("refresh:state:v1")) ?? "{}") as {
+  assert.deepEqual(await run(), {
+    ok: true,
+    considered: 1,
+    due: 0,
+    enqueued: 0,
+  });
+  const secondState = JSON.parse(
+    (await cache.get("refresh:state:v1")) ?? "{}",
+  ) as {
     targetCursor?: string;
   };
   assert.equal(secondState.targetCursor);

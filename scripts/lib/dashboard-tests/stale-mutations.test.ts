@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
-import type { DashboardPayload, Project, RefreshJob, RefreshTarget } from "../../../src/types.js";
+import type {
+  DashboardPayload,
+  Project,
+  RefreshJob,
+  RefreshTarget,
+} from "../../../src/types.js";
 import worker, { DashboardBuildLock } from "../../../worker/index.js";
 import {
   durableLocks,
@@ -16,7 +21,11 @@ test("older owner count refreshes cannot replace newer snapshots", async () => {
   const olderAt = "2026-06-11T03:00:00Z";
   const newerAt = "2026-06-11T04:00:00Z";
   const repo = testProject({ owner: "owner", name: "repo", openIssues: 1 });
-  const sibling = testProject({ owner: "owner", name: "sibling", openIssues: 2 });
+  const sibling = testProject({
+    owner: "owner",
+    name: "sibling",
+    openIssues: 2,
+  });
   const cache = kvStore();
   const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
     DASHBOARD_CACHE: cache,
@@ -26,7 +35,9 @@ test("older owner count refreshes cannot replace newer snapshots", async () => {
     idFromName: locks.idFromName,
     get: locks.get,
   };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
+  const stub = env.DASHBOARD_LOCKS.get(
+    env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"),
+  );
   const mutate = async (mutation: Record<string, unknown>) => {
     const response = await stub.fetch(
       new Request("https://releasebar.internal/owner-metadata/mutate", {
@@ -94,19 +105,26 @@ test("older owner count refreshes cannot replace newer snapshots", async () => {
     ],
   });
 
-  const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  const snapshot = JSON.parse(
+    (await cache.get("owner-metadata:v1:owner")) ?? "{}",
+  ) as {
     countsUpdatedAt?: string;
     knownRepos?: string[];
     projects?: Project[];
   };
   assert.equal(snapshot.countsUpdatedAt, newerAt);
-  assert.deepEqual(snapshot.knownRepos?.sort(), ["owner/repo", "owner/sibling"]);
+  assert.deepEqual(snapshot.knownRepos?.sort(), [
+    "owner/repo",
+    "owner/sibling",
+  ]);
   assert.equal(
-    snapshot.projects?.find((project) => project.fullName === repo.fullName)?.openIssues,
+    snapshot.projects?.find((project) => project.fullName === repo.fullName)
+      ?.openIssues,
     7,
   );
   assert.equal(
-    snapshot.projects?.find((project) => project.fullName === sibling.fullName)?.openIssues,
+    snapshot.projects?.find((project) => project.fullName === sibling.fullName)
+      ?.openIssues,
     9,
   );
 });
@@ -114,7 +132,11 @@ test("older owner count refreshes cannot replace newer snapshots", async () => {
 test("older complete count scans preserve newer repository metadata", async () => {
   const countsAt = "2026-06-11T03:00:00Z";
   const metadataAt = "2026-06-11T04:00:00Z";
-  const project = testProject({ owner: "owner", name: "repo", updatedAt: metadataAt });
+  const project = testProject({
+    owner: "owner",
+    name: "repo",
+    updatedAt: metadataAt,
+  });
   const cache = kvStore();
   const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
     DASHBOARD_CACHE: cache,
@@ -124,7 +146,9 @@ test("older complete count scans preserve newer repository metadata", async () =
     idFromName: locks.idFromName,
     get: locks.get,
   };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
+  const stub = env.DASHBOARD_LOCKS.get(
+    env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"),
+  );
   const mutate = async (mutation: Record<string, unknown>) => {
     const response = await stub.fetch(
       new Request("https://releasebar.internal/owner-metadata/mutate", {
@@ -154,7 +178,9 @@ test("older complete count scans preserve newer repository metadata", async () =
     counts: [],
   });
 
-  const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  const snapshot = JSON.parse(
+    (await cache.get("owner-metadata:v1:owner")) ?? "{}",
+  ) as {
     knownRepos?: string[];
     removedRepos?: Record<string, string>;
     projects?: Project[];
@@ -185,7 +211,9 @@ test("newer metadata merges preserve counts without restoring stale repository s
     idFromName: locks.idFromName,
     get: locks.get,
   };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
+  const stub = env.DASHBOARD_LOCKS.get(
+    env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"),
+  );
   const mutate = async (mutation: Record<string, unknown>) => {
     const response = await stub.fetch(
       new Request("https://releasebar.internal/owner-metadata/mutate", {
@@ -229,7 +257,9 @@ test("newer metadata merges preserve counts without restoring stale repository s
     removedRepos: [],
   });
 
-  const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  const snapshot = JSON.parse(
+    (await cache.get("owner-metadata:v1:owner")) ?? "{}",
+  ) as {
     projects?: Project[];
   };
   assert.equal(snapshot.projects?.[0]?.archived, true);
@@ -247,7 +277,9 @@ test("newer metadata merges preserve counts without restoring stale repository s
   await cache.put(
     key,
     JSON.stringify({
-      ...testDashboard("owner", [{ ...project, openIssues: 1, openPullRequests: 1 }]),
+      ...testDashboard("owner", [
+        { ...project, openIssues: 1, openPullRequests: 1 },
+      ]),
       generatedAt: countsAt,
       cache: {
         state: "fresh",
@@ -262,11 +294,18 @@ test("newer metadata merges preserve counts without restoring stale repository s
       },
     } satisfies DashboardPayload),
   );
-  const dashboard = await worker.fetch(new Request("https://release.bar/api/owner"), env, {
-    waitUntil: () => undefined,
-  });
+  const dashboard = await worker.fetch(
+    new Request("https://release.bar/api/owner"),
+    env,
+    {
+      waitUntil: () => undefined,
+    },
+  );
   assert.equal(dashboard.status, 200);
-  assert.equal(((await dashboard.json()) as DashboardPayload).projects.length, 0);
+  assert.equal(
+    ((await dashboard.json()) as DashboardPayload).projects.length,
+    0,
+  );
 });
 
 test("older dashboard builds cannot restore repositories removed by newer counts", async () => {
@@ -282,7 +321,9 @@ test("older dashboard builds cannot restore repositories removed by newer counts
     idFromName: locks.idFromName,
     get: locks.get,
   };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
+  const stub = env.DASHBOARD_LOCKS.get(
+    env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"),
+  );
   const mutate = async (mutation: Record<string, unknown>) => {
     const response = await stub.fetch(
       new Request("https://releasebar.internal/owner-metadata/mutate", {
@@ -323,7 +364,9 @@ test("older dashboard builds cannot restore repositories removed by newer counts
     removedRepos: [],
   });
 
-  const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  const snapshot = JSON.parse(
+    (await cache.get("owner-metadata:v1:owner")) ?? "{}",
+  ) as {
     knownRepos?: string[];
     projects?: Project[];
   };
@@ -379,7 +422,9 @@ test("complete metadata scans tombstone absent repositories across cached varian
     idFromName: locks.idFromName,
     get: locks.get,
   };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
+  const stub = env.DASHBOARD_LOCKS.get(
+    env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"),
+  );
   const mutate = async (mutation: Record<string, unknown>) => {
     const response = await stub.fetch(
       new Request("https://releasebar.internal/owner-metadata/mutate", {
@@ -414,7 +459,9 @@ test("complete metadata scans tombstone absent repositories across cached varian
     removedRepos: [],
   });
 
-  const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  const snapshot = JSON.parse(
+    (await cache.get("owner-metadata:v1:owner")) ?? "{}",
+  ) as {
     knownRepos?: string[];
     removedRepos?: Record<string, string>;
     projects?: Project[];
@@ -426,9 +473,13 @@ test("complete metadata scans tombstone absent repositories across cached varian
     false,
   );
 
-  const response = await worker.fetch(new Request("https://release.bar/api/owner"), env, {
-    waitUntil: () => undefined,
-  });
+  const response = await worker.fetch(
+    new Request("https://release.bar/api/owner"),
+    env,
+    {
+      waitUntil: () => undefined,
+    },
+  );
   assert.equal(response.status, 200);
   const body = (await response.json()) as DashboardPayload;
   assert.deepEqual(
@@ -454,7 +505,9 @@ test("stale repository removals cannot hide newer public metadata", async () => 
     idFromName: locks.idFromName,
     get: locks.get,
   };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
+  const stub = env.DASHBOARD_LOCKS.get(
+    env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"),
+  );
   const mutate = async (mutation: Record<string, unknown>) => {
     const response = await stub.fetch(
       new Request("https://releasebar.internal/owner-metadata/mutate", {
@@ -477,15 +530,26 @@ test("stale repository removals cannot hide newer public metadata", async () => 
     projects: [project],
     removedRepos: [],
   });
-  await mutate({ kind: "remove", fullName: project.fullName.toLowerCase(), observedAt: removedAt });
+  await mutate({
+    kind: "remove",
+    fullName: project.fullName.toLowerCase(),
+    observedAt: removedAt,
+  });
 
-  const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  const snapshot = JSON.parse(
+    (await cache.get("owner-metadata:v1:owner")) ?? "{}",
+  ) as {
     removedRepos?: Record<string, string>;
     projects?: Project[];
   };
-  assert.equal(snapshot.removedRepos?.[project.fullName.toLowerCase()] ?? null, null);
   assert.equal(
-    snapshot.projects?.some((candidate) => candidate.fullName === project.fullName),
+    snapshot.removedRepos?.[project.fullName.toLowerCase()] ?? null,
+    null,
+  );
+  assert.equal(
+    snapshot.projects?.some(
+      (candidate) => candidate.fullName === project.fullName,
+    ),
     true,
   );
 });
@@ -503,7 +567,9 @@ test("newer owner metadata merges cannot clear privacy tombstones", async () => 
     idFromName: locks.idFromName,
     get: locks.get,
   };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
+  const stub = env.DASHBOARD_LOCKS.get(
+    env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"),
+  );
   const mutate = async (mutation: Record<string, unknown>) => {
     const response = await stub.fetch(
       new Request("https://releasebar.internal/owner-metadata/mutate", {
@@ -515,7 +581,11 @@ test("newer owner metadata merges cannot clear privacy tombstones", async () => 
     assert.equal(response.ok || response.status === 204, true);
   };
 
-  await mutate({ kind: "remove", fullName: "owner/repo", observedAt: removedAt });
+  await mutate({
+    kind: "remove",
+    fullName: "owner/repo",
+    observedAt: removedAt,
+  });
   await mutate({
     kind: "merge",
     generatedAt: observedAt,
@@ -528,7 +598,9 @@ test("newer owner metadata merges cannot clear privacy tombstones", async () => 
     removedRepos: [],
   });
 
-  const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  const snapshot = JSON.parse(
+    (await cache.get("owner-metadata:v1:owner")) ?? "{}",
+  ) as {
     removedRepos?: Record<string, string>;
     projects?: Project[];
   };
@@ -640,9 +712,13 @@ test("worker persists archived observations without showing archived repositorie
       { waitUntil: () => undefined },
     );
     assert.equal(acknowledged, true);
-    const dashboard = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
+    const dashboard = JSON.parse(
+      (await cache.get(key)) ?? "{}",
+    ) as DashboardPayload;
     assert.equal(dashboard.projects.length, 0);
-    const snapshot = JSON.parse((await cache.get(`owner-metadata:v1:${owner}`)) ?? "{}") as {
+    const snapshot = JSON.parse(
+      (await cache.get(`owner-metadata:v1:${owner}`)) ?? "{}",
+    ) as {
       projects?: Project[];
       removedRepos?: Record<string, string>;
     };
@@ -658,9 +734,13 @@ test("worker preserves field freshness when resuming an older progress checkpoin
   const owner = "freshness-checkpoint";
   const now = new Date();
   const generatedAt = now.toISOString();
-  const generationStartedAt = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
+  const generationStartedAt = new Date(
+    now.getTime() - 10 * 60 * 1000,
+  ).toISOString();
   const removedAt = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
-  const releasesUpdatedAt = new Date(now.getTime() - 2 * 60 * 1000).toISOString();
+  const releasesUpdatedAt = new Date(
+    now.getTime() - 2 * 60 * 1000,
+  ).toISOString();
   const ciUpdatedAt = new Date(now.getTime() - 60 * 1000).toISOString();
   const key = dashboardCacheKey({
     owner,
@@ -731,9 +811,13 @@ test("worker preserves field freshness when resuming an older progress checkpoin
         },
       },
     };
-    const response = await worker.fetch(new Request(`https://release.bar/api/${owner}`), env, {
-      waitUntil: (promise) => waits.push(promise),
-    });
+    const response = await worker.fetch(
+      new Request(`https://release.bar/api/${owner}`),
+      env,
+      {
+        waitUntil: (promise) => waits.push(promise),
+      },
+    );
     assert.equal(response.status, 200);
     const resumed = (await response.json()) as DashboardPayload;
     assert.equal(resumed.cache?.countsUpdatedAt, generatedAt);
@@ -761,7 +845,9 @@ test("worker preserves field freshness when resuming an older progress checkpoin
       { waitUntil: () => undefined },
     );
     assert.equal(acknowledged, true);
-    const completed = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
+    const completed = JSON.parse(
+      (await cache.get(key)) ?? "{}",
+    ) as DashboardPayload;
     assert.equal(completed.projects.length, 0);
     assert.equal(completed.cache?.releasesUpdatedAt, releasesUpdatedAt);
     assert.equal(completed.cache?.ciUpdatedAt, ciUpdatedAt);

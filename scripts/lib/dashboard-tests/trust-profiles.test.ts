@@ -101,7 +101,10 @@ test("worker builds bounded trust profiles for people pages", async () => {
     assert.equal(body.stats.topics[0]?.name, "developer-tools");
     assert.equal(body.orgs[0]?.login, "github");
     assert.equal(body.topRepositories[0]?.fullName, "principal/release-tools");
-    assert.equal(body.factors.find((factor) => factor.key === "age")?.label, "account age");
+    assert.equal(
+      body.factors.find((factor) => factor.key === "age")?.label,
+      "account age",
+    );
     assert.match(
       body.factors.find((factor) => factor.key === "builder")?.detail ?? "",
       /recent repos scanned/,
@@ -331,7 +334,7 @@ test("worker returns org signal profiles for organization accounts", async () =>
     assert.equal(body.orgs.length, 0);
     assert.ok(body.reasons.includes("organization account"));
     assert.ok(
-      body.factors.find((factor) => factor.key === "orgs") === undefined
+      body.factors.find((factor) => factor.key === "orgs") === undefined,
     );
     assert.equal(
       body.factors.find((factor) => factor.key === "builder")?.label,

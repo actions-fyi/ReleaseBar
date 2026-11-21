@@ -4,10 +4,16 @@ import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { RefreshJob } from "../../../src/types.js";
 import worker from "../../../worker/index.js";
-import { kvStore, signedJson, testDashboard } from "../dashboard-test-harness.js";
+import {
+  kvStore,
+  signedJson,
+  testDashboard,
+} from "../dashboard-test-harness.js";
 
 test("worker rejects oversized custom source requests", async () => {
-  const owners = Array.from({ length: 9 }, (_, index) => `owner-${index}`).join(",");
+  const owners = Array.from({ length: 9 }, (_, index) => `owner-${index}`).join(
+    ",",
+  );
   const response = await worker.fetch(
     new Request(`https://release.bar/api/dashboard?owners=${owners}`),
     {},
@@ -28,7 +34,11 @@ test("worker exposes GitHub App auth endpoints", async () => {
   };
   const context = { waitUntil: () => undefined };
 
-  const anonymous = await worker.fetch(new Request("https://release.bar/api/me"), env, context);
+  const anonymous = await worker.fetch(
+    new Request("https://release.bar/api/me"),
+    env,
+    context,
+  );
   assert.equal(anonymous.status, 200);
   assert.deepEqual(await anonymous.json(), {
     configured: true,
@@ -45,17 +55,28 @@ test("worker exposes GitHub App auth endpoints", async () => {
   });
 
   const login = await worker.fetch(
-    new Request("https://release.bar/api/auth/login?returnTo=/openclaw?owners=steipete"),
+    new Request(
+      "https://release.bar/api/auth/login?returnTo=/openclaw?owners=steipete",
+    ),
     env,
     context,
   );
   assert.equal(login.status, 302);
   const location = login.headers.get("location") ?? "";
-  assert.equal(location.startsWith("https://github.com/login/oauth/authorize?"), true);
+  assert.equal(
+    location.startsWith("https://github.com/login/oauth/authorize?"),
+    true,
+  );
   assert.match(location, /client_id=Iv123/);
-  assert.match(location, /redirect_uri=https%3A%2F%2Frelease.bar%2Fapi%2Fauth%2Fcallback/);
+  assert.match(
+    location,
+    /redirect_uri=https%3A%2F%2Frelease.bar%2Fapi%2Fauth%2Fcallback/,
+  );
   assert.equal(new URL(location).searchParams.has("scope"), false);
-  assert.match(login.headers.get("set-cookie") ?? "", /rd_oauth_state_[^=]+=.+HttpOnly/);
+  assert.match(
+    login.headers.get("set-cookie") ?? "",
+    /rd_oauth_state_[^=]+=.+HttpOnly/,
+  );
 
   const badCallback = await worker.fetch(
     new Request("https://release.bar/api/auth/callback?code=x&state=bad"),
@@ -63,7 +84,10 @@ test("worker exposes GitHub App auth endpoints", async () => {
     context,
   );
   assert.equal(badCallback.status, 400);
-  assert.equal((await env.DASHBOARD_CACHE.list({ prefix: "auth:funnel:v1:" })).keys.length, 0);
+  assert.equal(
+    (await env.DASHBOARD_CACHE.list({ prefix: "auth:funnel:v1:" })).keys.length,
+    0,
+  );
 
   const install = await worker.fetch(
     new Request("https://release.bar/api/auth/install?returnTo=/openclaw"),
@@ -88,13 +112,16 @@ test("worker binds OAuth callbacks to the initiating browser", async () => {
   };
   const context = { waitUntil: () => undefined };
   const login = await worker.fetch(
-    new Request(`https://release.bar/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`),
+    new Request(
+      `https://release.bar/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`,
+    ),
     env,
     context,
   );
   const location = new URL(login.headers.get("location") ?? "");
   const state = location.searchParams.get("state") ?? "";
-  const stateCookie = (login.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+  const stateCookie =
+    (login.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
   assert.equal(stateCookie.length < 256, true);
 
   const longLogin = await worker.fetch(
@@ -105,7 +132,9 @@ test("worker binds OAuth callbacks to the initiating browser", async () => {
     context,
   );
   const longState =
-    new URL(longLogin.headers.get("location") ?? "").searchParams.get("state") ?? "";
+    new URL(longLogin.headers.get("location") ?? "").searchParams.get(
+      "state",
+    ) ?? "";
   const longStatePayload = JSON.parse(
     Buffer.from(longState.split(".")[0] ?? "", "base64url").toString("utf8"),
   ) as { returnTo: string };
@@ -116,9 +145,16 @@ test("worker binds OAuth callbacks to the initiating browser", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
-    if (url.hostname === "github.com" && url.pathname === "/login/oauth/access_token") {
+    if (
+      url.hostname === "github.com" &&
+      url.pathname === "/login/oauth/access_token"
+    ) {
       oauthExchanges += 1;
-      return Response.json({ access_token: "user-token", token_type: "bearer", scope: "" });
+      return Response.json({
+        access_token: "user-token",
+        token_type: "bearer",
+        scope: "",
+      });
     }
     if (url.hostname === "api.github.com" && url.pathname === "/user") {
       return Response.json({
@@ -129,7 +165,10 @@ test("worker binds OAuth callbacks to the initiating browser", async () => {
         html_url: "https://github.com/octocat",
       });
     }
-    if (url.hostname === "api.github.com" && url.pathname === "/user/installations") {
+    if (
+      url.hostname === "api.github.com" &&
+      url.pathname === "/user/installations"
+    ) {
       return Response.json({ installations: [] });
     }
     throw new Error(`unexpected fetch ${url}`);
@@ -148,7 +187,10 @@ test("worker binds OAuth callbacks to the initiating browser", async () => {
     assert.equal(callback.status, 302);
     assert.equal(callback.headers.get("location"), returnTo);
     assert.match(callback.headers.get("set-cookie") ?? "", /rd_session=/);
-    assert.match(callback.headers.get("set-cookie") ?? "", /rd_oauth_state_[^=]+=;.*Max-Age=0/);
+    assert.match(
+      callback.headers.get("set-cookie") ?? "",
+      /rd_oauth_state_[^=]+=;.*Max-Age=0/,
+    );
     assert.equal(oauthExchanges, 1);
   } finally {
     globalThis.fetch = originalFetch;
@@ -200,7 +242,9 @@ test("worker queues shared cache warming after login discovers an installation",
       },
     },
   };
-  const context = { waitUntil: (promise: Promise<unknown>) => waits.push(promise) };
+  const context = {
+    waitUntil: (promise: Promise<unknown>) => waits.push(promise),
+  };
   const login = await worker.fetch(
     new Request("https://release.bar/api/auth/login?returnTo=/openclaw"),
     env,
@@ -208,13 +252,21 @@ test("worker queues shared cache warming after login discovers an installation",
   );
   const location = new URL(login.headers.get("location") ?? "");
   const state = location.searchParams.get("state") ?? "";
-  const stateCookie = (login.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+  const stateCookie =
+    (login.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
-    if (url.hostname === "github.com" && url.pathname === "/login/oauth/access_token") {
-      return Response.json({ access_token: "user-token", token_type: "bearer", scope: "" });
+    if (
+      url.hostname === "github.com" &&
+      url.pathname === "/login/oauth/access_token"
+    ) {
+      return Response.json({
+        access_token: "user-token",
+        token_type: "bearer",
+        scope: "",
+      });
     }
     if (url.hostname === "api.github.com" && url.pathname === "/user") {
       return Response.json({
@@ -225,7 +277,10 @@ test("worker queues shared cache warming after login discovers an installation",
         html_url: "https://github.com/openclaw",
       });
     }
-    if (url.hostname === "api.github.com" && url.pathname === "/user/installations") {
+    if (
+      url.hostname === "api.github.com" &&
+      url.pathname === "/user/installations"
+    ) {
       return Response.json({
         installations: [
           {
@@ -236,7 +291,8 @@ test("worker queues shared cache warming after login discovers an installation",
               avatar_url: "https://avatars.githubusercontent.com/u/2",
               html_url: "https://github.com/openclaw",
             },
-            html_url: "https://github.com/organizations/openclaw/settings/installations/77",
+            html_url:
+              "https://github.com/organizations/openclaw/settings/installations/77",
             repository_selection: "all",
             target_type: "Organization",
           },
@@ -315,7 +371,8 @@ test("worker remembers GitHub App installs without OAuth session", async () => {
           avatar_url: "https://avatars.githubusercontent.com/u/2",
           html_url: "https://github.com/openclaw",
         },
-        html_url: "https://github.com/organizations/openclaw/settings/installations/77",
+        html_url:
+          "https://github.com/organizations/openclaw/settings/installations/77",
         repository_selection: "all",
         target_type: "Organization",
       });
@@ -324,16 +381,21 @@ test("worker remembers GitHub App installs without OAuth session", async () => {
   };
   try {
     const install = await worker.fetch(
-      new Request("https://release.bar/api/auth/install?installation_id=77&setup_action=install", {
-        headers: { cookie: `rd_install_return=${installReturn}` },
-      }),
+      new Request(
+        "https://release.bar/api/auth/install?installation_id=77&setup_action=install",
+        {
+          headers: { cookie: `rd_install_return=${installReturn}` },
+        },
+      ),
       env,
       { waitUntil: (promise) => waits.push(promise) },
     );
     await Promise.all(waits);
     assert.equal(install.status, 302);
     assert.equal(install.headers.get("location"), "/openclaw");
-    const remembered = JSON.parse((await cache.get("auth:installation:v1:openclaw")) ?? "{}");
+    const remembered = JSON.parse(
+      (await cache.get("auth:installation:v1:openclaw")) ?? "{}",
+    );
     assert.equal(remembered.id, 77);
     assert.equal(remembered.accountLogin, "openclaw");
     assert.equal(remembered.repositorySelection, "all");
@@ -385,7 +447,8 @@ test("worker reports GitHub App installation coverage for signed-in users", asyn
               avatar_url: "https://avatars.githubusercontent.com/u/2",
               html_url: "https://github.com/openclaw",
             },
-            html_url: "https://github.com/organizations/openclaw/settings/installations/1",
+            html_url:
+              "https://github.com/organizations/openclaw/settings/installations/1",
             repository_selection: "all",
             target_type: "Organization",
           },
@@ -496,7 +559,9 @@ test("worker detects the signed-in user's GitHub App install with app auth fallb
     assert.equal(body.installNeeded, false);
     assert.equal(body.installReason, null);
     assert.deepEqual(
-      body.installations.map((installation: { accountLogin: string }) => installation.accountLogin),
+      body.installations.map(
+        (installation: { accountLogin: string }) => installation.accountLogin,
+      ),
       ["steipete"],
     );
   } finally {
@@ -552,7 +617,10 @@ test("worker does not prompt signed-in users to install the app for third-party 
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(body.installNeeded, false);
-    assert.match(body.installReason, /shared API quota unless f\/prompts\.chat installs/);
+    assert.match(
+      body.installReason,
+      /shared API quota unless f\/prompts\.chat installs/,
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -664,7 +732,8 @@ test("worker remembers a just-completed GitHub App install while GitHub catches 
               avatar_url: "https://avatars.githubusercontent.com/u/2",
               html_url: "https://github.com/openclaw",
             },
-            html_url: "https://github.com/organizations/openclaw/settings/installations/1",
+            html_url:
+              "https://github.com/organizations/openclaw/settings/installations/1",
             repository_selection: "all",
             target_type: "Organization",
           },
@@ -690,16 +759,23 @@ test("worker remembers a just-completed GitHub App install while GitHub catches 
   };
   try {
     const install = await worker.fetch(
-      new Request("https://release.bar/api/auth/install?installation_id=99&setup_action=install", {
-        headers: { cookie: `rd_session=${authCookie}; rd_install_return=${installReturn}` },
-      }),
+      new Request(
+        "https://release.bar/api/auth/install?installation_id=99&setup_action=install",
+        {
+          headers: {
+            cookie: `rd_session=${authCookie}; rd_install_return=${installReturn}`,
+          },
+        },
+      ),
       env,
       { waitUntil: () => undefined },
     );
     assert.equal(install.status, 302);
     assert.equal(install.headers.get("location"), "/steipete");
 
-    const stored = JSON.parse((await cache.get(`auth:session:${sessionId}`)) ?? "{}");
+    const stored = JSON.parse(
+      (await cache.get(`auth:session:${sessionId}`)) ?? "{}",
+    );
     const acknowledgedAt = stored.installationsUpdatedAt;
     const remembered = stored.installations.find(
       (installation: { id: number }) => installation.id === 99,
@@ -720,11 +796,14 @@ test("worker remembers a just-completed GitHub App install while GitHub catches 
     assert.equal(body.installReason, null);
     assert.equal(
       body.installations.some(
-        (installation: { accountLogin: string }) => installation.accountLogin === "steipete",
+        (installation: { accountLogin: string }) =>
+          installation.accountLogin === "steipete",
       ),
       true,
     );
-    const afterMe = JSON.parse((await cache.get(`auth:session:${sessionId}`)) ?? "{}");
+    const afterMe = JSON.parse(
+      (await cache.get(`auth:session:${sessionId}`)) ?? "{}",
+    );
     assert.equal(afterMe.installationsUpdatedAt, acknowledgedAt);
   } finally {
     globalThis.fetch = originalFetch;
@@ -759,15 +838,20 @@ test("worker ignores install callback acknowledgements without signed return sta
   };
   try {
     const response = await worker.fetch(
-      new Request("https://release.bar/api/auth/install?installation_id=99&setup_action=install", {
-        headers: { cookie: `rd_session=${authCookie}` },
-      }),
+      new Request(
+        "https://release.bar/api/auth/install?installation_id=99&setup_action=install",
+        {
+          headers: { cookie: `rd_session=${authCookie}` },
+        },
+      ),
       env,
       { waitUntil: () => undefined },
     );
     assert.equal(response.status, 302);
     assert.equal(response.headers.get("location"), "/");
-    const stored = JSON.parse((await cache.get(`auth:session:${sessionId}`)) ?? "{}");
+    const stored = JSON.parse(
+      (await cache.get(`auth:session:${sessionId}`)) ?? "{}",
+    );
     assert.equal(stored.installations == null, true);
   } finally {
     globalThis.fetch = originalFetch;
@@ -802,7 +886,8 @@ test("worker records server-verified install callbacks without signed return sta
           avatar_url: "https://avatars.githubusercontent.com/u/101",
           html_url: "https://github.com/outside-org",
         },
-        html_url: "https://github.com/organizations/outside-org/settings/installations/101",
+        html_url:
+          "https://github.com/organizations/outside-org/settings/installations/101",
         repository_selection: "all",
         target_type: "Organization",
       });
@@ -811,13 +896,17 @@ test("worker records server-verified install callbacks without signed return sta
   };
   try {
     const response = await worker.fetch(
-      new Request("https://release.bar/api/auth/install?installation_id=101&setup_action=install"),
+      new Request(
+        "https://release.bar/api/auth/install?installation_id=101&setup_action=install",
+      ),
       env,
       { waitUntil: () => undefined },
     );
     assert.equal(response.status, 302);
     assert.equal(response.headers.get("location"), "/");
-    const remembered = JSON.parse((await cache.get("auth:installation:v1:outside-org")) ?? "{}");
+    const remembered = JSON.parse(
+      (await cache.get("auth:installation:v1:outside-org")) ?? "{}",
+    );
     assert.equal(remembered.id, 101);
     assert.equal(remembered.accountLogin, "outside-org");
     const events = await cache.list({ prefix: "auth:funnel:v1:" });
@@ -831,6 +920,12 @@ test("admin logins come from ADMIN_LOGINS and default to nobody", async () => {
   const { isAdminLogin } = await import("../../../worker/auth-oauth.js");
   assert.equal(isAdminLogin("steipete", {}), false);
   assert.equal(isAdminLogin("anyone", { ADMIN_LOGINS: "" }), false);
-  assert.equal(isAdminLogin("Octo", { ADMIN_LOGINS: "first, octo ,third" }), true);
-  assert.equal(isAdminLogin("other", { ADMIN_LOGINS: "first, octo ,third" }), false);
+  assert.equal(
+    isAdminLogin("Octo", { ADMIN_LOGINS: "first, octo ,third" }),
+    true,
+  );
+  assert.equal(
+    isAdminLogin("other", { ADMIN_LOGINS: "first, octo ,third" }),
+    false,
+  );
 });

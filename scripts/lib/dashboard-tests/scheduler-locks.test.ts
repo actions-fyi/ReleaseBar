@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
-import type { DashboardPayload, RefreshJob, RefreshTarget } from "../../../src/types.js";
+import type {
+  DashboardPayload,
+  RefreshJob,
+  RefreshTarget,
+} from "../../../src/types.js";
 import worker, { DashboardBuildLock } from "../../../worker/index.js";
-import { kvStore, testDashboard, testProject } from "../dashboard-test-harness.js";
+import {
+  kvStore,
+  testDashboard,
+  testProject,
+} from "../dashboard-test-harness.js";
 
 test("worker Queue messages stay bounded when profile filters are large", async () => {
   const key = dashboardCacheKey({
@@ -81,7 +89,9 @@ test("worker Queue messages stay bounded when profile filters are large", async 
   assert.equal(snapshot.target?.profileSnapshotKey, profileSnapshotKey);
   assert.equal(JSON.stringify(snapshot.target).length < 4096, true);
   assert.equal(await cache.get("refresh:target-index:v1:ready"), null);
-  const storedProfile = JSON.parse((await cache.get(profileSnapshotKey)) ?? "{}") as {
+  const storedProfile = JSON.parse(
+    (await cache.get(profileSnapshotKey)) ?? "{}",
+  ) as {
     hiddenRepos?: string[];
   };
   assert.equal(storedProfile.hiddenRepos?.length, 5000);
@@ -90,7 +100,10 @@ test("worker Queue messages stay bounded when profile filters are large", async 
 test("owner count scheduling rotates beyond a deferred owner cap", async () => {
   const now = new Date().toISOString();
   const staleAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const owners = Array.from({ length: 21 }, (_, index) => `owner${String(index).padStart(3, "0")}`);
+  const owners = Array.from(
+    { length: 21 },
+    (_, index) => `owner${String(index).padStart(3, "0")}`,
+  );
   const entries = Object.fromEntries(
     owners.flatMap((owner) => {
       const key = dashboardCacheKey({
@@ -129,7 +142,9 @@ test("owner count scheduling rotates beyond a deferred owner cap", async () => {
             knownRepos: [project.fullName.toLowerCase()],
             removedRepos: {},
             projectMetadataUpdatedAt: { [project.fullName.toLowerCase()]: now },
-            projectCountsUpdatedAt: { [project.fullName.toLowerCase()]: staleAt },
+            projectCountsUpdatedAt: {
+              [project.fullName.toLowerCase()]: staleAt,
+            },
             projects: [project],
           }),
         ],
@@ -374,7 +389,8 @@ test("dashboard build lock only releases the matching lease token", async () => 
     ).status,
     204,
   );
-  const secondExpiresAt = (storage.get("lock") as { expiresAt: number }).expiresAt;
+  const secondExpiresAt = (storage.get("lock") as { expiresAt: number })
+    .expiresAt;
   assert.equal(
     (
       await lock.fetch(
@@ -397,7 +413,10 @@ test("dashboard build lock only releases the matching lease token", async () => 
     ).status,
     204,
   );
-  assert.equal((storage.get("lock") as { expiresAt: number }).expiresAt >= secondExpiresAt, true);
+  assert.equal(
+    (storage.get("lock") as { expiresAt: number }).expiresAt >= secondExpiresAt,
+    true,
+  );
   assert.equal(
     (
       await lock.fetch(
@@ -628,7 +647,9 @@ test("worker falls back to KV progress when the Durable Object is unavailable", 
       { waitUntil: (promise) => waits.push(promise) },
     );
     assert.equal(response.status, 200);
-    const fallback = JSON.parse((await cache.get(`progress:v1:${key}`)) ?? "{}") as {
+    const fallback = JSON.parse(
+      (await cache.get(`progress:v1:${key}`)) ?? "{}",
+    ) as {
       durableFallback?: boolean;
     };
     assert.equal(fallback.durableFallback, true);
@@ -705,7 +726,9 @@ test("worker resumes marked KV progress after an authoritative Durable Object mi
   );
   const cache = kvStore({
     [`progress:v1:${key}`]: JSON.stringify({
-      scannedRepos: progressProjects.map((project) => project.fullName.toLowerCase()),
+      scannedRepos: progressProjects.map((project) =>
+        project.fullName.toLowerCase(),
+      ),
       projects: progressProjects,
       updatedAt: "2026-06-11T07:00:00Z",
       durableFallback: true,
@@ -802,7 +825,9 @@ test("worker resumes marked KV progress after an authoritative Durable Object mi
 
   assert.equal(acked, true);
   assert.deepEqual(hydratedRepos, ["repo-13"]);
-  const dashboard = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
+  const dashboard = JSON.parse(
+    (await cache.get(key)) ?? "{}",
+  ) as DashboardPayload;
   assert.equal(dashboard.projects.length, 13);
   assert.equal(dashboard.cache?.progress?.done, true);
 });

@@ -3,7 +3,12 @@ import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, RefreshTarget } from "../../../src/types.js";
 import worker, { DashboardBuildLock } from "../../../worker/index.js";
-import { durableLocks, kvStore, testDashboard, testProject } from "../dashboard-test-harness.js";
+import {
+  durableLocks,
+  kvStore,
+  testDashboard,
+  testProject,
+} from "../dashboard-test-harness.js";
 
 test("push webhooks bypass terminal target backoff before invalidating caches", async () => {
   const owner = "backedoff";
@@ -31,9 +36,13 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
     terminalBackoffUntil: "2999-01-01T00:00:00Z",
   };
   const cache = kvStore({
-    [key]: JSON.stringify(testDashboard(owner, [testProject({ owner, name: "repo" })])),
+    [key]: JSON.stringify(
+      testDashboard(owner, [testProject({ owner, name: "repo" })]),
+    ),
     "hot:v3": JSON.stringify(
-      testDashboard("hot", [testProject({ owner, name: "repo", commitsSinceRelease: 5 })]),
+      testDashboard("hot", [
+        testProject({ owner, name: "repo", commitsSinceRelease: 5 }),
+      ]),
     ),
     [`refresh:target:v1:${key}`]: JSON.stringify(target),
   });
@@ -92,7 +101,9 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
   );
 
   assert.equal(await cache.get(key), null);
-  const invalidatedHot = JSON.parse((await cache.get("hot:v3")) ?? "{}") as DashboardPayload;
+  const invalidatedHot = JSON.parse(
+    (await cache.get("hot:v3")) ?? "{}",
+  ) as DashboardPayload;
   assert.equal(invalidatedHot.cache?.state, "fresh");
   assert.ok(Date.parse((await cache.get("hot:v3:invalidated-at")) ?? "") > 0);
   assert.deepEqual(dashboardCacheAtEnqueue, [null]);
@@ -101,7 +112,8 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
       (message) =>
         Boolean(message) &&
         typeof message === "object" &&
-        (message as { kind?: unknown; targetKey?: unknown }).kind === "dashboard" &&
+        (message as { kind?: unknown; targetKey?: unknown }).kind ===
+          "dashboard" &&
         (message as { targetKey?: unknown }).targetKey === key,
     ),
     true,
@@ -118,7 +130,9 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
   queued.length = 0;
   await cache.put(
     key,
-    JSON.stringify(testDashboard(owner, [testProject({ owner, name: "repo" })])),
+    JSON.stringify(
+      testDashboard(owner, [testProject({ owner, name: "repo" })]),
+    ),
   );
   await worker.queue(
     {
@@ -154,11 +168,14 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
     (message) =>
       Boolean(message) &&
       typeof message === "object" &&
-      (message as { kind?: unknown; delivery?: unknown }).kind === "github-webhook" &&
+      (message as { kind?: unknown; delivery?: unknown }).kind ===
+        "github-webhook" &&
       (message as { delivery?: unknown }).delivery === "delivery-reserved-push",
   );
   assert.ok(requeued === undefined);
-  const targetStub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName(key));
+  const targetStub = env.DASHBOARD_LOCKS.get(
+    env.DASHBOARD_LOCKS.idFromName(key),
+  );
   const release = await targetStub.fetch(
     new Request("https://releasebar.internal/job/release", {
       method: "POST",
@@ -169,13 +186,18 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
     }),
   );
   assert.equal(release.status, 200);
-  assert.equal(((await release.json()) as { reason?: string }).reason, "webhook:push");
+  assert.equal(
+    ((await release.json()) as { reason?: string }).reason,
+    "webhook:push",
+  );
 });
 
 test("reserved webhook refreshes queue one follow-up after the active job", async () => {
   const owner = "reserved-fallback";
   const now = new Date().toISOString();
-  const finalDeliveryStartedAt = new Date(Date.parse(now) + 60_000).toISOString();
+  const finalDeliveryStartedAt = new Date(
+    Date.parse(now) + 60_000,
+  ).toISOString();
   const key = dashboardCacheKey({
     owner,
     includeUnreleased: true,
@@ -198,7 +220,9 @@ test("reserved webhook refreshes queue one follow-up after the active job", asyn
     failureCount: 0,
   };
   const cache = kvStore({
-    [key]: JSON.stringify(testDashboard(owner, [testProject({ owner, name: "sibling" })])),
+    [key]: JSON.stringify(
+      testDashboard(owner, [testProject({ owner, name: "sibling" })]),
+    ),
     [`refresh:target:v1:${key}`]: JSON.stringify(target),
   });
   const queued: unknown[] = [];
@@ -217,7 +241,9 @@ test("reserved webhook refreshes queue one follow-up after the active job", asyn
     idFromName: locks.idFromName,
     get: locks.get,
   };
-  const targetStub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName(key));
+  const targetStub = env.DASHBOARD_LOCKS.get(
+    env.DASHBOARD_LOCKS.idFromName(key),
+  );
   const reservation = await targetStub.fetch(
     new Request("https://releasebar.internal/job/reserve", {
       method: "POST",
@@ -266,8 +292,10 @@ test("reserved webhook refreshes queue one follow-up after the active job", asyn
     (message) =>
       Boolean(message) &&
       typeof message === "object" &&
-      (message as { kind?: unknown; delivery?: unknown }).kind === "github-webhook" &&
-      (message as { delivery?: unknown }).delivery === "delivery-reserved-fallback",
+      (message as { kind?: unknown; delivery?: unknown }).kind ===
+        "github-webhook" &&
+      (message as { delivery?: unknown }).delivery ===
+        "delivery-reserved-fallback",
   );
   assert.ok(requeuedWebhook === undefined);
   assert.equal(acknowledged, true);
@@ -312,7 +340,9 @@ test("reserved webhook refreshes queue one follow-up after the active job", asyn
       Boolean(message) &&
       typeof message === "object" &&
       (message as { kind?: unknown; reason?: unknown }).kind === "dashboard" &&
-      String((message as { reason?: unknown }).reason).includes("repository-publicized:follow-up"),
+      String((message as { reason?: unknown }).reason).includes(
+        "repository-publicized:follow-up",
+      ),
   ) as { targetKey?: string } | undefined;
   assert.equal(followup?.targetKey, key);
   assert.equal(delays.at(-1), 0);
@@ -396,7 +426,10 @@ test("worker acknowledges webhook jobs after the durable requeue limit", async (
 test("processed webhook retries take over followers behind a stale matching lease", async () => {
   const now = new Date().toISOString();
   const values = new Map<string, unknown>([
-    ["webhook-deliveries", [{ id: "delivery-leader", processedAt: Date.now() }]],
+    [
+      "webhook-deliveries",
+      [{ id: "delivery-leader", processedAt: Date.now() }],
+    ],
     [
       "webhook-active",
       {
@@ -592,7 +625,9 @@ test("worker quickly requeues busy webhook jobs without consuming their failure 
             acknowledged = true;
           },
           retry() {
-            throw new Error("durably requeued webhook should not retry the original message");
+            throw new Error(
+              "durably requeued webhook should not retry the original message",
+            );
           },
         },
       ],
@@ -682,7 +717,10 @@ test("terminal webhook fanout clears admission and processing deduplication", as
     { waitUntil: () => undefined },
   );
 
-  assert.deepEqual(abandoned.sort(), ["github-webhook-admission", "github-webhook-process:owner"]);
+  assert.deepEqual(abandoned.sort(), [
+    "github-webhook-admission",
+    "github-webhook-process:owner",
+  ]);
   assert.equal(acknowledged, true);
   assert.equal(retried, false);
 });
