@@ -137,6 +137,12 @@ remotes:
       labels:
         contents: read
         issues: write
+  actions-fyi/shared-workflows/.github/workflows/_oxfmt.yml@v4.0.0:
+    sha: b8c148810a94f0eeebe7f8d46c237075ba88c510
+    kind: workflow
+    jobPermissions:
+      oxfmt:
+        contents: read
   actions-fyi/shared-workflows/.github/workflows/_pr-metadata.yml@v4.0.0:
     sha: b8c148810a94f0eeebe7f8d46c237075ba88c510
     kind: workflow
