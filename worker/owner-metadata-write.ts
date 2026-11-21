@@ -254,7 +254,11 @@ export function applyOwnerMetadataMutation(
     const countsUpdatedAt = mutation.countsUpdatedAt;
     const openIssues = project.openIssues;
     const openPullRequests = project.openPullRequests;
-    const incomingHasCounts = openIssues !== null && openPullRequests !== null && !!countsUpdatedAt;
+    const incomingHasCounts =
+      openIssues !== null &&
+      openPullRequests !== null &&
+      countsUpdatedAt !== null &&
+      countsUpdatedAt !== "";
     const incomingProjectCountsAreNewer =
       incomingHasCounts &&
       safeIso(mutation.countsUpdatedAt) > safeIso(projectCountsUpdatedAt[fullName]);
