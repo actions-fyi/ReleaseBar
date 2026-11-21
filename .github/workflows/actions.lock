@@ -9,6 +9,7 @@ workflows:
     '.github/workflows/claude.yml': []
     '.github/workflows/cloudflare.yml': []
     '.github/workflows/codeql.yml': []
+    '.github/workflows/coverage.yml': []
     '.github/workflows/flowpact.yml': []
     '.github/workflows/label-sync.yml': []
     '.github/workflows/pr-metadata.yml': []
