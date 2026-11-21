@@ -355,14 +355,15 @@ export async function socialImage(card: SocialCard): Promise<Response> {
 }
 
 export async function socialRendererBytes(request: Request, env: Env): Promise<Uint8Array[]> {
-  if (!env.ASSETS) throw new Error("missing assets binding");
+  const assets = env.ASSETS;
+  if (!assets) throw new Error("missing assets binding");
   if (socialRendererReady) return socialRendererReady;
   socialRendererReady = (async () => {
     const fetchAsset = async (pathname: string) => {
       const url = new URL(request.url);
       url.pathname = pathname;
       url.search = "";
-      const response = await env.ASSETS!.fetch(new Request(url, request));
+      const response = await assets.fetch(new Request(url, request));
       if (!response.ok) throw new Error(`missing social renderer asset ${pathname}`);
       return new Uint8Array(await response.arrayBuffer());
     };

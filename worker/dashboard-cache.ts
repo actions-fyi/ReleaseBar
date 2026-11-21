@@ -333,14 +333,12 @@ export function normalizeOwnerMetadataSnapshot(
     snapshot.projectCountsUpdatedAt &&
     typeof snapshot.projectCountsUpdatedAt === "object" &&
     !Array.isArray(snapshot.projectCountsUpdatedAt);
+  const countsUpdatedAt = snapshot.countsUpdatedAt;
   const projectCountsUpdatedAt = hasCountClocks
     ? normalizeOwnerObservationMap(snapshot.projectCountsUpdatedAt)
     : Object.fromEntries(
-        snapshot.countsUpdatedAt
-          ? snapshot.projects.map((project) => [
-              project.fullName.toLowerCase(),
-              snapshot.countsUpdatedAt!,
-            ])
+        countsUpdatedAt
+          ? snapshot.projects.map((project) => [project.fullName.toLowerCase(), countsUpdatedAt])
           : [],
       );
   return {

@@ -114,6 +114,7 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
       (message as { kind?: unknown }).kind === "dashboard",
   ) as { id?: string } | undefined;
   assert.equal(typeof activeJob?.id, "string");
+  assert.ok(activeJob);
   queued.length = 0;
   await cache.put(
     key,
@@ -162,7 +163,7 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
     new Request("https://releasebar.internal/job/release", {
       method: "POST",
       body: JSON.stringify({
-        jobId: activeJob!.id,
+        jobId: activeJob.id,
         consumeDirty: true,
       }),
     }),

@@ -642,13 +642,13 @@ export async function buildWorkTrend(
   );
   if (cachedCounts.every((count) => count !== null)) {
     const [issuesOpened30d, issuesClosed30d, pullRequestsOpened30d, pullRequestsClosed30d] =
-      cachedCounts as number[];
+      cachedCounts as [number, number, number, number];
     return {
       since,
-      issuesOpened30d: issuesOpened30d!,
-      issuesClosed30d: issuesClosed30d!,
-      pullRequestsOpened30d: pullRequestsOpened30d!,
-      pullRequestsClosed30d: pullRequestsClosed30d!,
+      issuesOpened30d,
+      issuesClosed30d,
+      pullRequestsOpened30d,
+      pullRequestsClosed30d,
     };
   }
   if (token) {

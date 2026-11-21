@@ -262,10 +262,11 @@ export async function enqueueWebhookFanout(
 }
 
 export async function webhookPriorityBatchActive(env: Env, targetKeys: string[]): Promise<boolean> {
-  if (!env.DASHBOARD_LOCKS || targetKeys.length === 0) return false;
+  const locks = env.DASHBOARD_LOCKS;
+  if (!locks || targetKeys.length === 0) return false;
   const active = await mapConcurrent(targetKeys, 8, async (targetKey) => {
-    const id = env.DASHBOARD_LOCKS!.idFromName(targetKey);
-    const response = await env.DASHBOARD_LOCKS!.get(id).fetch(
+    const id = locks.idFromName(targetKey);
+    const response = await locks.get(id).fetch(
       new Request("https://releasebar.internal/job/status", {
         method: "POST",
       }),
@@ -405,12 +406,13 @@ export async function abandonGitHubWebhookDelivery(
   delivery: string,
   payload: Record<string, unknown>,
 ): Promise<void> {
-  if (!env.DASHBOARD_LOCKS) return;
+  const locks = env.DASHBOARD_LOCKS;
+  if (!locks) return;
   const owner = webhookRepo(payload)?.owner ?? delivery;
   const objectNames = ["github-webhook-admission", `github-webhook-process:${owner}`];
   const responses = await Promise.all(
     objectNames.map((name) =>
-      env.DASHBOARD_LOCKS!.get(env.DASHBOARD_LOCKS!.idFromName(name)).fetch(
+      locks.get(locks.idFromName(name)).fetch(
         new Request("https://releasebar.internal/webhook/abandon", {
           method: "POST",
           headers: { "content-type": "application/json" },

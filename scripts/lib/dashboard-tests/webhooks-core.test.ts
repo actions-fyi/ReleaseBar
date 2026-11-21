@@ -63,6 +63,7 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       generatedAt: now,
     },
   };
+  assert.ok(dashboard.cache);
   const target: RefreshTarget = {
     key,
     kind: "dashboard",
@@ -172,7 +173,7 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
         { type: "user", login: "other" },
       ],
       cache: {
-        ...dashboard.cache!,
+        ...dashboard.cache,
         countsUpdatedAt: combinedCountsUpdatedAt,
       },
     } satisfies DashboardPayload),
@@ -301,7 +302,8 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
         continue;
       }
       queued.splice(queuedIndex, 1);
-      await env.DASHBOARD_LOCKS!.get(env.DASHBOARD_LOCKS!.idFromName(queuedJob.targetKey)).fetch(
+      assert.ok(env.DASHBOARD_LOCKS);
+      await env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName(queuedJob.targetKey)).fetch(
         new Request("https://releasebar.internal/job/release", {
           method: "POST",
           body: JSON.stringify({ jobId: queuedJob.id }),
@@ -556,8 +558,10 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     );
     assert.equal(delivery7ImmediateTargets?.includes(key), true);
     assert.equal(delivery7ImmediateTargets.length <= 25, true);
-    assert.equal(delivery7ImmediateTargets.includes(ownerLegacyPriorityTargets.at(-1)!.key), true);
-    assert.equal(delivery7ImmediateTargets.includes(ownerLegacyPriorityTargets[0]!.key), false);
+    const newestLegacyPriorityTarget = ownerLegacyPriorityTargets.at(-1);
+    assert.ok(newestLegacyPriorityTarget);
+    assert.equal(delivery7ImmediateTargets.includes(newestLegacyPriorityTarget.key), true);
+    assert.equal(delivery7ImmediateTargets.includes(ownerLegacyPriorityTargets[0].key), false);
     assert.equal(
       ownerLegacyPriorityTargets.every(({ key: priorityKey }) =>
         queuedDashboardTargets.includes(priorityKey),

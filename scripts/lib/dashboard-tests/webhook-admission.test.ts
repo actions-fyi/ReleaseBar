@@ -111,7 +111,7 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
   });
   await cache.put(
     `refresh:target-index:v1:repo:${encodeURIComponent(`${owner}/repo`)}:duplicate`,
-    JSON.stringify(targets[0]!.key),
+    JSON.stringify(targets[0].key),
   );
   await cache.put(
     `refresh:target-index:v1:repo:${encodeURIComponent(`${owner}/repo`)}:degraded`,
@@ -151,12 +151,12 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
     );
     assert.equal(indexed.status, 204);
   }
-  await cache.delete(`refresh:target:v1:${targets[durableOnlyTargetIndex]!.key}`);
+  await cache.delete(`refresh:target:v1:${targets[durableOnlyTargetIndex].key}`);
   const durableRepoIndex = env.DASHBOARD_LOCKS.get(
     env.DASHBOARD_LOCKS.idFromName(`refresh-target-index:repo:${owner}/repo`),
   );
   const staleRepoDuplicate = {
-    ...targets[newestTargetIndex]!,
+    ...targets[newestTargetIndex],
     lastSeenAt: new Date(Date.parse(now) - 2 * 24 * 60 * 60 * 1_000).toISOString(),
   };
   const duplicate = await durableRepoIndex.fetch(
@@ -270,18 +270,34 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
     );
     assert.equal(releaseResponse.status, 204);
   }
+  const movedTarget = targets[movedTargetIndex];
+  const newestTarget = targets[newestTargetIndex];
+  const staleTarget = targets[staleTargetIndex];
+  const fallbackTarget = targets[fallbackTargetIndex];
+  const durableOnlyTarget = targets[durableOnlyTargetIndex];
+  const firstReleaseTarget = targets[firstReleaseTargetIndex];
+  const secondTarget = targets[1];
+  const lastTarget = targets.at(-1);
+  assert.ok(movedTarget);
+  assert.ok(newestTarget);
+  assert.ok(staleTarget);
+  assert.ok(fallbackTarget);
+  assert.ok(durableOnlyTarget);
+  assert.ok(firstReleaseTarget);
+  assert.ok(secondTarget);
+  assert.ok(lastTarget);
   const moved = await durableOwnerIndex.fetch(
     new Request("https://releasebar.internal/target-index/upsert", {
       method: "POST",
       body: JSON.stringify({
-        ...targets[movedTargetIndex]!,
+        ...movedTarget,
         lastSeenAt: new Date(Date.parse(now) + 4_000).toISOString(),
       }),
     }),
   );
   assert.equal(moved.status, 204);
   const rebuiltPrioritizedCache = JSON.stringify(testDashboard(owner, [project]));
-  await cache.put(targets[newestTargetIndex]!.key, rebuiltPrioritizedCache);
+  await cache.put(newestTarget.key, rebuiltPrioritizedCache);
   const pageSizes = [
     queued.filter((message): message is RefreshJob => message.kind === "dashboard").length,
   ];
@@ -291,6 +307,7 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
     );
     if (fanoutIndex < 0) break;
     const [fanout] = queued.splice(fanoutIndex, 1);
+    assert.ok(fanout);
     const before = queued.filter(
       (message): message is RefreshJob => message.kind === "dashboard",
     ).length;
@@ -298,7 +315,7 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
       {
         messages: [
           {
-            body: fanout!,
+            body: fanout,
             attempts: 1,
             ack: () => undefined,
             retry: () => undefined,
@@ -325,32 +342,30 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
     targets.length - metadataOnlyTargetIndexes.size,
   );
   assert.equal(
-    dashboardJobs.some((job) => job.targetKey === targets[staleTargetIndex]!.key),
+    dashboardJobs.some((job) => job.targetKey === staleTarget.key),
     false,
   );
   assert.equal(
-    dashboardJobs.some((job) => job.targetKey === targets[fallbackTargetIndex]!.key),
+    dashboardJobs.some((job) => job.targetKey === fallbackTarget.key),
     true,
   );
   assert.equal(
-    dashboardJobs.some((job) => job.targetKey === targets[movedTargetIndex]!.key),
+    dashboardJobs.some((job) => job.targetKey === movedTarget.key),
     true,
   );
   assert.equal(
-    dashboardJobs.some((job) => job.targetKey === targets[durableOnlyTargetIndex]!.key),
+    dashboardJobs.some((job) => job.targetKey === durableOnlyTarget.key),
     true,
   );
   assert.equal(
     dashboardJobs.some((job) => job.targetKey === degradedRepoTarget.key),
     true,
   );
-  assert.equal(dashboardJobs[0]?.targetKey, targets[newestTargetIndex]!.key);
-  const firstJob = dashboardJobs.find(
-    (job) => job.targetKey === targets[firstReleaseTargetIndex]!.key,
-  );
+  assert.equal(dashboardJobs[0]?.targetKey, newestTarget.key);
+  const firstJob = dashboardJobs.find((job) => job.targetKey === firstReleaseTarget.key);
   assert.ok(firstJob);
   const firstTargetStub = env.DASHBOARD_LOCKS.get(
-    env.DASHBOARD_LOCKS.idFromName(targets[firstReleaseTargetIndex]!.key),
+    env.DASHBOARD_LOCKS.idFromName(firstReleaseTarget.key),
   );
   const release = await firstTargetStub.fetch(
     new Request("https://releasebar.internal/job/release", {
@@ -359,11 +374,11 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
     }),
   );
   assert.equal(release.status, 204);
-  assert.equal(await cache.get(targets[staleTargetIndex]!.key), null);
-  assert.notEqual(await cache.get(targets[1]!.key), null);
-  assert.equal(await cache.get(targets[firstReleaseTargetIndex]!.key), null);
-  assert.equal(await cache.get(targets[newestTargetIndex]!.key), rebuiltPrioritizedCache);
-  assert.equal(await cache.get(targets.at(-1)!.key), null);
+  assert.equal(await cache.get(staleTarget.key), null);
+  assert.notEqual(await cache.get(secondTarget.key), null);
+  assert.equal(await cache.get(firstReleaseTarget.key), null);
+  assert.equal(await cache.get(newestTarget.key), rebuiltPrioritizedCache);
+  assert.equal(await cache.get(lastTarget.key), null);
   assert.equal(await cache.get(degradedRepoTarget.key), null);
 });
 

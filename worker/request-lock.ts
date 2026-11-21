@@ -470,13 +470,14 @@ export class DashboardBuildLock {
           ]);
           const pending = (storedPending ?? []).flatMap((entry) => {
             const deliveries = entry.deliveries.filter((item) => item !== delivery);
-            if (deliveries.length === 0) return [];
+            const lastDelivery = deliveries.at(-1);
+            if (lastDelivery === undefined) return [];
             return [
               {
                 ...entry,
                 job:
                   entry.job.delivery === delivery
-                    ? { ...entry.job, delivery: deliveries.at(-1)! }
+                    ? { ...entry.job, delivery: lastDelivery }
                     : entry.job,
                 deliveries,
               },
@@ -500,7 +501,8 @@ export class DashboardBuildLock {
             if (!this.env.REFRESH_QUEUE) {
               throw new Error("webhook queue unavailable");
             }
-            const next = pendingWebhookBatch(pending, "")[0]!;
+            const next = pendingWebhookBatch(pending, "")[0];
+            if (!next) throw new Error("webhook batch unavailable");
             await this.env.REFRESH_QUEUE.send({
               ...next.job,
               id: randomNonce(),
@@ -513,8 +515,11 @@ export class DashboardBuildLock {
           ? this.state.blockConcurrencyWhile(abandonDelivery)
           : abandonDelivery();
       }
+      // Every path below needs both; the check above enforces it for non-abandon paths.
+      if (!event || !payload) return new Response(null, { status: 400 });
       if (url.pathname === "/webhook/enqueue") {
-        if (!this.env.REFRESH_QUEUE) {
+        const queue = this.env.REFRESH_QUEUE;
+        if (!queue) {
           return jsonResponse({ error: "webhook queue unavailable" }, 503, {
             "cache-control": "no-store",
           });
@@ -529,12 +534,12 @@ export class DashboardBuildLock {
               "cache-control": "no-store",
             });
           }
-          await this.env.REFRESH_QUEUE!.send({
+          await queue.send({
             kind: "github-webhook",
             id: randomNonce(),
             event,
             delivery,
-            payload: payload!,
+            payload,
             createdAt: new Date(now).toISOString(),
             attempts: 0,
           });
@@ -555,7 +560,7 @@ export class DashboardBuildLock {
         id: jobId,
         event,
         delivery,
-        payload: payload!,
+        payload,
         createdAt: typeof body?.createdAt === "string" ? body.createdAt : new Date().toISOString(),
         attempts: typeof body?.attempts === "number" ? body.attempts : 0,
       } satisfies GitHubWebhookJob;
@@ -697,7 +702,8 @@ export class DashboardBuildLock {
             (await this.state.storage.get<StoredWebhookPending[]>("webhook-pending")) ?? [];
           if (pending.length > 0) {
             if (!this.env.REFRESH_QUEUE) throw new Error("webhook queue unavailable");
-            const next = pendingWebhookBatch(pending, "")[0]!;
+            const next = pendingWebhookBatch(pending, "")[0];
+            if (!next) throw new Error("webhook batch unavailable");
             await this.env.REFRESH_QUEUE.send({
               ...next.job,
               id: randomNonce(),

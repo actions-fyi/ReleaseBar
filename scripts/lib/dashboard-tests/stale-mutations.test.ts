@@ -741,13 +741,14 @@ test("worker preserves field freshness when resuming an older progress checkpoin
     assert.equal(resumed.cache?.ciUpdatedAt, ciUpdatedAt);
     await Promise.all(waits);
     assert.equal(sentJobs.length, 1);
+    assert.ok(sentJobs[0]);
 
     let acknowledged = false;
     await worker.queue(
       {
         messages: [
           {
-            body: sentJobs[0]!,
+            body: sentJobs[0],
             attempts: 1,
             ack: () => {
               acknowledged = true;

@@ -10,7 +10,7 @@ export async function mapConcurrent<T, R>(
       while (next < values.length) {
         const index = next;
         next += 1;
-        results[index] = await operation(values[index]!);
+        results[index] = await operation(values[index]);
       }
     }),
   );

@@ -71,7 +71,8 @@ export async function recordAuthFunnelEvent(
   env: Env,
   input: Omit<AuthFunnelEvent, "id" | "at">,
 ): Promise<void> {
-  if (!env.DASHBOARD_CACHE) return;
+  const cache = env.DASHBOARD_CACHE;
+  if (!cache) return;
   try {
     const item: AuthFunnelEvent = {
       id: randomNonce(),
@@ -82,11 +83,11 @@ export async function recordAuthFunnelEvent(
     };
     const counterKey = authFunnelCounterKey(item.event, item.account, item.status);
     await Promise.all([
-      env.DASHBOARD_CACHE.put(authFunnelStorageKey(item), JSON.stringify(item), {
+      cache.put(authFunnelStorageKey(item), JSON.stringify(item), {
         expirationTtl: storageTtlSeconds,
       }),
       readCounter(env, counterKey).then((count) =>
-        env.DASHBOARD_CACHE!.put(counterKey, String(count + 1), {
+        cache.put(counterKey, String(count + 1), {
           expirationTtl: storageTtlSeconds,
         }),
       ),

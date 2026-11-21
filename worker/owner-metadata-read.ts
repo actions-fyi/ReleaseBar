@@ -24,7 +24,7 @@ export function reconcileOwnerMetadataSnapshots(
     (snapshot): snapshot is OwnerMetadataSnapshot => snapshot !== null,
   );
   if (snapshots.length === 0) return null;
-  if (snapshots.length === 1) return snapshots[0]!;
+  if (snapshots.length === 1) return snapshots[0];
 
   const authority = snapshots.reduce((current, candidate) =>
     ownerSnapshotIsNewer(candidate, current) ? candidate : current,
@@ -82,7 +82,7 @@ export function reconcileOwnerMetadataSnapshots(
       .sort((left, right) => safeIso(right.observedAt) - safeIso(left.observedAt))[0];
     if (countOverlay) countOverlays[fullName] = countOverlay.count;
     if (privatizedAt) {
-      removedRepos[fullName] = newestOwnerTimestamp(privatizedAt, removedAt)!;
+      removedRepos[fullName] = newestOwnerTimestamp(privatizedAt, removedAt) ?? privatizedAt;
       continue;
     }
 
@@ -146,10 +146,12 @@ export function reconcileOwnerMetadataSnapshots(
 
   return {
     owner,
-    generatedAt: newestOwnerTimestamp(...snapshots.map((snapshot) => snapshot.generatedAt))!,
-    metadataUpdatedAt: newestOwnerTimestamp(
-      ...snapshots.map((snapshot) => snapshot.metadataUpdatedAt),
-    )!,
+    generatedAt:
+      newestOwnerTimestamp(...snapshots.map((snapshot) => snapshot.generatedAt)) ??
+      authority.generatedAt,
+    metadataUpdatedAt:
+      newestOwnerTimestamp(...snapshots.map((snapshot) => snapshot.metadataUpdatedAt)) ??
+      authority.metadataUpdatedAt,
     countsUpdatedAt: newestOwnerTimestamp(...snapshots.map((snapshot) => snapshot.countsUpdatedAt)),
     countsAttemptedAt: newestOwnerTimestamp(
       ...snapshots.map((snapshot) => snapshot.countsAttemptedAt),

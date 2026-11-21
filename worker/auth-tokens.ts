@@ -211,7 +211,8 @@ export async function sourceInstallationToken(
   if (!appTokenConfigured(env)) return null;
   const accounts = sourceAccounts(sources);
   if (accounts.length !== 1) return null;
-  const account = accounts[0]!;
+  const account = accounts[0];
+  if (account === undefined) return null;
   const registryInstallation = await readInstallationRegistry(env, account);
   let installation = registryInstallation;
   let registryStale = false;

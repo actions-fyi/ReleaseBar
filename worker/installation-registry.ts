@@ -130,7 +130,8 @@ export async function writeInstallationRegistry(
   env: Env,
   installations: AuthInstallation[],
 ): Promise<void> {
-  if (!env.DASHBOARD_CACHE) return;
+  const cache = env.DASHBOARD_CACHE;
+  if (!cache) return;
   const normalized = installations.map(normalizedInstallation);
   const stale = (
     await Promise.all(
@@ -141,7 +142,7 @@ export async function writeInstallationRegistry(
   ).filter((installation): installation is StoredInstallationRecord => installation !== null);
   await Promise.all(
     stale.map((installation) => {
-      return env.DASHBOARD_CACHE!.put(
+      return cache.put(
         installationRegistryKey(installation.accountLogin),
         JSON.stringify(installation),
         { expirationTtl: dashboardStorageTtlSeconds },

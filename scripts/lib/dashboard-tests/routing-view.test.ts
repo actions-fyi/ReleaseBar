@@ -272,20 +272,23 @@ test("dashboard stream signature changes when dev sort counts change", () => {
     progress: { scanned: 16, limit: 200, done: false },
   };
   const next = JSON.parse(JSON.stringify(payload)) as DashboardPayload;
-  next.projects[0]!.openPullRequests = 9;
+  assert.ok(next.projects[0]);
+  next.projects[0].openPullRequests = 9;
 
   assert.notEqual(
     dashboardStreamSignature(payload, "partial"),
     dashboardStreamSignature(next, "partial"),
   );
   const archived = JSON.parse(JSON.stringify(payload)) as DashboardPayload;
-  archived.projects[0]!.archived = true;
+  assert.ok(archived.projects[0]);
+  archived.projects[0].archived = true;
   assert.notEqual(
     dashboardStreamSignature(payload, "partial"),
     dashboardStreamSignature(archived, "partial"),
   );
   const fresher = JSON.parse(JSON.stringify(payload)) as DashboardPayload;
-  fresher.cache!.countsUpdatedAt = "2026-05-22T00:01:00.000Z";
+  assert.ok(fresher.cache);
+  fresher.cache.countsUpdatedAt = "2026-05-22T00:01:00.000Z";
   assert.notEqual(
     dashboardStreamSignature(payload, "partial"),
     dashboardStreamSignature(fresher, "partial"),

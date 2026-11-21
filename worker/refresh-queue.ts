@@ -498,8 +498,9 @@ export async function refreshDueOwnerCounts(
     }
     if (due.length >= schedulerCountOwnerLimit) break;
   }
-  if (due.length > 0) {
-    await env.DASHBOARD_CACHE?.put(refreshOwnerCountCursorKey, due.at(-1)!);
+  const lastDueOwner = due.at(-1);
+  if (lastDueOwner !== undefined) {
+    await env.DASHBOARD_CACHE?.put(refreshOwnerCountCursorKey, lastDueOwner);
   }
   let refreshed = 0;
   let deferred = 0;

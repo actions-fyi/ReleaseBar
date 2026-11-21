@@ -737,9 +737,14 @@ export function parseOwnerActivitySummaryText(
     if (!fullName || !summary || summaries.has(key)) return null;
     summaries.set(key, { fullName, text: summary });
   }
-  if ([...expected.keys()].some((key) => !summaries.has(key))) return null;
+  const ordered = [...expected.keys()].map((key) => summaries.get(key));
+  if (
+    !ordered.every((summary): summary is OwnerActivityRepositorySummary => summary !== undefined)
+  ) {
+    return null;
+  }
   return {
     text: polishActivitySummaryText(record.summary),
-    repositories: [...expected.keys()].map((key) => summaries.get(key)!),
+    repositories: ordered,
   };
 }
