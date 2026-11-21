@@ -157,7 +157,7 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
       (message as { kind?: unknown; delivery?: unknown }).kind === "github-webhook" &&
       (message as { delivery?: unknown }).delivery === "delivery-reserved-push",
   );
-  assert.equal(requeued, undefined);
+  assert.ok(requeued === undefined);
   const targetStub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName(key));
   const release = await targetStub.fetch(
     new Request("https://releasebar.internal/job/release", {
@@ -269,7 +269,7 @@ test("reserved webhook refreshes queue one follow-up after the active job", asyn
       (message as { kind?: unknown; delivery?: unknown }).kind === "github-webhook" &&
       (message as { delivery?: unknown }).delivery === "delivery-reserved-fallback",
   );
-  assert.equal(requeuedWebhook, undefined);
+  assert.ok(requeuedWebhook === undefined);
   assert.equal(acknowledged, true);
   assert.equal(retried, false);
 

@@ -623,7 +623,7 @@ test("worker scheduler rotates bounded current-schema target pages", async () =>
   const secondState = JSON.parse((await cache.get("refresh:state:v1")) ?? "{}") as {
     targetCursor?: string;
   };
-  assert.equal(secondState.targetCursor, undefined);
+  assert.equal(secondState.targetCursor);
 
   const admin = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler", {

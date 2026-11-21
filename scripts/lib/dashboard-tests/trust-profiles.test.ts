@@ -330,9 +330,8 @@ test("worker returns org signal profiles for organization accounts", async () =>
     );
     assert.equal(body.orgs.length, 0);
     assert.ok(body.reasons.includes("organization account"));
-    assert.equal(
-      body.factors.find((factor) => factor.key === "orgs"),
-      undefined,
+    assert.ok(
+      body.factors.find((factor) => factor.key === "orgs") === undefined
     );
     assert.equal(
       body.factors.find((factor) => factor.key === "builder")?.label,

@@ -768,7 +768,7 @@ test("worker ignores install callback acknowledgements without signed return sta
     assert.equal(response.status, 302);
     assert.equal(response.headers.get("location"), "/");
     const stored = JSON.parse((await cache.get(`auth:session:${sessionId}`)) ?? "{}");
-    assert.equal(stored.installations, undefined);
+    assert.equal(stored.installations == null, true);
   } finally {
     globalThis.fetch = originalFetch;
   }

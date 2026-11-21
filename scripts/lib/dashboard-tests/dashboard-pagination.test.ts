@@ -583,7 +583,7 @@ test("dashboard shared owner page cap finishes as fresh capped data", async () =
 
   assert.deepEqual(pages, ["1", "2", "3"]);
   assert.equal(payload.cache?.state, "fresh");
-  assert.equal(payload.cache?.progress?.done, undefined);
+  assert.ok(payload.cache?.progress?.done == null);
   assert.equal(payload.cache?.capped, true);
 });
 

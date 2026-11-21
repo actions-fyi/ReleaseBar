@@ -443,9 +443,8 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       countedSnapshot.projects?.find((candidate) => candidate.name === "repo")?.openIssues,
       3,
     );
-    assert.equal(
-      countedSnapshot.projects?.find((candidate) => candidate.name === "old-repo")?.openIssues,
-      undefined,
+    assert.ok(
+      countedSnapshot.projects?.find((candidate) => candidate.name === "old-repo")?.openIssues === undefined
     );
 
     exactIssues = 4;

@@ -770,7 +770,7 @@ test("worker deduplicates queued refreshes for partial dashboards", async () => 
 
   assert.equal(sentJobs.length, 1);
   assert.equal(sentJobs[0]?.reason, "partial-cache");
-  assert.equal(sentJobs[0]?.target, undefined);
+  assert.ok(sentJobs[0]?.target === undefined);
   assert.match(sentJobs[0]?.targetSnapshotKey ?? "", /^refresh:jobs:v2:/);
   assert.equal(deliveryDelaySeconds, 2);
   assert.equal(targetReads, 2);

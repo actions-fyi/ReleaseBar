@@ -160,7 +160,7 @@ test("older complete count scans preserve newer repository metadata", async () =
     projects?: Project[];
   };
   assert.deepEqual(snapshot.knownRepos, ["owner/repo"]);
-  assert.equal(snapshot.removedRepos?.["owner/repo"], undefined);
+  assert.ok(snapshot.removedRepos?.["owner/repo"] == null);
   assert.equal(snapshot.projects?.[0]?.fullName, "owner/repo");
 });
 
@@ -483,7 +483,7 @@ test("stale repository removals cannot hide newer public metadata", async () => 
     removedRepos?: Record<string, string>;
     projects?: Project[];
   };
-  assert.equal(snapshot.removedRepos?.[project.fullName.toLowerCase()], undefined);
+  assert.equal(snapshot.removedRepos?.[project.fullName.toLowerCase()] ?? null, null);
   assert.equal(
     snapshot.projects?.some((candidate) => candidate.fullName === project.fullName),
     true,
@@ -647,7 +647,7 @@ test("worker persists archived observations without showing archived repositorie
       removedRepos?: Record<string, string>;
     };
     assert.equal(snapshot.projects?.[0]?.archived, true);
-    assert.equal(snapshot.removedRepos?.[`${owner}/repo`], undefined);
+    assert.equal(snapshot.removedRepos?.[`${owner}/repo`] === undefined, true);
   } finally {
     globalThis.fetch = originalFetch;
   }

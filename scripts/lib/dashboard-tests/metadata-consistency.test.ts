@@ -766,7 +766,7 @@ test("owner removal tombstones survive older refresh observations", async () => 
   snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
     removedRepos?: Record<string, string>;
   };
-  assert.equal(snapshot.removedRepos?.["owner/repo"], undefined);
+  assert.equal(snapshot.removedRepos?.["owner/repo"]);
 });
 
 test("owner mutations reconcile newer KV fallback state before updating durable storage", async () => {

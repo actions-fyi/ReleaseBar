@@ -73,7 +73,7 @@ test("worker Queue messages stay bounded when profile filters are large", async 
   await Promise.all(waits);
 
   assert.equal(sentJobs.length, 1);
-  assert.equal(sentJobs[0]?.target, undefined);
+  assert.equal(sentJobs[0]?.target, null);
   assert.equal(JSON.stringify(sentJobs[0]).length < 4096, true);
   const snapshot = JSON.parse(
     (await cache.get(sentJobs[0]?.targetSnapshotKey ?? "")) ?? "{}",
