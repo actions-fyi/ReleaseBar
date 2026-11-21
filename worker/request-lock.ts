@@ -515,8 +515,11 @@ export class DashboardBuildLock {
           ? this.state.blockConcurrencyWhile(abandonDelivery)
           : abandonDelivery();
       }
+      // Every path below needs both; the check above enforces it for non-abandon paths.
+      if (!event || !payload) return new Response(null, { status: 400 });
       if (url.pathname === "/webhook/enqueue") {
-        if (!this.env.REFRESH_QUEUE) {
+        const queue = this.env.REFRESH_QUEUE;
+        if (!queue) {
           return jsonResponse({ error: "webhook queue unavailable" }, 503, {
             "cache-control": "no-store",
           });
@@ -531,14 +534,12 @@ export class DashboardBuildLock {
               "cache-control": "no-store",
             });
           }
-          if (payload == null) return new Response(null, { status: 400 });
-          if (!this.env.REFRESH_QUEUE) return new Response(null, { status: 503 });
-          await this.env.REFRESH_QUEUE.send({
+          await queue.send({
             kind: "github-webhook",
             id: randomNonce(),
             event,
             delivery,
-            payload: payload,
+            payload,
             createdAt: new Date(now).toISOString(),
             attempts: 0,
           });
@@ -554,13 +555,12 @@ export class DashboardBuildLock {
           : enqueueDelivery();
       }
       if (!jobId) return new Response(null, { status: 400 });
-      if (payload == null) return new Response(null, { status: 400 });
       const job = {
         kind: "github-webhook",
         id: jobId,
         event,
         delivery,
-        payload: payload,
+        payload,
         createdAt: typeof body?.createdAt === "string" ? body.createdAt : new Date().toISOString(),
         attempts: typeof body?.attempts === "number" ? body.attempts : 0,
       } satisfies GitHubWebhookJob;

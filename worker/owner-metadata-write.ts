@@ -74,8 +74,7 @@ export function applyOwnerMetadataMutation(
               ...countOverlay,
               archived: mutation.archived,
               updatedAt:
-                safeIso(mutation.repositoryUpdatedAt) >=
-                safeIso(countOverlay.updatedAt)
+                safeIso(mutation.repositoryUpdatedAt) >= safeIso(countOverlay.updatedAt)
                   ? mutation.repositoryUpdatedAt
                   : countOverlay.updatedAt,
             },
@@ -252,10 +251,10 @@ export function applyOwnerMetadataMutation(
     const current = projects.get(fullName);
     const incomingMetadataIsNewer =
       safeIso(mutation.observedAt) >= safeIso(projectMetadataUpdatedAt[fullName]);
-    const incomingHasCounts =
-      project.openIssues !== null &&
-      project.openPullRequests !== null &&
-      Boolean(mutation.countsUpdatedAt);
+    const countsUpdatedAt = mutation.countsUpdatedAt;
+    const openIssues = project.openIssues;
+    const openPullRequests = project.openPullRequests;
+    const incomingHasCounts = openIssues !== null && openPullRequests !== null && !!countsUpdatedAt;
     const incomingProjectCountsAreNewer =
       incomingHasCounts &&
       safeIso(mutation.countsUpdatedAt) > safeIso(projectCountsUpdatedAt[fullName]);
@@ -282,19 +281,13 @@ export function applyOwnerMetadataMutation(
     if (
       incomingHasCounts &&
       !preserveCurrentCounts &&
-      mutation.countsUpdatedAt !== null &&
-      mutation.countsUpdatedAt !== undefined &&
-      project.openIssues !== null &&
-      project.openIssues !== undefined &&
-      project.openPullRequests !== null &&
-      project.openPullRequests !== undefined &&
-      safeIso(mutation.countsUpdatedAt) >= safeIso(projectCountsUpdatedAt[fullName])
+      safeIso(countsUpdatedAt) >= safeIso(projectCountsUpdatedAt[fullName])
     ) {
-      projectCountsUpdatedAt[fullName] = mutation.countsUpdatedAt;
+      projectCountsUpdatedAt[fullName] = countsUpdatedAt;
       countOverlays[fullName] = {
         fullName,
-        openIssues: project.openIssues,
-        openPullRequests: project.openPullRequests,
+        openIssues,
+        openPullRequests,
         archived: project.archived,
         fork: project.fork === true,
         private: false,

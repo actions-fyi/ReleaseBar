@@ -24,7 +24,7 @@ export function reconcileOwnerMetadataSnapshots(
     (snapshot): snapshot is OwnerMetadataSnapshot => snapshot !== null,
   );
   if (snapshots.length === 0) return null;
-  if (snapshots.length === 1) return snapshots[0] ?? null;
+  if (snapshots.length === 1) return snapshots[0];
 
   const authority = snapshots.reduce((current, candidate) =>
     ownerSnapshotIsNewer(candidate, current) ? candidate : current,
@@ -144,17 +144,14 @@ export function reconcileOwnerMetadataSnapshots(
           ]),
         ].filter((fullName) => !removedRepos[fullName]);
 
-  const generatedAt = newestOwnerTimestamp(...snapshots.map((snapshot) => snapshot.generatedAt));
-  const metadataUpdatedAt = newestOwnerTimestamp(
-    ...snapshots.map((snapshot) => snapshot.metadataUpdatedAt),
-  );
-  if (generatedAt == null || metadataUpdatedAt == null) {
-    throw new Error('Owner metadata timestamps are missing');
-  }
   return {
     owner,
-    generatedAt,
-    metadataUpdatedAt,
+    generatedAt:
+      newestOwnerTimestamp(...snapshots.map((snapshot) => snapshot.generatedAt)) ??
+      authority.generatedAt,
+    metadataUpdatedAt:
+      newestOwnerTimestamp(...snapshots.map((snapshot) => snapshot.metadataUpdatedAt)) ??
+      authority.metadataUpdatedAt,
     countsUpdatedAt: newestOwnerTimestamp(...snapshots.map((snapshot) => snapshot.countsUpdatedAt)),
     countsAttemptedAt: newestOwnerTimestamp(
       ...snapshots.map((snapshot) => snapshot.countsAttemptedAt),

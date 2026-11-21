@@ -619,7 +619,8 @@ export async function githubAccessSummary(
   hours = githubAccessAdminHours,
 ): Promise<GitHubAccessSummary> {
   const cooldown = await sharedQuotaCooldown(env);
-  if (!env.DASHBOARD_CACHE?.list) {
+  const cache = env.DASHBOARD_CACHE;
+  if (!cache?.list) {
     return {
       generatedAt: new Date().toISOString(),
       hours,
@@ -632,9 +633,10 @@ export async function githubAccessSummary(
       topRoutes: [],
     };
   }
+  const list = cache.list.bind(cache);
   const pages = await Promise.all(
     githubAccessHours(hours).map((hour) =>
-      env.DASHBOARD_CACHE?.list?.({
+      list({
         prefix: `${githubAccessPrefix}${hour}:`,
         limit: 1000,
       }),
@@ -644,7 +646,7 @@ export async function githubAccessSummary(
 
   const counters = await Promise.all(
     keys.map(async (key): Promise<GitHubAccessRouteSummary[]> => {
-      const raw = await env.DASHBOARD_CACHE?.get(key);
+      const raw = await cache.get(key);
       if (!raw) return [];
       const parsed = tryJsonParse<StoredGitHubAccessShard | StoredGitHubAccessCounter>(
         raw,

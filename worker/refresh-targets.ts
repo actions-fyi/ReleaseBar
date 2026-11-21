@@ -83,13 +83,13 @@ export async function writeDurableRefreshTargetIndexes(
   env: Env,
   target: RefreshTarget,
 ): Promise<RefreshTargetIndexWrite> {
-  if (!env.DASHBOARD_LOCKS) return "unavailable";
+  const locks = env.DASHBOARD_LOCKS;
+  if (!locks) return "unavailable";
   try {
     const writes = await Promise.all(
       refreshTargetSources(target).map(async ({ kind, value }) => {
-        if (!env.DASHBOARD_LOCKS) throw new Error("DASHBOARD_LOCKS is not configured");
-        const id = env.DASHBOARD_LOCKS.idFromName(`refresh-target-index:${kind}:${value}`);
-        const stub = env.DASHBOARD_LOCKS.get(id);
+        const id = locks.idFromName(`refresh-target-index:${kind}:${value}`);
+        const stub = locks.get(id);
         const response = await stub
           .fetch(
             new Request("https://releasebar.internal/target-index/upsert", {
@@ -130,14 +130,13 @@ export async function writeRefreshTargetIndexes(
   const hash = (await sha256Base64Url(target.key)).slice(0, 32);
   const durableIndex = await writeDurableRefreshTargetIndexes(env, target);
   if (durableIndex === "rejected") return durableIndex;
+  const cache = env.DASHBOARD_CACHE;
   await Promise.all(
-    env.DASHBOARD_CACHE
+    cache
       ? sources.map(({ kind, value }) =>
-          env.DASHBOARD_CACHE?.put(
-            `${refreshTargetIndexSource(kind, value)}${hash}`,
-            JSON.stringify(target.key),
-            { expirationTtl: dashboardStorageTtlSeconds },
-          ),
+          cache.put(`${refreshTargetIndexSource(kind, value)}${hash}`, JSON.stringify(target.key), {
+            expirationTtl: dashboardStorageTtlSeconds,
+          }),
         )
       : [],
   );

@@ -498,6 +498,8 @@ test("worker embeds cached metadata-only owner dashboard data in the app shell",
       compareUrl: null,
     }),
   ]);
+  assert.ok(payload.options);
+  assert.ok(payload.cache);
   payload.options = { ...payload.options, includeUnreleased: true };
   payload.cache = {
     ...payload.cache,

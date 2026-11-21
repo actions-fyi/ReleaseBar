@@ -146,10 +146,11 @@ test("manual refreshes merge owner removals observed during the build before cac
     if (url.pathname === "/graphql") {
       if (!removalRecorded) {
         await new Promise((resolve) => setTimeout(resolve, 2));
-        const stub = env.DASHBOARD_LOCKS?.get(
+        assert.ok(env.DASHBOARD_LOCKS);
+        const stub = env.DASHBOARD_LOCKS.get(
           env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"),
         );
-        const removed = await stub?.fetch(
+        const removed = await stub.fetch(
           new Request("https://releasebar.internal/owner-metadata/mutate", {
             method: "POST",
             headers: { "content-type": "application/json" },
@@ -163,7 +164,7 @@ test("manual refreshes merge owner removals observed during the build before cac
             }),
           }),
         );
-        assert.equal(removed?.ok, true);
+        assert.equal(removed.ok, true);
         removalRecorded = true;
       }
       return Response.json({

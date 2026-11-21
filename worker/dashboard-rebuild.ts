@@ -605,7 +605,7 @@ export async function continueProgressiveBuild(
   const startedAt = Date.now();
   const deadlineController = externalSignal ? null : new AbortController();
   const signal = externalSignal ?? deadlineController?.signal;
-  if (!signal) return null;
+  if (!signal) throw new Error("progressive build has neither an external nor a deadline signal");
   const deadlineTimer = deadlineController
     ? globalThis.setTimeout(() => deadlineController.abort(), budgetMs)
     : null;

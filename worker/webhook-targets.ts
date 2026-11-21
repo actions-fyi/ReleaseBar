@@ -90,7 +90,7 @@ export function webhookRepo(payload: Record<string, unknown>): {
   if (!validRepoSlug(fullName)) return null;
   return {
     fullName,
-    owner: fullName.split("/")[0] ?? "",
+    owner: fullName.split("/")[0],
     archived: typeof repo.archived === "boolean" ? repo.archived : null,
     private:
       typeof repo.private === "boolean"
@@ -206,7 +206,7 @@ export function mergePendingWebhook(
     job,
     deliveries:
       existingIndex >= 0
-        ? [...new Set([...(pending[existingIndex]?.deliveries ?? []), job.delivery])]
+        ? [...new Set([...pending[existingIndex].deliveries, job.delivery])]
         : [job.delivery],
   };
   if (existingIndex < 0) return [...pending, next];
@@ -392,13 +392,11 @@ export async function prioritizedIndexedWebhookTargets(
   fullName: string,
   includeReleaseDataOnly: boolean,
 ): Promise<WebhookTargetPage> {
-  if (!env.DASHBOARD_LOCKS) return { targets: [], next: null };
+  const locks = env.DASHBOARD_LOCKS;
+  if (!locks) return { targets: [], next: null };
   const read = async (source: "owner" | "repo", value: string): Promise<RefreshTarget[]> => {
-    if (!env.DASHBOARD_LOCKS) {
-      throw new Error("durable refresh target index is not configured");
-    }
-    const id = env.DASHBOARD_LOCKS.idFromName(`refresh-target-index:${source}:${value}`);
-    const response = await env.DASHBOARD_LOCKS.get(id).fetch(
+    const id = locks.idFromName(`refresh-target-index:${source}:${value}`);
+    const response = await locks.get(id).fetch(
       new Request("https://releasebar.internal/target-index/list", {
         method: "POST",
       }),
@@ -623,15 +621,18 @@ export async function invalidateRepoDetailCaches(env: Env, fullName: string): Pr
 }
 
 export async function deleteCachePrefix(env: Env, prefix: string): Promise<void> {
-  if (!env.DASHBOARD_CACHE?.list || !env.DASHBOARD_CACHE.delete) return;
+  const cache = env.DASHBOARD_CACHE;
+  if (!cache?.list || !cache.delete) return;
+  const list = cache.list.bind(cache);
+  const deleteKey = cache.delete.bind(cache);
   let cursor: string | undefined;
   do {
-    const page = await env.DASHBOARD_CACHE.list({
+    const page = await list({
       prefix,
       limit: 1_000,
       ...(cursor ? { cursor } : {}),
     });
-    await mapConcurrent(page.keys, 16, (key) => env.DASHBOARD_CACHE?.delete?.(key.name));
+    await mapConcurrent(page.keys, 16, (key) => deleteKey(key.name));
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
 }

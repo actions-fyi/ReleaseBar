@@ -35,6 +35,7 @@ test("signed-in mixed-account fast paths preserve release dashboards", async () 
     }),
   ]);
   metadataPayload.generatedAt = generatedAt;
+  assert.ok(metadataPayload.cache);
   metadataPayload.cache = { ...metadataPayload.cache, generatedAt };
   const releasePayload = testDashboard("openclaw", [
     testProject({
@@ -45,6 +46,7 @@ test("signed-in mixed-account fast paths preserve release dashboards", async () 
     }),
   ]);
   releasePayload.generatedAt = generatedAt;
+  assert.ok(releasePayload.cache);
   releasePayload.cache = { ...releasePayload.cache, generatedAt };
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
