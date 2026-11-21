@@ -104,12 +104,16 @@ export type Env = {
   REFRESH_QUEUE?: Queue<WorkerQueueMessage>;
 };
 
-// The host the deployment is served from, without scheme: RELEASEDECK_CANONICAL_DOMAIN, else
-// the request's host, else localhost.
+// A leading http(s) scheme: matches "https://releasebar.example.com", rejects "releasebar.example.com".
+// https://regex101.com/?regex=%5Ehttps%3F%3A%5C%2F%5C%2F&flags=i&testString=https%3A%2F%2Freleasebar.example.com
+const schemePrefix = /^https?:\/\//i;
+
+// The host the deployment is served from, without scheme or path: RELEASEDECK_CANONICAL_DOMAIN,
+// else the request's host, else localhost.
 export function canonicalDomain(env: Env, url?: URL): string {
-  const configured = env.RELEASEDECK_CANONICAL_DOMAIN?.trim()
-    .replace(/^https?:\/\//i, "")
-    .replace(/\/+$/, "");
+  const configured = (
+    env.RELEASEDECK_CANONICAL_DOMAIN?.trim().replace(schemePrefix, "") ?? ""
+  ).split("/")[0];
   return configured || url?.host || "localhost";
 }
 
