@@ -232,8 +232,22 @@ test("worker summarizes commits since release in the background", async () => {
       return Response.json({
         total_commits: 2,
         commits: [
-          { commit: { message: "Add release summary panel\n\nLong body" } },
+          {
+            commit: {
+              message:
+                "Add release summary panel\n\nShows what changed since the release.\n\nSigned-off-by: Dev <dev@example.com>",
+            },
+          },
           { commit: { message: "Fix summary cache key" } },
+        ],
+        files: [
+          {
+            filename: "worker/release-summary.ts",
+            status: "modified",
+            additions: 40,
+            deletions: 3,
+          },
+          { filename: "src/Summary.svelte", status: "added", additions: 12, deletions: 0 },
         ],
       });
     }
@@ -243,7 +257,14 @@ test("worker summarizes commits since release in the background", async () => {
       const body = JSON.parse(String(init?.body ?? "{}"));
       assert.equal(body.model, "claude-haiku-5-5");
       assert.equal(body.output_config?.effort, "low");
-      assert.match(JSON.stringify(body.messages), /Add release summary panel/);
+      const content = String(body.messages?.[0]?.content ?? "");
+      assert.match(
+        content,
+        /Add release summary panel\n {3}Shows what changed since the release\./,
+      );
+      assert.doesNotMatch(content, /Signed-off-by/);
+      assert.match(content, /Changed files: 2 of 2/);
+      assert.match(content, /- added src\/Summary\.svelte \(\+12 -0\)/);
       return Response.json({
         content: claudeText(
           "ReleaseBar added an AI summary panel and tightened the cache key for generated summaries.",
@@ -273,7 +294,7 @@ test("worker summarizes commits since release in the background", async () => {
     assert.equal(cached.cache.state, "warming");
     assert.equal(cached.cache.generatedAt, generatedAt);
     assert.notEqual(
-      await cache.get("release-summary:v1:acme/releasebar:v1.0.0:abcdef1:claude-haiku-5-5"),
+      await cache.get("release-summary:v2:acme/releasebar:v1.0.0:abcdef1:claude-haiku-5-5"),
       null,
     );
   } finally {

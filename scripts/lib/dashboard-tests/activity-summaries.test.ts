@@ -789,7 +789,7 @@ test("worker skips stale release summaries when repository detail changed", asyn
     assert.equal(cached.releaseSummary?.releaseTag, "v1.0.1");
     assert.equal(cached.releaseSummary?.text, null);
     assert.notEqual(
-      await cache.get("release-summary:v1:acme/releasebar:v1.0.0:abcdef1:claude-haiku-5-5"),
+      await cache.get("release-summary:v2:acme/releasebar:v1.0.0:abcdef1:claude-haiku-5-5"),
       null,
     );
   } finally {

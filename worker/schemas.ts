@@ -204,6 +204,17 @@ export const gitHubCompareSchema = v.looseObject({
       }),
     ),
   ),
+  // Only on the first page, but for the whole comparison.
+  files: v.optional(
+    v.array(
+      v.looseObject({
+        filename: v.string(),
+        status: v.optional(v.string()),
+        additions: v.optional(v.number()),
+        deletions: v.optional(v.number()),
+      }),
+    ),
+  ),
 });
 
 export const gitHubCheckRunsSchema = v.looseObject({
