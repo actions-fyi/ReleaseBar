@@ -78,6 +78,10 @@ export const repoAudienceUserRepoLimit = 8;
 export const releaseSummaryPromptVersion = 1;
 export const releaseSummaryCommitLimit = 500;
 export const activitySummaryPromptVersion = 4;
+// A failed AI summary is retried after 5 minutes, doubling with each failure in a row up to 6 hours.
+export const summaryRetryBaseMs = 5 * 60 * 1000;
+export const summaryRetryMultiplier = 2;
+export const summaryRetryMaxMs = 6 * 60 * 60 * 1000;
 export const activityEventPageLimit = 3;
 export const activitySummaryInputLimit = 180;
 export const activityRepositorySummaryLimit = 30;

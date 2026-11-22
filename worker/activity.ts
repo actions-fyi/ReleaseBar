@@ -51,16 +51,11 @@ import {
   activitySummaryPromptVersion,
   maxDisplayStaleMs,
 } from "./config.js";
-import {
-  dashboardErrorMessage,
-  errorMessage,
-  errorStatus,
-  retryAfterHeaders,
-} from "./dashboard-cache.js";
+import { dashboardErrorMessage, errorStatus, retryAfterHeaders } from "./dashboard-cache.js";
 import { acquireBuildLock } from "./dashboard-rebuild.js";
 import { repositoryPublicCacheBarrier } from "./owner-metadata-read.js";
 import { allowRequestRefresh, crawlerCacheOnlyResponse } from "./owner-metadata-write.js";
-import { claudeSummaryText } from "./release-summary.js";
+import { claudeSummaryText, summaryFailure, summaryRetryDue } from "./release-summary.js";
 import {
   activityCacheTtlMs,
   activityRangeFromUrl,
@@ -408,6 +403,7 @@ export function ownerActivitySummaryNeedsRefresh(
 ): boolean {
   return (
     payload?.summary?.state === "warming" ||
+    summaryRetryDue(payload?.summary) ||
     (!!payload?.summary && payload.summary.promptVersion !== activitySummaryPromptVersion) ||
     (!!payload?.summary && payload.summary.model !== activitySummaryModel(env))
   );
@@ -470,10 +466,11 @@ export async function refreshOwnerActivitySummary(
     ) {
       return;
     }
+    const previous = latest.summary ?? payload.summary;
     await writeOwnerActivity(env, key, {
       ...latest,
       summary: {
-        ...(latest.summary ?? payload.summary),
+        ...previous,
         state: "unavailable",
         text: null,
         generatedAt: null,
@@ -481,7 +478,7 @@ export async function refreshOwnerActivitySummary(
         inputHash: payloadInputHash,
         eventsUsed: activitySummaryEvents(latest).length,
         promptVersion: activitySummaryPromptVersion,
-        message: errorMessage(error),
+        ...summaryFailure("owner-activity", key, previous, error),
       },
     });
   } finally {
@@ -620,6 +617,7 @@ export function repoActivitySummaryNeedsRefresh(
 ): boolean {
   return (
     payload?.summary?.state === "warming" ||
+    summaryRetryDue(payload?.summary) ||
     (!!payload?.summary && payload.summary.promptVersion !== activitySummaryPromptVersion) ||
     (!!payload?.summary && payload.summary.model !== activitySummaryModel(env))
   );
@@ -660,10 +658,11 @@ export async function refreshRepoActivitySummary(
     ) {
       return;
     }
+    const previous = latest.summary ?? payload.summary;
     await writeRepoActivity(env, key, {
       ...latest,
       summary: {
-        ...(latest.summary ?? payload.summary),
+        ...previous,
         state: "unavailable",
         text: null,
         generatedAt: null,
@@ -671,7 +670,7 @@ export async function refreshRepoActivitySummary(
         inputHash: payloadInputHash,
         eventsUsed: activitySummaryEvents(latest).length,
         promptVersion: activitySummaryPromptVersion,
-        message: errorMessage(error),
+        ...summaryFailure("repo-activity", key, previous, error),
       },
     });
   } finally {
