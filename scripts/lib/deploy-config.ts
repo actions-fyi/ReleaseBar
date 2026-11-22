@@ -29,7 +29,6 @@ export const deploySettingNames = [
   "RELEASEBAR_ANTHROPIC_BASE_URL",
   "RELEASEBAR_SUMMARY_INPUT_CHARS",
   "RELEASEBAR_SUMMARY_TITLE_CHARS",
-  "RELEASEBAR_SUMMARY_BODY_CHARS",
 ] as const;
 
 // A bare host name: matches "releasebar.example.com", rejects "https://releasebar.example.com/".

@@ -655,7 +655,7 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       "owner-activity:v2:owner:day",
       "owner-activity-summary:v4:owner:week:claude-haiku-5-5:hash",
       "repo-activity-summary:v4:owner/repo:day:claude-haiku-5-5:hash",
-      "release-summary:v2:owner/repo:v1.0.0:abcdef1:claude-haiku-5-5",
+      "release-summary:v1:owner/repo:v1.0.0:abcdef1:claude-haiku-5-5",
       "discover:v4:week:all",
       "repo-audience:v5:other/repo:week",
       "owner-activity:v2:contributor:week",

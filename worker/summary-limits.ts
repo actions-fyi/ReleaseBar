@@ -1,7 +1,7 @@
-// Caps on what a release summary sends the model. Anyone can have any public repository
-// summarized, so the input is capped whatever its commits hold. Each cap is a Worker var, set by
-// `npm run deploy` from a RELEASEBAR_* build variable; unset, it has its default. Counts are UTF-16
-// units, as JavaScript measures strings.
+// Caps on the commit titles a release summary sends the model. Anyone can have any public
+// repository summarized, so the input is capped whatever its commits hold. Each cap is a Worker
+// var, set by `npm run deploy` from a RELEASEBAR_* build variable; unset, it has its default.
+// Counts are UTF-16 units, as JavaScript measures strings.
 //
 // The bounds keep a setting from removing a cap. `npm run deploy` rejects a value outside them,
 // and the Worker clamps one set on it directly, and ignores a value that isn't a whole number.
@@ -21,12 +21,9 @@ const INPUT_CHARS_MAX = 400_000;
 const TITLE_CHARS_DEFAULT = 160;
 const TITLE_CHARS_MIN = 20;
 const TITLE_CHARS_MAX = 1_000;
-const BODY_CHARS_DEFAULT = 1_000;
-const BODY_CHARS_MIN = 0;
-const BODY_CHARS_MAX = 20_000;
 
 export const releaseSummaryLimitSettings = {
-  // The whole input. Titles take up to half; bodies get the rest.
+  // The whole title list, newest titles kept first.
   inputChars: {
     variable: "RELEASE_SUMMARY_INPUT_CHARS",
     buildVariable: "RELEASEBAR_SUMMARY_INPUT_CHARS",
@@ -40,14 +37,6 @@ export const releaseSummaryLimitSettings = {
     defaultValue: TITLE_CHARS_DEFAULT,
     min: TITLE_CHARS_MIN,
     max: TITLE_CHARS_MAX,
-  },
-  // 0 sends titles only.
-  bodyChars: {
-    variable: "RELEASE_SUMMARY_BODY_CHARS",
-    buildVariable: "RELEASEBAR_SUMMARY_BODY_CHARS",
-    defaultValue: BODY_CHARS_DEFAULT,
-    min: BODY_CHARS_MIN,
-    max: BODY_CHARS_MAX,
   },
 } as const satisfies Record<string, ReleaseSummaryLimit>;
 
@@ -73,6 +62,5 @@ export function releaseSummaryLimits(
   return {
     inputChars: limit(releaseSummaryLimitSettings.inputChars),
     titleChars: limit(releaseSummaryLimitSettings.titleChars),
-    bodyChars: limit(releaseSummaryLimitSettings.bodyChars),
   };
 }

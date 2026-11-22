@@ -191,25 +191,29 @@ export function clipText(text: string, maxChars: number): string {
   return `${text.slice(0, end).trimEnd()}…`;
 }
 
-// A commit message without its title and its closing block of trailers, such as Signed-off-by.
-export function commitBody(message: string, maxChars: number): string {
-  const paragraphs = message
-    .split("\n")
-    .slice(1)
-    .join("\n")
-    .split(/\n\s*\n/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean);
-  const last = paragraphs.at(-1);
-  if (last && last.split("\n").every((line) => /^[A-Za-z][\w-]*: \S/.test(line.trim()))) {
-    paragraphs.pop();
+// The numbered title list the model reads, within inputChars, header included. Titles arrive
+// oldest first; the newest ones are kept when they don't all fit.
+export function releaseTitlesInput(
+  titles: string[],
+  inputChars: number,
+): { text: string; titlesUsed: number } {
+  const header = (left: number) =>
+    `Commit titles, oldest first${left > 0 ? ` (the ${left} oldest left out)` : ""}:`;
+  // The longest the header can get, so that adding it never breaks the cap.
+  let budget = inputChars - header(titles.length).length;
+  let first = titles.length;
+  while (first > 0) {
+    // "\n" plus a number of up to three digits, ". " and the title.
+    const chars = 6 + (titles[first - 1]?.length ?? 0);
+    if (chars > budget) break;
+    budget -= chars;
+    first -= 1;
   }
-  return maxChars > 0 ? clipText(paragraphs.join("\n\n"), maxChars) : "";
+  const lines = titles.slice(first).map((title, index) => `${index + 1}. ${title}`);
+  return { text: [header(first), ...lines].join("\n"), titlesUsed: titles.length - first };
 }
 
-export type ReleaseDeltaCommit = { title: string; body: string };
-
-export async function compareCommitMessages(
+export async function compareCommitTitles(
   path: string,
   releaseTag: string,
   head: string,
@@ -218,11 +222,11 @@ export async function compareCommitMessages(
   quotaAccount: string | null,
   onQuota: (quota: ApiQuota) => void,
   env: Env,
-): Promise<{ commits: ReleaseDeltaCommit[]; total: number | null }> {
-  const limits = releaseSummaryLimits(env);
-  const commits: ReleaseDeltaCommit[] = [];
+): Promise<{ titles: string[]; total: number | null }> {
+  const { titleChars } = releaseSummaryLimits(env);
+  const titles: string[] = [];
   let total: number | null = null;
-  for (let page = 1; commits.length < releaseSummaryCommitLimit; page += 1) {
+  for (let page = 1; titles.length < releaseSummaryCommitLimit; page += 1) {
     const compare = await detailGitHubJson(
       `${path}/compare/${encodeURIComponent(releaseTag)}...${encodeURIComponent(head)}?per_page=100&page=${page}`,
       gitHubCompareSchema,
@@ -236,59 +240,13 @@ export async function compareCommitMessages(
       env,
     );
     total = compare.total_commits ?? total;
-    const pageCommits = (compare.commits ?? [])
-      .map((commit) => ({
-        title: clipText(commitTitle(commit.commit.message), limits.titleChars),
-        body: commitBody(commit.commit.message, limits.bodyChars),
-      }))
-      .filter((commit) => commit.title);
-    commits.push(...pageCommits);
-    if (pageCommits.length === 0 || (total !== null && commits.length >= total)) break;
+    const pageTitles = (compare.commits ?? [])
+      .map((commit) => clipText(commitTitle(commit.commit.message), titleChars))
+      .filter(Boolean);
+    titles.push(...pageTitles);
+    if (pageTitles.length === 0 || (total !== null && titles.length >= total)) break;
   }
-  return { commits: commits.slice(0, releaseSummaryCommitLimit), total };
-}
-
-// Builds the model's input within inputChars: the titles of the newest commits, then the newest
-// commits' bodies.
-export function releaseDeltaInput(
-  commits: ReleaseDeltaCommit[],
-  inputChars: number,
-): { text: string; commitsUsed: number } {
-  const lineChars = (text: string) => text.length + 8;
-  let first = commits.length;
-  let titleChars = 0;
-  while (first > 0) {
-    const chars = lineChars(commits[first - 1]?.title ?? "");
-    if (titleChars + chars > inputChars / 2) break;
-    titleChars += chars;
-    first -= 1;
-  }
-  let bodyBudget = inputChars - titleChars;
-  const keepBody = new Set<number>();
-  for (let index = commits.length - 1; index >= first; index -= 1) {
-    const body = commits[index]?.body ?? "";
-    // The indent adds three characters per line.
-    const chars = body.length + 3 * (body.split("\n").length + 1);
-    if (body && chars <= bodyBudget) {
-      keepBody.add(index);
-      bodyBudget -= chars;
-    }
-  }
-  const commitLines = commits.slice(first).map((commit, offset) => {
-    const index = first + offset;
-    const body = keepBody.has(index)
-      ? `\n${commit.body
-          .split("\n")
-          .map((line) => `   ${line}`)
-          .join("\n")}`
-      : "";
-    return `${offset + 1}. ${commit.title}${body}`;
-  });
-  const text = [
-    `Commits, oldest first${first > 0 ? ` (the ${first} oldest left out)` : ""}:`,
-    commitLines.join("\n"),
-  ].join("\n");
-  return { text, commitsUsed: commits.length - first };
+  return { titles: titles.slice(0, releaseSummaryCommitLimit), total };
 }
 
 // Thinking is always on for current Claude models and counts against max_tokens.
@@ -352,7 +310,7 @@ export async function summarizeReleaseDelta(
   const quotaSource = requestToken?.quotaSource ?? (env.GITHUB_TOKEN ? "shared" : "anonymous");
   const quotaAccount = requestToken?.quotaAccount ?? null;
   const onQuota = () => undefined;
-  const { commits, total } = await compareCommitMessages(
+  const { titles, total } = await compareCommitTitles(
     path,
     project.version,
     project.latestCommitSha,
@@ -362,20 +320,24 @@ export async function summarizeReleaseDelta(
     onQuota,
     env,
   );
-  if (commits.length === 0) {
-    return unavailableReleaseSummary(project, model, "No commits were available to summarize.");
+  if (titles.length === 0) {
+    return unavailableReleaseSummary(
+      project,
+      model,
+      "No commit titles were available to summarize.",
+    );
   }
-  const input = releaseDeltaInput(commits, releaseSummaryLimits(env).inputChars);
+  const input = releaseTitlesInput(titles, releaseSummaryLimits(env).inputChars);
   const text = await claudeSummaryText(env, {
     model,
     maxTokens: 450,
     system:
-      "You summarize the public GitHub commits since a repository's latest release for release dashboards. You get each commit's title and, where it has one, its message body. Write 2-4 concise sentences, past tense, no bullets, no hype, no markdown. Lead with user-visible changes and broad themes; use the bodies to be specific, but do not list commits. Do not invent details beyond what the commits say.",
+      "You summarize public GitHub commit titles for release dashboards. Write 2-4 concise sentences, past tense, no bullets, no hype, no markdown. Mention broad themes and user-visible changes when commit titles support them. Do not invent details beyond the commit titles.",
     user: [
       `Repository: ${project.fullName}`,
       `Latest release: ${project.version}`,
       `Default branch head: ${project.latestCommitSha}`,
-      `Commits included: ${input.commitsUsed} of ${total ?? project.commitsSinceRelease ?? commits.length}`,
+      `Commit titles included: ${input.titlesUsed} of ${total ?? project.commitsSinceRelease ?? titles.length}`,
       "",
       input.text,
     ].join("\n"),
@@ -389,7 +351,7 @@ export async function summarizeReleaseDelta(
     releaseTag: project.version,
     headSha: project.latestCommitSha,
     commitCount: total ?? project.commitsSinceRelease,
-    commitsUsed: input.commitsUsed,
+    commitsUsed: input.titlesUsed,
   };
 }
 

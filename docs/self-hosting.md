@@ -80,7 +80,6 @@ The Worker runs before static assets so `/api/*` stays dynamic and owner routes 
 | `RELEASEBAR_ANTHROPIC_BASE_URL`  | `https://` base URL of the Messages API endpoint for AI summaries (Worker var `ANTHROPIC_BASE_URL`), such as a gateway. Unset: `https://api.anthropic.com`.                               |
 | `RELEASEBAR_SUMMARY_INPUT_CHARS` | Characters a release summary sends the model in all, from 1,000 to 400,000 (Worker var `RELEASE_SUMMARY_INPUT_CHARS`). Unset: 48,000.                                                     |
 | `RELEASEBAR_SUMMARY_TITLE_CHARS` | Characters of each commit title in a release summary, from 20 to 1,000 (Worker var `RELEASE_SUMMARY_TITLE_CHARS`). Unset: 160.                                                            |
-| `RELEASEBAR_SUMMARY_BODY_CHARS`  | Characters of each commit message body in a release summary, from 0 (titles only) to 20,000 (Worker var `RELEASE_SUMMARY_BODY_CHARS`). Unset: 1,000.                                      |
 
 `npm run deploy` fails when none of these is set, so a lost build variable can't silently drop a deployment's domain and admins. Set `RELEASEBAR_ALLOW_GENERIC=true` to deploy the generic `wrangler.toml` on purpose.
 
@@ -117,7 +116,7 @@ Signed webhook payloads up to 2 MiB enter Cloudflare Queue before acknowledgemen
 
 ## AI summaries
 
-Set `ANTHROPIC_API_KEY` as a Worker secret to summarize public owner activity and the commits since the latest release:
+Set `ANTHROPIC_API_KEY` as a Worker secret to summarize public owner activity and commit titles since the latest release:
 
 ```sh
 wrangler secret put ANTHROPIC_API_KEY
@@ -125,7 +124,7 @@ wrangler secret put ANTHROPIC_API_KEY
 
 `ANTHROPIC_SUMMARY_MODEL` is optional and defaults to `claude-haiku-5-5`. Summaries run server-side through the Anthropic Messages API, remain subordinate to public source data, and are cached with the model and prompt version.
 
-A release summary reads each commit's title and message body, without its closing trailers such as `Signed-off-by`. Anyone can have any public repository summarized, so its input is capped whatever the commits hold: titles take up to half of `RELEASEBAR_SUMMARY_INPUT_CHARS`, newest commits first, and bodies get the rest. `npm run deploy` rejects a limit outside its bounds; a Worker var set directly is clamped to them, and ignored unless it is a whole number. A changed limit applies to summaries made after it, not to cached ones.
+A release summary reads the commit titles since the latest release. Anyone can have any public repository summarized, so its input is capped whatever the commits hold: each title to `RELEASEBAR_SUMMARY_TITLE_CHARS`, and the list to `RELEASEBAR_SUMMARY_INPUT_CHARS`, newest titles first. `npm run deploy` rejects a limit outside its bounds; a Worker var set directly is clamped to them, and ignored unless it is a whole number. A changed limit applies to summaries made after it, not to cached ones.
 
 To send summaries to another endpoint that speaks the Messages API, such as Cloudflare AI Gateway or a proxy, set the build variable `RELEASEBAR_ANTHROPIC_BASE_URL` (or the Worker var `ANTHROPIC_BASE_URL` directly). The client appends `/v1/messages` to it and sends `ANTHROPIC_API_KEY` in the `x-api-key` header.
 

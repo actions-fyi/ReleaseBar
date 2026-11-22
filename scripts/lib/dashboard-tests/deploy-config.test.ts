@@ -56,12 +56,12 @@ test("deploy config applies the deployment's domain, KV namespace, jurisdiction 
 test("deploy config sets the release summary limits from their build variables", () => {
   const config = deployConfig(base, {
     RELEASEBAR_SUMMARY_INPUT_CHARS: " 20000 ",
-    RELEASEBAR_SUMMARY_BODY_CHARS: "0",
+    RELEASEBAR_SUMMARY_TITLE_CHARS: "80",
   });
   assert.deepEqual(config.vars, {
     ANTHROPIC_SUMMARY_MODEL: "claude-haiku-5-5",
     RELEASE_SUMMARY_INPUT_CHARS: "20000",
-    RELEASE_SUMMARY_BODY_CHARS: "0",
+    RELEASE_SUMMARY_TITLE_CHARS: "80",
   });
   for (const value of ["999", "400001", "48,000", "-1", "4.8e4"]) {
     assert.throws(

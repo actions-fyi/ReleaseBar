@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Release summaries, and so release drafts, now read each commit's message body as well as its title. The input is capped whatever the commits hold: 48,000 characters in all, 160 per title and 1,000 per body by default, keeping the newest commits. Set the build variables `RELEASEBAR_SUMMARY_INPUT_CHARS`, `RELEASEBAR_SUMMARY_TITLE_CHARS` and `RELEASEBAR_SUMMARY_BODY_CHARS` to change them within their bounds.
+- The commit titles a release summary sends the model are now capped whatever the commits hold: 48,000 characters in all and 160 per title by default, keeping the newest commits. Set the build variables `RELEASEBAR_SUMMARY_INPUT_CHARS` and `RELEASEBAR_SUMMARY_TITLE_CHARS` to change them within their bounds.
 - AI summaries can use another Messages API endpoint, such as a gateway: set the build variable `RELEASEBAR_ANTHROPIC_BASE_URL` (Worker var `ANTHROPIC_BASE_URL`). Unset, they go to `api.anthropic.com` as before.
 - Turned off Workers invocation logs, so request headers, client IPs and locations are no longer stored; the Worker's own logs, exceptions and Issues remain.
 - Query strings are now stripped from request URLs in Workers logs and traces, so OAuth codes never reach them.
