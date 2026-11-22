@@ -427,6 +427,12 @@
   font-size: 12px;
 }
 
+.release-draft-link {
+  justify-self: start;
+  color: var(--green-strong);
+  font-size: 13px;
+}
+
 .audience-panel {
   display: grid;
   gap: 16px;
