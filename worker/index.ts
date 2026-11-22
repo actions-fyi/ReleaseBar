@@ -14,12 +14,13 @@ import {
   isRepoDetailApiPath,
   isTrustProfileApiPath,
 } from "./routes.js";
-import type {
-  Env,
-  ExecutionContext,
-  MessageBatch,
-  ScheduledEvent,
-  WorkerQueueMessage,
+import {
+  type Env,
+  type ExecutionContext,
+  type MessageBatch,
+  type ScheduledEvent,
+  type WorkerQueueMessage,
+  withLockJurisdiction,
 } from "./runtime.js";
 import { ownerActivityResponse, repoActivityResponse } from "./activity.js";
 import { adminResponse, profileResponse } from "./admin.js";
@@ -70,7 +71,8 @@ export { dashboardStreamSignature, dashboardStreamState } from "./dashboard-rebu
 export { DashboardBuildLock } from "./request-lock.js";
 
 export default {
-  async fetch(request: Request, env: Env, context: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, rawEnv: Env, context: ExecutionContext): Promise<Response> {
+    const env = withLockJurisdiction(rawEnv);
     const url = new URL(request.url);
     const isHead = request.method === "HEAD";
     if (request.method === "OPTIONS") {
@@ -110,14 +112,16 @@ export default {
       headers: response.headers,
     });
   },
-  async scheduled(event: ScheduledEvent, env: Env, context: ExecutionContext): Promise<void> {
+  async scheduled(event: ScheduledEvent, rawEnv: Env, context: ExecutionContext): Promise<void> {
+    const env = withLockJurisdiction(rawEnv);
     context.waitUntil(schedulerTick(env, context, `cron:${event.cron}`, schedulerBatchLimit));
   },
   async queue(
     batch: MessageBatch<WorkerQueueMessage>,
-    env: Env,
+    rawEnv: Env,
     context: ExecutionContext,
   ): Promise<void> {
+    const env = withLockJurisdiction(rawEnv);
     for (const message of batch.messages) {
       if (isGitHubWebhookFanoutJob(message.body)) {
         const fanoutJob = message.body;

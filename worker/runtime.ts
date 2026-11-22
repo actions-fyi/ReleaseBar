@@ -20,6 +20,7 @@ export type DurableObjectStub = {
 export type DurableObjectNamespace = {
   idFromName(name: string): DurableObjectId;
   get(id: DurableObjectId): DurableObjectStub;
+  jurisdiction?(jurisdiction: string): DurableObjectNamespace;
 };
 
 export type Queue<Message = unknown> = {
@@ -101,8 +102,25 @@ export type Env = {
   ANTHROPIC_API_KEY?: string;
   ANTHROPIC_SUMMARY_MODEL?: string;
   RELEASEDECK_CANONICAL_DOMAIN?: string;
+  RELEASEBAR_DO_JURISDICTION?: string;
   REFRESH_QUEUE?: Queue<WorkerQueueMessage>;
 };
+
+const jurisdictionLocks = new WeakMap<DurableObjectNamespace, DurableObjectNamespace>();
+
+// Scopes DASHBOARD_LOCKS to the jurisdiction in RELEASEBAR_DO_JURISDICTION (such as "eu"), so every
+// Durable Object is created and stored only there. Unset, the binding is used as it is.
+export function withLockJurisdiction(env: Env): Env {
+  const jurisdiction = env.RELEASEBAR_DO_JURISDICTION?.trim();
+  const locks = env.DASHBOARD_LOCKS;
+  if (!jurisdiction || !locks) return env;
+  if (!locks.jurisdiction) {
+    throw new Error("RELEASEBAR_DO_JURISDICTION is set, but DASHBOARD_LOCKS has no jurisdictions");
+  }
+  const scoped = jurisdictionLocks.get(locks) ?? locks.jurisdiction(jurisdiction);
+  jurisdictionLocks.set(locks, scoped);
+  return { ...env, DASHBOARD_LOCKS: scoped };
+}
 
 // A leading http(s) scheme: matches "https://releasebar.example.com", rejects "releasebar.example.com".
 // https://regex101.com/?regex=%5Ehttps%3F%3A%5C%2F%5C%2F&flags=i&testString=https%3A%2F%2Freleasebar.example.com

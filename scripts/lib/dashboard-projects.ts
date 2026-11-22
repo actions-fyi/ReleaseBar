@@ -7,6 +7,7 @@ export function normalizeBuildOptions(
 ): DashboardBuildOptions {
   return {
     ...config,
+    canonicalDomain: config.canonicalDomain ?? "localhost",
     includeUnreleased: config.includeUnreleased ?? false,
     ...overrides,
     owners: overrides.owners ?? config.owners,

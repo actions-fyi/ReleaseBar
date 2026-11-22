@@ -8,7 +8,7 @@ export type Owner = {
 export type ReleaseBarConfig = {
   title: string;
   subtitle: string;
-  canonicalDomain: string;
+  canonicalDomain?: string;
   owners: Owner[];
   includeForks: boolean;
   includeArchived: boolean;
