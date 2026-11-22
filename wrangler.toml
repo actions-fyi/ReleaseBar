@@ -41,6 +41,11 @@ max_concurrency = 5
 enabled = true
 head_sampling_rate = 1
 
+# Groups exceptions and failed invocations into Issues. Traces stay off; enable them
+# ([observability.traces]) only while investigating something.
+[observability.issues]
+enabled = true
+
 [[durable_objects.bindings]]
 name = "DASHBOARD_LOCKS"
 class_name = "DashboardBuildLock"
