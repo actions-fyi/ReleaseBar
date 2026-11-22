@@ -66,6 +66,14 @@ export function deployConfig(base: RawWranglerConfig, settings: DeploySettings):
   );
   check(admins, loginsPattern, "RELEASEBAR_ADMIN_LOGINS must be GitHub logins separated by commas");
   check(workersDev, booleanPattern, 'RELEASEBAR_WORKERS_DEV must be "true" or "false"');
+  const anySetting = deploySettingNames.some((name) => setting(settings, name));
+  if (!anySetting && settings.RELEASEBAR_ALLOW_GENERIC?.trim() !== "true") {
+    throw new Error(
+      "No RELEASEBAR_* deployment setting is set, so the deploy would drop this deployment's " +
+        "custom domain and admin logins. Set the build variables, or RELEASEBAR_ALLOW_GENERIC=true " +
+        "to deploy the generic wrangler.toml on purpose.",
+    );
+  }
   if (jurisdiction && !kvId) {
     throw new Error(
       "RELEASEBAR_DO_JURISDICTION is set but RELEASEBAR_KV_NAMESPACE_ID is not, so the deploy " +

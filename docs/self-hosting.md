@@ -78,6 +78,8 @@ The Worker runs before static assets so `/api/*` stays dynamic and owner routes 
 | `RELEASEBAR_ADMIN_LOGINS`    | Comma-separated GitHub logins for `/_admin` (Worker var `ADMIN_LOGINS`).                                                                                                                  |
 | `RELEASEBAR_WORKERS_DEV`     | `true` or `false`: whether the Worker is also served on `workers.dev`. Unset: as in `wrangler.toml`.                                                                                      |
 
+`npm run deploy` fails when none of these is set, so a lost build variable can't silently drop a deployment's domain and admins. Set `RELEASEBAR_ALLOW_GENERIC=true` to deploy the generic `wrangler.toml` on purpose.
+
 The queues `releasebar-refresh` and `releasebar-refresh-dlq` must exist before the first deploy. To keep all data in one jurisdiction, create the queues and the KV namespace in it, and set the same jurisdiction for Durable Objects; a jurisdiction can't be changed once a resource exists:
 
 ```sh

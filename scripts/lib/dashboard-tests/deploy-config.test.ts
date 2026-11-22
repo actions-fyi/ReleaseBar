@@ -17,8 +17,15 @@ const base: RawWranglerConfig = {
   kv_namespaces: [{ binding: "DASHBOARD_CACHE" }],
 };
 
-test("deploy config without settings is the generic wrangler.toml", () => {
-  const config = deployConfig(base, {});
+test("deploy config refuses to deploy without any setting unless allowed", () => {
+  assert.throws(
+    () => deployConfig(base, {}),
+    (error) => error instanceof Error && error.message.includes("RELEASEBAR_ALLOW_GENERIC"),
+  );
+});
+
+test("deploy config without settings is the generic wrangler.toml when allowed", () => {
+  const config = deployConfig(base, { RELEASEBAR_ALLOW_GENERIC: "true" });
   assert.deepEqual(config, { ...base, vars: base.vars, kv_namespaces: base.kv_namespaces });
   assert.equal(config.routes, undefined);
 });
