@@ -22,15 +22,13 @@ import { cachedUserTrustSignals } from "./audience-data.js";
 import { bestInstallationToken } from "./auth-tokens.js";
 import {
   dashboardStorageTtlSeconds,
-  releaseSummaryBodyChars,
   releaseSummaryCommitLimit,
-  releaseSummaryInputChars,
-  releaseSummaryTitleChars,
   releaseSummaryPromptVersion,
   type UserTrustSignal,
 } from "./config.js";
 import { isGitHubRateLimit } from "./dashboard-cache.js";
 import { detailGitHubJson } from "./repo-github.js";
+import { releaseSummaryLimits } from "./summary-limits.js";
 
 export function repoDetailCacheKey(owner: string, repo: string): string {
   return `repo-detail:v4:${slugOwner(owner)}/${repo.toLowerCase()}`;
@@ -194,7 +192,7 @@ export function clipText(text: string, maxChars: number): string {
 }
 
 // A commit message without its title and its closing block of trailers, such as Signed-off-by.
-export function commitBody(message: string): string {
+export function commitBody(message: string, maxChars: number): string {
   const paragraphs = message
     .split("\n")
     .slice(1)
@@ -206,7 +204,7 @@ export function commitBody(message: string): string {
   if (last && last.split("\n").every((line) => /^[A-Za-z][\w-]*: \S/.test(line.trim()))) {
     paragraphs.pop();
   }
-  return clipText(paragraphs.join("\n\n"), releaseSummaryBodyChars);
+  return maxChars > 0 ? clipText(paragraphs.join("\n\n"), maxChars) : "";
 }
 
 export type ReleaseDeltaCommit = { title: string; body: string };
@@ -221,6 +219,7 @@ export async function compareCommitMessages(
   onQuota: (quota: ApiQuota) => void,
   env: Env,
 ): Promise<{ commits: ReleaseDeltaCommit[]; total: number | null }> {
+  const limits = releaseSummaryLimits(env);
   const commits: ReleaseDeltaCommit[] = [];
   let total: number | null = null;
   for (let page = 1; commits.length < releaseSummaryCommitLimit; page += 1) {
@@ -239,8 +238,8 @@ export async function compareCommitMessages(
     total = compare.total_commits ?? total;
     const pageCommits = (compare.commits ?? [])
       .map((commit) => ({
-        title: clipText(commitTitle(commit.commit.message), releaseSummaryTitleChars),
-        body: commitBody(commit.commit.message),
+        title: clipText(commitTitle(commit.commit.message), limits.titleChars),
+        body: commitBody(commit.commit.message, limits.bodyChars),
       }))
       .filter((commit) => commit.title);
     commits.push(...pageCommits);
@@ -249,22 +248,22 @@ export async function compareCommitMessages(
   return { commits: commits.slice(0, releaseSummaryCommitLimit), total };
 }
 
-// Builds the model's input within releaseSummaryInputChars: the titles of the newest commits,
-// then the newest commits' bodies.
-export function releaseDeltaInput(commits: ReleaseDeltaCommit[]): {
-  text: string;
-  commitsUsed: number;
-} {
+// Builds the model's input within inputChars: the titles of the newest commits, then the newest
+// commits' bodies.
+export function releaseDeltaInput(
+  commits: ReleaseDeltaCommit[],
+  inputChars: number,
+): { text: string; commitsUsed: number } {
   const lineChars = (text: string) => text.length + 8;
   let first = commits.length;
   let titleChars = 0;
   while (first > 0) {
     const chars = lineChars(commits[first - 1]?.title ?? "");
-    if (titleChars + chars > releaseSummaryInputChars / 2) break;
+    if (titleChars + chars > inputChars / 2) break;
     titleChars += chars;
     first -= 1;
   }
-  let bodyBudget = releaseSummaryInputChars - titleChars;
+  let bodyBudget = inputChars - titleChars;
   const keepBody = new Set<number>();
   for (let index = commits.length - 1; index >= first; index -= 1) {
     const body = commits[index]?.body ?? "";
@@ -366,7 +365,7 @@ export async function summarizeReleaseDelta(
   if (commits.length === 0) {
     return unavailableReleaseSummary(project, model, "No commits were available to summarize.");
   }
-  const input = releaseDeltaInput(commits);
+  const input = releaseDeltaInput(commits, releaseSummaryLimits(env).inputChars);
   const text = await claudeSummaryText(env, {
     model,
     maxTokens: 450,
