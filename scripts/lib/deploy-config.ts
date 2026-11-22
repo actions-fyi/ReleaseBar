@@ -20,6 +20,7 @@ export const deploySettingNames = [
   "RELEASEBAR_DO_JURISDICTION",
   "RELEASEBAR_ADMIN_LOGINS",
   "RELEASEBAR_WORKERS_DEV",
+  "RELEASEBAR_ANTHROPIC_BASE_URL",
 ] as const;
 
 // A bare host name: matches "releasebar.example.com", rejects "https://releasebar.example.com/".
@@ -50,12 +51,17 @@ function check(value: string, pattern: RegExp, message: string): void {
   if (value && !pattern.test(value)) throw new Error(message);
 }
 
+function isHttpsUrl(value: string): boolean {
+  return URL.canParse(value) && new URL(value).protocol === "https:";
+}
+
 export function deployConfig(base: RawWranglerConfig, settings: DeploySettings): RawWranglerConfig {
   const domain = setting(settings, "RELEASEBAR_DOMAIN").toLowerCase();
   const kvId = setting(settings, "RELEASEBAR_KV_NAMESPACE_ID").toLowerCase();
   const jurisdiction = setting(settings, "RELEASEBAR_DO_JURISDICTION").toLowerCase();
   const admins = setting(settings, "RELEASEBAR_ADMIN_LOGINS").replaceAll(" ", "");
   const workersDev = setting(settings, "RELEASEBAR_WORKERS_DEV").toLowerCase();
+  const anthropicBaseUrl = setting(settings, "RELEASEBAR_ANTHROPIC_BASE_URL");
 
   check(domain, hostPattern, `RELEASEBAR_DOMAIN must be a bare host name, not "${domain}"`);
   check(kvId, kvIdPattern, "RELEASEBAR_KV_NAMESPACE_ID must be a 32-digit hex KV namespace ID");
@@ -66,6 +72,9 @@ export function deployConfig(base: RawWranglerConfig, settings: DeploySettings):
   );
   check(admins, loginsPattern, "RELEASEBAR_ADMIN_LOGINS must be GitHub logins separated by commas");
   check(workersDev, booleanPattern, 'RELEASEBAR_WORKERS_DEV must be "true" or "false"');
+  if (anthropicBaseUrl && !isHttpsUrl(anthropicBaseUrl)) {
+    throw new Error("RELEASEBAR_ANTHROPIC_BASE_URL must be an https:// URL");
+  }
   const anySetting = deploySettingNames.some((name) => setting(settings, name));
   if (!anySetting && settings.RELEASEBAR_ALLOW_GENERIC?.trim() !== "true") {
     throw new Error(
@@ -87,6 +96,7 @@ export function deployConfig(base: RawWranglerConfig, settings: DeploySettings):
     ...(domain ? { RELEASEDECK_CANONICAL_DOMAIN: domain } : {}),
     ...(admins ? { ADMIN_LOGINS: admins } : {}),
     ...(jurisdiction ? { RELEASEBAR_DO_JURISDICTION: jurisdiction } : {}),
+    ...(anthropicBaseUrl ? { ANTHROPIC_BASE_URL: anthropicBaseUrl } : {}),
   };
   const kvNamespaces = (base.kv_namespaces ?? []).map((namespace) =>
     kvId && namespace.binding === "DASHBOARD_CACHE" ? { ...namespace, id: kvId } : namespace,

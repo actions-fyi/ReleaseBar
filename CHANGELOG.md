@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- AI summaries can use another Messages API endpoint, such as a gateway: set the build variable `RELEASEBAR_ANTHROPIC_BASE_URL` (Worker var `ANTHROPIC_BASE_URL`). Unset, they go to `api.anthropic.com` as before.
 - Turned off Workers invocation logs, so request headers, client IPs and locations are no longer stored; the Worker's own logs, exceptions and Issues remain.
 - Query strings are now stripped from request URLs in Workers logs and traces, so OAuth codes never reach them.
 - Turned on Workers Issues, which groups exceptions and failed invocations; traces stay off.

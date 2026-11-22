@@ -70,13 +70,14 @@ The Worker runs before static assets so `/api/*` stays dynamic and owner routes 
 
 `wrangler.toml` is generic: it names no account, custom domain, admin login or resource ID. A deployment supplies its own through environment variables, and `npm run deploy` writes them into `wrangler.deploy.json` (git-ignored) before deploying from it. With Workers Builds, set these as **build variables** (Settings → Build → Variables and secrets) and set the deploy command to `npm run deploy`. For non-production branch builds, use `npm run deploy:preview`.
 
-| Variable                     | Effect                                                                                                                                                                                    |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RELEASEBAR_DOMAIN`          | Custom domain (bare host, such as `releasebar.example.com`); also sets the Worker var `RELEASEDECK_CANONICAL_DOMAIN`. Its zone must be in the deploying account. Unset: no custom domain. |
-| `RELEASEBAR_KV_NAMESPACE_ID` | ID of a pre-created `DASHBOARD_CACHE` namespace. Unset: Wrangler creates one on the first deploy, without a jurisdiction.                                                                 |
-| `RELEASEBAR_DO_JURISDICTION` | Jurisdiction for every `DASHBOARD_LOCKS` Durable Object, such as `eu`. Requires `RELEASEBAR_KV_NAMESPACE_ID`, so KV is never created outside it.                                          |
-| `RELEASEBAR_ADMIN_LOGINS`    | Comma-separated GitHub logins for `/_admin` (Worker var `ADMIN_LOGINS`).                                                                                                                  |
-| `RELEASEBAR_WORKERS_DEV`     | `true` or `false`: whether the Worker is also served on `workers.dev`. Unset: as in `wrangler.toml`.                                                                                      |
+| Variable                        | Effect                                                                                                                                                                                    |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RELEASEBAR_DOMAIN`             | Custom domain (bare host, such as `releasebar.example.com`); also sets the Worker var `RELEASEDECK_CANONICAL_DOMAIN`. Its zone must be in the deploying account. Unset: no custom domain. |
+| `RELEASEBAR_KV_NAMESPACE_ID`    | ID of a pre-created `DASHBOARD_CACHE` namespace. Unset: Wrangler creates one on the first deploy, without a jurisdiction.                                                                 |
+| `RELEASEBAR_DO_JURISDICTION`    | Jurisdiction for every `DASHBOARD_LOCKS` Durable Object, such as `eu`. Requires `RELEASEBAR_KV_NAMESPACE_ID`, so KV is never created outside it.                                          |
+| `RELEASEBAR_ADMIN_LOGINS`       | Comma-separated GitHub logins for `/_admin` (Worker var `ADMIN_LOGINS`).                                                                                                                  |
+| `RELEASEBAR_WORKERS_DEV`        | `true` or `false`: whether the Worker is also served on `workers.dev`. Unset: as in `wrangler.toml`.                                                                                      |
+| `RELEASEBAR_ANTHROPIC_BASE_URL` | `https://` base URL of the Messages API endpoint for AI summaries (Worker var `ANTHROPIC_BASE_URL`), such as a gateway. Unset: `https://api.anthropic.com`.                               |
 
 `npm run deploy` fails when none of these is set, so a lost build variable can't silently drop a deployment's domain and admins. Set `RELEASEBAR_ALLOW_GENERIC=true` to deploy the generic `wrangler.toml` on purpose.
 
@@ -120,6 +121,8 @@ wrangler secret put ANTHROPIC_API_KEY
 ```
 
 `ANTHROPIC_SUMMARY_MODEL` is optional and defaults to `claude-haiku-5-5`. Summaries run server-side through the Anthropic Messages API, remain subordinate to public source data, and are cached with the model and prompt version.
+
+To send summaries to another endpoint that speaks the Messages API, such as Cloudflare AI Gateway or a proxy, set the build variable `RELEASEBAR_ANTHROPIC_BASE_URL` (or the Worker var `ANTHROPIC_BASE_URL` directly). The client appends `/v1/messages` to it and sends `ANTHROPIC_API_KEY` in the `x-api-key` header.
 
 ## Deploy
 

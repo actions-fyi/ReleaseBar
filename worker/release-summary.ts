@@ -230,7 +230,13 @@ export async function claudeSummaryText(
     schema?: Record<string, unknown>;
   },
 ): Promise<string> {
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, fetch: workerFetch });
+  // ANTHROPIC_BASE_URL points the client at another Messages API endpoint, such as a gateway.
+  const baseURL = env.ANTHROPIC_BASE_URL?.trim();
+  const client = new Anthropic({
+    apiKey: env.ANTHROPIC_API_KEY,
+    fetch: workerFetch,
+    ...(baseURL ? { baseURL } : {}),
+  });
   const response = await client.messages.create({
     model: request.model,
     max_tokens: request.maxTokens + summaryThinkingHeadroomTokens,
