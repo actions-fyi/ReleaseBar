@@ -40,6 +40,9 @@ max_concurrency = 5
 [observability]
 enabled = true
 head_sampling_rate = 1
+# Strips query strings from request URLs in logs and traces, such as the GitHub OAuth `code`
+# and `state` on /api/auth/callback.
+redact_query_string = true
 
 # Invocation logs carry each request's headers and Cloudflare metadata, including the client IP
 # and location. Keep only the Worker's own logs, exceptions and errors, which Issues needs.
