@@ -3,16 +3,12 @@ main = "node_modules/.cache/releasebar-build/worker/index.js"
 compatibility_date = "2026-07-11"
 workers_dev = true
 
-# The canonical domain. Its zone must be in the Cloudflare account that deploys this Worker.
-# Keep it in step with RELEASEDECK_CANONICAL_DOMAIN below, which every rendered host comes from.
-[[routes]]
-pattern = "releasebar.actions.fyi"
-custom_domain = true
+# This file holds no deployment of its own: no custom domain, admin logins or resource IDs.
+# `npm run deploy` adds them from RELEASEBAR_* environment variables (see docs/self-hosting.md)
+# and deploys from the generated wrangler.deploy.json.
 
 [vars]
 ANTHROPIC_SUMMARY_MODEL = "claude-haiku-5-5"
-RELEASEDECK_CANONICAL_DOMAIN = "releasebar.actions.fyi"
-ADMIN_LOGINS = "matfax"
 
 [triggers]
 crons = ["*/15 * * * *"]
