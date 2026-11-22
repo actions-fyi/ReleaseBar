@@ -2,6 +2,9 @@ name = "releasebar"
 main = "node_modules/.cache/releasebar-build/worker/index.js"
 compatibility_date = "2026-07-11"
 workers_dev = true
+# Deploys keep the plain-text variables set on the Worker in the dashboard, such as GITHUB_APP_SLUG.
+# Without this, each deploy deletes every variable this configuration does not list.
+keep_vars = true
 
 # This file holds no deployment of its own: no custom domain, admin logins or resource IDs.
 # `npm run deploy` adds them from RELEASEBAR_* environment variables (see docs/self-hosting.md)
