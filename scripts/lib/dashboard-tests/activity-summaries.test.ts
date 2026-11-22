@@ -648,7 +648,7 @@ test("worker rejects incomplete structured owner activity summaries", async () =
     ) as OwnerActivityPayload;
     assert.equal(cached.summary?.state, "unavailable");
     assert.equal(cached.summary?.model, "claude-haiku-5-5");
-    assert.match(cached.summary?.message ?? "", /complete structured activity summaries/);
+    assert.equal(cached.summary?.message, "AI summary failed; retrying later.");
     assert.notEqual(cached.summary?.inputHash, "activity-hash");
     assert.equal(cached.summary?.promptVersion, 4);
   } finally {

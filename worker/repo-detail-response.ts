@@ -7,12 +7,7 @@ import type { InitialPageData } from "./app-shell.js";
 import { withRepoDetailContributorTrustProfiles } from "./audience-data.js";
 import { sourceInstallationRegistryCovers } from "./auth-tokens.js";
 import { maxDisplayStaleMs, repoDetailCacheTtlMs, repoDetailWarmingRefreshMs } from "./config.js";
-import {
-  dashboardErrorMessage,
-  errorMessage,
-  errorStatus,
-  retryAfterHeaders,
-} from "./dashboard-cache.js";
+import { dashboardErrorMessage, errorStatus, retryAfterHeaders } from "./dashboard-cache.js";
 import { acquireBuildLock } from "./dashboard-rebuild.js";
 import { repositoryPublicCacheBarrier } from "./owner-metadata-read.js";
 import { allowRequestRefresh, crawlerCacheOnlyResponse } from "./owner-metadata-write.js";
@@ -23,6 +18,8 @@ import {
   repoDetailAgeMs,
   repoDetailCacheKey,
   summarizeReleaseDelta,
+  summaryFailure,
+  summaryRetryDue,
   withRepoDetailState,
   writeReleaseSummary,
   writeRepoDetail,
@@ -42,6 +39,7 @@ export function releaseSummaryNeedsRefresh(payload: RepoDetailPayload | null, en
     payload.project.commitsSinceRelease > 0;
   return (
     payload?.releaseSummary?.state === "warming" ||
+    (hasComparableCommits && summaryRetryDue(payload?.releaseSummary)) ||
     (hasComparableCommits &&
       !!payload?.releaseSummary &&
       payload.releaseSummary.model !== releaseSummaryModel(env))
@@ -88,10 +86,11 @@ export async function refreshReleaseSummary(
     ) {
       return;
     }
+    const previous = latest.releaseSummary ?? payload.releaseSummary;
     await writeRepoDetail(env, key, {
       ...latest,
       releaseSummary: {
-        ...(latest.releaseSummary ?? payload.releaseSummary),
+        ...previous,
         state: "unavailable",
         text: null,
         generatedAt: null,
@@ -100,7 +99,7 @@ export async function refreshReleaseSummary(
         headSha: latest.project.latestCommitSha,
         commitCount: latest.project.commitsSinceRelease,
         commitsUsed: 0,
-        message: errorMessage(error),
+        ...summaryFailure("release", `${owner}/${repo}`, previous, error),
       },
     });
   } finally {
