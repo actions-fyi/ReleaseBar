@@ -1,6 +1,6 @@
 <script lang="ts">
   import { DropdownMenu } from "bits-ui";
-  import { ownerDashboardPath } from "../routing.js";
+  import { ownerDashboardPath, siteDomain } from "../routing.js";
   import type { AuthPayload, Owner, Project, RepoDetailPayload } from "../types.js";
 
   type RepoRoute = { owner: string; repo: string; fullName: string };
@@ -38,7 +38,7 @@
 <header class="topline">
   <div class="hero-copy">
     <nav class="eyebrow-nav" aria-label="Page navigation">
-      <a class="eyebrow brand" href="/">releases.actions.fyi</a>
+      <a class="eyebrow brand" href="/">{siteDomain()}</a>
       {#if repoRoute}
         <span aria-hidden="true">/</span>
         <a class="eyebrow eyebrow-back" href={ownerDashboardPath(repoRoute.owner)}>

@@ -3,7 +3,7 @@ import type { AuthUser, DashboardPayload, DashboardProfile } from "../src/types.
 import { authFunnelSummary } from "./auth-observability.js";
 import { githubAccessAdminHours, githubAccessSummary } from "./github-audit.js";
 import { jsonResponse } from "./http.js";
-import type { Env, ExecutionContext } from "./runtime.js";
+import { canonicalDomain, type Env, type ExecutionContext } from "./runtime.js";
 import { currentSession, uniqueSorted } from "./app-shell.js";
 import { syncGithubAppInstallations } from "./auth-oauth.js";
 import { requireAdmin } from "./auth-tokens.js";
@@ -68,7 +68,7 @@ export function statusPayload(
   return {
     title: "ReleaseBar",
     subtitle: dashboard.subtitle,
-    canonicalDomain: env.RELEASEDECK_CANONICAL_DOMAIN ?? "release.bar",
+    canonicalDomain: canonicalDomain(env),
     generatedAt,
     owners: dashboard.owners,
     ...(dashboard.profile ? { profile: dashboard.profile } : {}),

@@ -4,13 +4,14 @@ compatibility_date = "2026-07-11"
 workers_dev = true
 
 # The canonical domain. Its zone must be in the Cloudflare account that deploys this Worker.
+# Keep it in step with RELEASEDECK_CANONICAL_DOMAIN below, which every rendered host comes from.
 [[routes]]
-pattern = "releases.actions.fyi"
+pattern = "releasebar.actions.fyi"
 custom_domain = true
 
 [vars]
 ANTHROPIC_SUMMARY_MODEL = "claude-haiku-5-5"
-RELEASEDECK_CANONICAL_DOMAIN = "releases.actions.fyi"
+RELEASEDECK_CANONICAL_DOMAIN = "releasebar.actions.fyi"
 ADMIN_LOGINS = "matfax"
 
 [triggers]

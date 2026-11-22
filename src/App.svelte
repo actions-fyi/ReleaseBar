@@ -48,6 +48,7 @@
     dashboardRoute,
     ownerActivityFromPath,
     repoFromPath,
+    siteDomain,
     type DiscoverPeriod,
   } from "./routing.js";
   import { isGitHubRateLimit } from "./rate-limit.js";
@@ -306,7 +307,7 @@
     ),
   );
   $: document.body.classList.toggle("dev-mode", devMode);
-  $: document.title = `${label} · releases.actions.fyi`;
+  $: document.title = `${label} · ${siteDomain()}`;
   $: activeDiscoverPeriod = initialRoute.discoverPeriod ?? "week";
   $: activeDiscoverLanguage = initialRoute.discoverLanguage;
   $: syncViewState(query, language, filter, sortKey, sortDirection, devMode);
