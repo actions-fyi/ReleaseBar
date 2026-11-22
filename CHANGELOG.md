@@ -3,6 +3,7 @@
 ## Unreleased
 
 - The commit titles a release summary sends the model are now capped whatever the commits hold: 48,000 characters in all and 160 per title by default, keeping the newest commits. Set the build variables `RELEASEBAR_SUMMARY_INPUT_CHARS` and `RELEASEBAR_SUMMARY_TITLE_CHARS` to change them within their bounds.
+- A failed AI summary now shows "AI summary failed; retrying later." instead of the provider's raw error response, which visitors could see. The real error goes to the Worker logs (`summary_failed`). The summary is retried after 5 minutes, and the wait doubles with each failure in a row, up to 6 hours.
 - AI summaries can use another Messages API endpoint, such as a gateway: set the build variable `RELEASEBAR_ANTHROPIC_BASE_URL` (Worker var `ANTHROPIC_BASE_URL`). Unset, they go to `api.anthropic.com` as before.
 - Turned off Workers invocation logs, so request headers, client IPs and locations are no longer stored; the Worker's own logs, exceptions and Issues remain.
 - Query strings are now stripped from request URLs in Workers logs and traces, so OAuth codes never reach them.

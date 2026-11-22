@@ -24,9 +24,12 @@ import {
   dashboardStorageTtlSeconds,
   releaseSummaryCommitLimit,
   releaseSummaryPromptVersion,
+  summaryRetryBaseMs,
+  summaryRetryMaxMs,
+  summaryRetryMultiplier,
   type UserTrustSignal,
 } from "./config.js";
-import { isGitHubRateLimit } from "./dashboard-cache.js";
+import { errorMessage, isGitHubRateLimit } from "./dashboard-cache.js";
 import { detailGitHubJson } from "./repo-github.js";
 import { releaseSummaryLimits } from "./summary-limits.js";
 
@@ -132,6 +135,47 @@ export function unavailableReleaseSummary(
     commitsUsed: 0,
     message,
   };
+}
+
+export const summaryFailedMessage = "AI summary failed; retrying later.";
+
+type SummaryFailureFields = { state: string; failedAt?: string; failures?: number };
+
+// Logs why a summary failed and returns the fields the failed summary stores. The stored message
+// is generic: summaries are public payloads, and the error can carry provider responses.
+export function summaryFailure(
+  kind: "owner-activity" | "repo-activity" | "release",
+  target: string,
+  previous: SummaryFailureFields | undefined,
+  error: unknown,
+): { message: string; failedAt: string; failures: number } {
+  const failures = (previous?.failedAt ? (previous.failures ?? 1) : 0) + 1;
+  console.error(
+    JSON.stringify({
+      area: "ai-summary",
+      event: "summary_failed",
+      kind,
+      target,
+      failures,
+      error: errorMessage(error),
+    }),
+  );
+  return { message: summaryFailedMessage, failedAt: new Date().toISOString(), failures };
+}
+
+// Whether a failed summary has waited out its backoff and should be requested again.
+export function summaryRetryDue(
+  summary: SummaryFailureFields | null | undefined,
+  now = Date.now(),
+): boolean {
+  if (summary?.state !== "unavailable" || !summary.failedAt) return false;
+  const failedAt = Date.parse(summary.failedAt);
+  if (!Number.isFinite(failedAt)) return true;
+  const delay = Math.min(
+    summaryRetryBaseMs * summaryRetryMultiplier ** Math.max(0, (summary.failures ?? 1) - 1),
+    summaryRetryMaxMs,
+  );
+  return now - failedAt >= delay;
 }
 
 export async function releaseSummaryState(

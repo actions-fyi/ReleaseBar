@@ -228,6 +228,9 @@ export type OwnerActivitySummary = {
   promptVersion?: number;
   message?: string;
   repositories?: OwnerActivityRepositorySummary[];
+  // Set when the last summary request failed: when, and how many times in a row.
+  failedAt?: string;
+  failures?: number;
 };
 
 export type OwnerActivityPayload = {
@@ -399,6 +402,9 @@ export type RepoDetailReleaseSummary = {
   commitCount: number | null;
   commitsUsed: number;
   message?: string;
+  // Set when the last summary request failed: when, and how many times in a row.
+  failedAt?: string;
+  failures?: number;
 };
 
 export type AudienceRange = "week" | "month";
