@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { claudeText } from "../dashboard-test-harness.js";
 import { type RawWranglerConfig, deployConfig } from "../deploy-config.js";
+import { claudeSummaryText } from "../../../worker/release-summary.js";
 import {
   type DurableObjectNamespace,
   type Env,
@@ -37,6 +39,7 @@ test("deploy config applies the deployment's domain, KV namespace, jurisdiction 
     RELEASEBAR_DO_JURISDICTION: "eu",
     RELEASEBAR_ADMIN_LOGINS: "octocat, hubot",
     RELEASEBAR_WORKERS_DEV: "false",
+    RELEASEBAR_ANTHROPIC_BASE_URL: " https://gateway.example.com/anthropic ",
   });
   assert.deepEqual(config.routes, [{ pattern: "releasebar.example.com", custom_domain: true }]);
   assert.deepEqual(config.kv_namespaces, [{ binding: "DASHBOARD_CACHE", id: kvId }]);
@@ -46,6 +49,7 @@ test("deploy config applies the deployment's domain, KV namespace, jurisdiction 
     RELEASEDECK_CANONICAL_DOMAIN: "releasebar.example.com",
     ADMIN_LOGINS: "octocat,hubot",
     RELEASEBAR_DO_JURISDICTION: "eu",
+    ANTHROPIC_BASE_URL: "https://gateway.example.com/anthropic",
   });
 });
 
@@ -62,6 +66,35 @@ test("deploy config rejects malformed settings", () => {
   assert.throws(() => deployConfig(base, { RELEASEBAR_KV_NAMESPACE_ID: "my-namespace" }));
   assert.throws(() => deployConfig(base, { RELEASEBAR_ADMIN_LOGINS: "octocat;hubot" }));
   assert.throws(() => deployConfig(base, { RELEASEBAR_WORKERS_DEV: "yes" }));
+  assert.throws(() => deployConfig(base, { RELEASEBAR_ANTHROPIC_BASE_URL: "gateway.example.com" }));
+  assert.throws(() => deployConfig(base, { RELEASEBAR_ANTHROPIC_BASE_URL: "http://gateway.test" }));
+});
+
+test("Claude summaries go to ANTHROPIC_BASE_URL when it is set", async () => {
+  const requested: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    requested.push(input instanceof Request ? input.url : String(input));
+    return Response.json({ content: claudeText("Summary."), stop_reason: "end_turn" });
+  };
+  const maxTokens = 100;
+  const request = { model: "claude-haiku-5-5", maxTokens, system: "s", user: "u" };
+  try {
+    await claudeSummaryText({ ANTHROPIC_API_KEY: "claude-key" }, request);
+    await claudeSummaryText(
+      {
+        ANTHROPIC_API_KEY: "claude-key",
+        ANTHROPIC_BASE_URL: "https://gateway.example.com/anthropic",
+      },
+      request,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.deepEqual(requested, [
+    "https://api.anthropic.com/v1/messages",
+    "https://gateway.example.com/anthropic/v1/messages",
+  ]);
 });
 
 function fakeLocks(calls: string[]): DurableObjectNamespace {

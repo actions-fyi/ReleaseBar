@@ -100,6 +100,7 @@ export type Env = {
   GITHUB_WEBHOOK_SECRET?: string;
   GITHUB_TOKEN?: string;
   ANTHROPIC_API_KEY?: string;
+  ANTHROPIC_BASE_URL?: string;
   ANTHROPIC_SUMMARY_MODEL?: string;
   RELEASEDECK_CANONICAL_DOMAIN?: string;
   RELEASEBAR_DO_JURISDICTION?: string;
