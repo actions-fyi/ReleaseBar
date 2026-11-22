@@ -22,6 +22,7 @@
     repoActivityMeta,
     shortDate,
   } from "../app-format.js";
+  import { releaseDraftUrl } from "../release-draft.js";
   import { ownerDashboardPath, repoDetailPath } from "../routing.js";
   import type {
     ActivityRange,
@@ -72,6 +73,7 @@
   );
   $: releaseCadence = cadenceSummary(repoDetail?.releases ?? []);
   $: workTrend = repoDetail?.workTrend ?? null;
+  $: releaseDraft = repoDetail ? releaseDraftUrl(repoDetail.project, repoDetail.releaseSummary) : null;
   $: filteredAudienceUsers = audience ? audienceUsersMatching(audience, audienceQuery) : [];
 
   function commitTotal(): number {
@@ -254,6 +256,11 @@
           {#if repoDetail.releaseSummary?.state === "ready" && repoDetail.releaseSummary.text}
             <p>{repoDetail.releaseSummary.text}</p>
             <small>{releaseSummaryMeta(repoDetail.releaseSummary)}</small>
+            {#if releaseDraft}
+              <a class="external-link release-draft-link" href={releaseDraft} target="_blank" rel="noreferrer">
+                Draft release on GitHub
+              </a>
+            {/if}
           {:else if repoDetail.releaseSummary?.state === "warming"}
             <p>Summarizing commit titles since the latest release.</p>
             <small>{releaseSummaryMeta(repoDetail.releaseSummary)}</small>
