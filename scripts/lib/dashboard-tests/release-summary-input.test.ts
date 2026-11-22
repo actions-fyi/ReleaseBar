@@ -22,13 +22,7 @@ test("release summary input stays within its cap whatever the commits hold", () 
     title: clipText(`commit ${index} ${huge}`, 160),
     body: commitBody(`t\n\n${huge}`),
   }));
-  const files = Array.from({ length: 3_000 }, (_, index) => ({
-    filename: clipText(`dir/${index}/${huge}`, 160),
-    status: "modified",
-    additions: index,
-    deletions: 0,
-  }));
-  const { text, commitsUsed } = releaseDeltaInput(commits, files);
+  const { text, commitsUsed } = releaseDeltaInput(commits);
   assert.ok(text.length <= releaseSummaryInputChars, `input is ${text.length} characters`);
   assert.ok(commitsUsed > 0 && commitsUsed < 500);
   // The newest commits are the ones kept.

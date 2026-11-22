@@ -79,12 +79,10 @@ export const releaseSummaryPromptVersion = 2;
 export const releaseSummaryCommitLimit = 500;
 // The release summary's input is capped whatever the commits hold, since anyone can have any
 // public repository summarized: at most this many characters (UTF-16 units) in all, of which
-// titles take up to half and the file list up to a sixth. Bodies get what is left.
+// titles take up to half. Bodies get what is left.
 export const releaseSummaryInputChars = 48_000;
 export const releaseSummaryTitleChars = 160;
 export const releaseSummaryBodyChars = 1_000;
-export const releaseSummaryFilenameChars = 160;
-export const releaseSummaryFileLimit = 100;
 export const activitySummaryPromptVersion = 4;
 export const activityEventPageLimit = 3;
 export const activitySummaryInputLimit = 180;

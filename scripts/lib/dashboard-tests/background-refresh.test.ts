@@ -240,15 +240,6 @@ test("worker summarizes commits since release in the background", async () => {
           },
           { commit: { message: "Fix summary cache key" } },
         ],
-        files: [
-          {
-            filename: "worker/release-summary.ts",
-            status: "modified",
-            additions: 40,
-            deletions: 3,
-          },
-          { filename: "src/Summary.svelte", status: "added", additions: 12, deletions: 0 },
-        ],
       });
     }
     if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
@@ -263,8 +254,6 @@ test("worker summarizes commits since release in the background", async () => {
         /Add release summary panel\n {3}Shows what changed since the release\./,
       );
       assert.doesNotMatch(content, /Signed-off-by/);
-      assert.match(content, /Changed files: 2 of 2/);
-      assert.match(content, /- added src\/Summary\.svelte \(\+12 -0\)/);
       return Response.json({
         content: claudeText(
           "ReleaseBar added an AI summary panel and tightened the cache key for generated summaries.",

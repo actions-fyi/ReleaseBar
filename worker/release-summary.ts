@@ -24,8 +24,6 @@ import {
   dashboardStorageTtlSeconds,
   releaseSummaryBodyChars,
   releaseSummaryCommitLimit,
-  releaseSummaryFileLimit,
-  releaseSummaryFilenameChars,
   releaseSummaryInputChars,
   releaseSummaryTitleChars,
   releaseSummaryPromptVersion,
@@ -212,12 +210,6 @@ export function commitBody(message: string): string {
 }
 
 export type ReleaseDeltaCommit = { title: string; body: string };
-export type ReleaseDeltaFile = {
-  filename: string;
-  status: string;
-  additions: number;
-  deletions: number;
-};
 
 export async function compareCommitMessages(
   path: string,
@@ -228,9 +220,8 @@ export async function compareCommitMessages(
   quotaAccount: string | null,
   onQuota: (quota: ApiQuota) => void,
   env: Env,
-): Promise<{ commits: ReleaseDeltaCommit[]; files: ReleaseDeltaFile[]; total: number | null }> {
+): Promise<{ commits: ReleaseDeltaCommit[]; total: number | null }> {
   const commits: ReleaseDeltaCommit[] = [];
-  let files: ReleaseDeltaFile[] = [];
   let total: number | null = null;
   for (let page = 1; commits.length < releaseSummaryCommitLimit; page += 1) {
     const compare = await detailGitHubJson(
@@ -246,14 +237,6 @@ export async function compareCommitMessages(
       env,
     );
     total = compare.total_commits ?? total;
-    if (page === 1) {
-      files = (compare.files ?? []).map((file) => ({
-        filename: clipText(file.filename, releaseSummaryFilenameChars),
-        status: file.status ?? "modified",
-        additions: file.additions ?? 0,
-        deletions: file.deletions ?? 0,
-      }));
-    }
     const pageCommits = (compare.commits ?? [])
       .map((commit) => ({
         title: clipText(commitTitle(commit.commit.message), releaseSummaryTitleChars),
@@ -263,15 +246,15 @@ export async function compareCommitMessages(
     commits.push(...pageCommits);
     if (pageCommits.length === 0 || (total !== null && commits.length >= total)) break;
   }
-  return { commits: commits.slice(0, releaseSummaryCommitLimit), files, total };
+  return { commits: commits.slice(0, releaseSummaryCommitLimit), total };
 }
 
-// Builds the model's input within releaseSummaryInputChars, newest commits first: the titles of
-// the newest commits, then the most changed files, then the newest commits' bodies.
-export function releaseDeltaInput(
-  commits: ReleaseDeltaCommit[],
-  files: ReleaseDeltaFile[],
-): { text: string; commitsUsed: number } {
+// Builds the model's input within releaseSummaryInputChars: the titles of the newest commits,
+// then the newest commits' bodies.
+export function releaseDeltaInput(commits: ReleaseDeltaCommit[]): {
+  text: string;
+  commitsUsed: number;
+} {
   const lineChars = (text: string) => text.length + 8;
   let first = commits.length;
   let titleChars = 0;
@@ -281,18 +264,7 @@ export function releaseDeltaInput(
     titleChars += chars;
     first -= 1;
   }
-  const fileLines: string[] = [];
-  let fileChars = 0;
-  for (const file of [...files]
-    .sort((a, b) => b.additions + b.deletions - (a.additions + a.deletions))
-    .slice(0, releaseSummaryFileLimit)) {
-    const line = `- ${file.status} ${file.filename} (+${file.additions} -${file.deletions})`;
-    if (fileChars + lineChars(line) > releaseSummaryInputChars / 6) break;
-    fileLines.push(line);
-    fileChars += lineChars(line);
-  }
-  fileLines.sort();
-  let bodyBudget = releaseSummaryInputChars - titleChars - fileChars;
+  let bodyBudget = releaseSummaryInputChars - titleChars;
   const keepBody = new Set<number>();
   for (let index = commits.length - 1; index >= first; index -= 1) {
     const body = commits[index]?.body ?? "";
@@ -316,13 +288,6 @@ export function releaseDeltaInput(
   const text = [
     `Commits, oldest first${first > 0 ? ` (the ${first} oldest left out)` : ""}:`,
     commitLines.join("\n"),
-    ...(files.length > 0
-      ? [
-          "",
-          `Changed files: ${fileLines.length} of ${files.length}${fileLines.length < files.length ? ", the most changed" : ""}`,
-          fileLines.join("\n"),
-        ]
-      : []),
   ].join("\n");
   return { text, commitsUsed: commits.length - first };
 }
@@ -388,7 +353,7 @@ export async function summarizeReleaseDelta(
   const quotaSource = requestToken?.quotaSource ?? (env.GITHUB_TOKEN ? "shared" : "anonymous");
   const quotaAccount = requestToken?.quotaAccount ?? null;
   const onQuota = () => undefined;
-  const { commits, files, total } = await compareCommitMessages(
+  const { commits, total } = await compareCommitMessages(
     path,
     project.version,
     project.latestCommitSha,
@@ -401,12 +366,12 @@ export async function summarizeReleaseDelta(
   if (commits.length === 0) {
     return unavailableReleaseSummary(project, model, "No commits were available to summarize.");
   }
-  const input = releaseDeltaInput(commits, files);
+  const input = releaseDeltaInput(commits);
   const text = await claudeSummaryText(env, {
     model,
     maxTokens: 450,
     system:
-      "You summarize the public GitHub commits since a repository's latest release for release dashboards. You get each commit's title and, where it has one, its message body, and the files the commits changed. Write 2-4 concise sentences, past tense, no bullets, no hype, no markdown. Lead with user-visible changes and broad themes; use the bodies and files to be specific, but do not list files or commits. Do not invent details beyond what the commits say.",
+      "You summarize the public GitHub commits since a repository's latest release for release dashboards. You get each commit's title and, where it has one, its message body. Write 2-4 concise sentences, past tense, no bullets, no hype, no markdown. Lead with user-visible changes and broad themes; use the bodies to be specific, but do not list commits. Do not invent details beyond what the commits say.",
     user: [
       `Repository: ${project.fullName}`,
       `Latest release: ${project.version}`,
