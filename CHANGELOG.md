@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Turned off Workers invocation logs, so request headers, client IPs and locations are no longer stored; the Worker's own logs, exceptions and Issues remain.
 - Turned on Workers Issues, which groups exceptions and failed invocations; traces stay off.
 - Repository pages link to GitHub's new-release form prefilled with the next patch tag, the target commit and the "since latest release" summary. ReleaseBar only builds the link; the release is reviewed and published on GitHub.
 - `wrangler.toml` no longer carries a deployment: `npm run deploy` takes the custom domain, KV namespace ID, admin logins and Durable Object jurisdiction from `RELEASEBAR_*` environment variables (Workers Builds build variables). `RELEASEBAR_DO_JURISDICTION` (such as `eu`) keeps every Durable Object in that jurisdiction.

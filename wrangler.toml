@@ -41,6 +41,12 @@ max_concurrency = 5
 enabled = true
 head_sampling_rate = 1
 
+# Invocation logs carry each request's headers and Cloudflare metadata, including the client IP
+# and location. Keep only the Worker's own logs, exceptions and errors, which Issues needs.
+[observability.logs]
+enabled = true
+invocation_logs = false
+
 # Groups exceptions and failed invocations into Issues. Traces stay off; enable them
 # ([observability.traces]) only while investigating something.
 [observability.issues]
