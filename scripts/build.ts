@@ -53,6 +53,9 @@ async function main() {
   const payload = await buildDashboard(
     normalizeBuildOptions(config, {
       token: process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "",
+      ...(process.env.RELEASEBAR_DOMAIN?.trim()
+        ? { canonicalDomain: process.env.RELEASEBAR_DOMAIN.trim() }
+        : {}),
       log: (message) => process.stdout.write(`${message}\n`),
     }),
   );

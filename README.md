@@ -2,17 +2,14 @@
 
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22.12-339933?style=flat-square&logo=node.js&logoColor=white)](package.json)
 [![License](https://img.shields.io/github/license/actions-fyi/ReleaseBar?style=flat-square)](LICENSE)
-[![Live](https://img.shields.io/badge/live-releasebar.actions.fyi-6fda44?style=flat-square)](https://releasebar.actions.fyi)
 
 ReleaseBar is a release-freshness dashboard for public GitHub users and organizations. It combines releases, unreleased commits, repository activity, CI, and open work so maintainers can see which projects need attention.
 
-This is the actions-fyi fork of [steipete/ReleaseBar](https://github.com/steipete/ReleaseBar), deployed at [releasebar.actions.fyi](https://releasebar.actions.fyi).
+This is the actions-fyi fork of [steipete/ReleaseBar](https://github.com/steipete/ReleaseBar).
 
 ## Install
 
-The public service runs at [releasebar.actions.fyi](https://releasebar.actions.fyi), with no installation required.
-
-To run the source locally:
+ReleaseBar runs as a Cloudflare Worker. To deploy your own, see [self-hosting](docs/self-hosting.md). To run the source locally:
 
 ```sh
 git clone https://github.com/actions-fyi/ReleaseBar.git
@@ -24,10 +21,10 @@ ReleaseBar requires Node.js 22.12 or newer. Node.js 24 is the version used by CI
 
 ## Quick start
 
-Open a dashboard for any public GitHub owner, such as [releasebar.actions.fyi/steipete](https://releasebar.actions.fyi/steipete), or read the same cached data from the API:
+With the Worker running locally (`npm run dev:worker`), open a dashboard for any public GitHub owner, such as `http://localhost:8787/steipete`, or read the same cached data from the API. On a deployment, use its domain instead.
 
 ```sh
-curl -fsSL https://releasebar.actions.fyi/api/steipete \
+curl -fsSL http://localhost:8787/api/steipete \
   | jq '{owners: [.owners[].login], repositories: (.projects | length), cache: .cache.state}'
 ```
 
@@ -54,7 +51,7 @@ ReleaseBar ignores private repositories even when a GitHub App installation incl
 
 ## API
 
-The Worker exposes cached public endpoints for owner dashboards, activity, repository details, audience signals, and public GitHub profile context. Swagger-compatible OpenAPI 3.1 is available at [`/openapi.json`](https://releasebar.actions.fyi/openapi.json).
+The Worker exposes cached public endpoints for owner dashboards, activity, repository details, audience signals, and public GitHub profile context. Swagger-compatible OpenAPI 3.1 is served at `/openapi.json` on every deployment.
 
 See the [public API reference](docs/api.md) for response shapes, cache semantics, and agent guidance. The [refresh scheduler](docs/refresh-scheduler.md) describes background hydration, retries, quota selection, and webhook-driven refreshes.
 

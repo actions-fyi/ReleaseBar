@@ -22,14 +22,14 @@ npm run build
 
 Static builds read `releasebar.config.json`.
 
-| Key                 | Purpose                                                       |
-| ------------------- | ------------------------------------------------------------- |
-| `owners`            | GitHub users or organizations to scan                         |
-| `includeForks`      | Include forked repositories                                   |
-| `includeArchived`   | Include archived repositories                                 |
-| `includeUnreleased` | Include repositories without GitHub releases in static builds |
-| `excludeRepos`      | Hide specific `owner/name` repositories                       |
-| `canonicalDomain`   | Set the primary dashboard domain                              |
+| Key                 | Purpose                                                             |
+| ------------------- | ------------------------------------------------------------------- |
+| `owners`            | GitHub users or organizations to scan                               |
+| `includeForks`      | Include forked repositories                                         |
+| `includeArchived`   | Include archived repositories                                       |
+| `includeUnreleased` | Include repositories without GitHub releases in static builds       |
+| `excludeRepos`      | Hide specific `owner/name` repositories                             |
+| `canonicalDomain`   | Optional primary dashboard domain; `RELEASEBAR_DOMAIN` overrides it |
 
 The public Worker service accepts arbitrary public owners through route and query parameters rather than limiting requests to the static configuration.
 
@@ -107,7 +107,7 @@ Configure these Worker secrets to enable login and installation:
 
 `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` enable dedicated installation quota. Without them, users can still sign in, but dashboard rebuilds use the shared server token and cache. `GITHUB_APP_SLUG` is optional and defaults to `releasebar-app`.
 
-Set the GitHub App setup URL to `https://releasebar.actions.fyi/api/auth/install` and enable redirect-on-update. Set the webhook URL to `https://releasebar.actions.fyi/api/github/webhook`, use the same webhook secret in GitHub and Cloudflare, and subscribe to Issues, Pull requests, Push, Releases, and Repository events.
+Set the GitHub App setup URL to `https://<your-domain>/api/auth/install` and enable redirect-on-update. Set the webhook URL to `https://<your-domain>/api/github/webhook`, use the same webhook secret in GitHub and Cloudflare, and subscribe to Issues, Pull requests, Push, Releases, and Repository events.
 
 Signed webhook payloads up to 2 MiB enter Cloudflare Queue before acknowledgement. Issue and pull-request bursts coalesce into authoritative count refreshes; push and release bursts coalesce into release refreshes. Privacy and archive transitions remain separate so visibility changes apply promptly.
 
