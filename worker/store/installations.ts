@@ -21,8 +21,8 @@ const installationMissTtlSeconds = 10 * 60;
 const installationTtlMs = dashboardStorageTtlSeconds * 1000;
 
 // Rows per query of the full listing. A row carries the installation's repository list, which
-// the sync caps at 1,000 names: 100 rows stay far below D1's 50 MB per result.
-const installationPageSize = 100;
+// the sync caps at 1,000 names of at most 140 bytes: 250 rows stay below D1's 50 MB per result.
+const installationPageSize = 250;
 
 export const storedInstallationSchema = v.object({
   id: v.number(),
@@ -82,8 +82,11 @@ function installationFromRow(row: InstallationRow): AuthInstallationRecord | nul
 // is one of them.
 const accountsPerRead = 90;
 
-// Installations per batch of writes. A row carries the installation's repository list.
-const installationsPerWrite = 25;
+// Installations per batch of writes. D1 counts a batch as one query whatever it holds and sets
+// no number of statements; the size is kept to what one request carries easily, a repository
+// list for each row. The installation sync, which GitHub's listing ends at 1,000 installations,
+// writes them with 10 queries.
+const installationsPerWrite = 100;
 
 function chunks<Item>(items: Item[], size: number): Item[][] {
   const result: Item[][] = [];
@@ -198,16 +201,18 @@ export async function writeStoredInstallation(
   await writeStoredInstallations(env, [installation]);
 }
 
-// Deletes the installations of the accounts: one query for `accountsPerRead` of them.
+// Deletes the installations of the accounts: one query, a statement per `accountsPerRead` of
+// them in one batch.
 export async function deleteStoredInstallations(env: Env, accountLogins: string[]): Promise<void> {
   const accounts = [...new Set(accountLogins.map(slugOwner))];
-  for (const chunk of chunks(accounts, accountsPerRead)) {
-    await env.DB.prepare(
-      `DELETE FROM installations WHERE account_login IN (${chunk.map(() => "?").join(", ")})`,
-    )
-      .bind(...chunk)
-      .run();
-  }
+  if (accounts.length === 0) return;
+  await env.DB.batch(
+    chunks(accounts, accountsPerRead).map((chunk) =>
+      env.DB.prepare(
+        `DELETE FROM installations WHERE account_login IN (${chunk.map(() => "?").join(", ")})`,
+      ).bind(...chunk),
+    ),
+  );
 }
 
 export async function deleteStoredInstallation(env: Env, accountLogin: string): Promise<void> {

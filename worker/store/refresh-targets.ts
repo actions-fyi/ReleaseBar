@@ -152,9 +152,9 @@ export async function writeRefreshTarget(
 }
 
 // Keys per statement of a lookup, and targets per batch of writes: a target is at most
-// `refreshTargetEntryLimitBytes`.
+// `refreshTargetEntryLimitBytes`, so a batch carries less than 1 MB.
 const keysPerRead = 90;
-const targetsPerWrite = 25;
+const targetsPerWrite = 100;
 
 // The targets with the keys, as they were stored, not validated, by key: null for a key that has
 // none. One query, however many keys: a statement per `keysPerRead` of them, in one batch.

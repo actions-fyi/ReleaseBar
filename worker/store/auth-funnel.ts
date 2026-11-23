@@ -37,8 +37,9 @@ export async function appendAuthFunnelEvent(env: Env, event: AuthFunnelEvent): P
   await appendAuthFunnelEvents(env, [event]);
 }
 
-// Events per batch: an event is two statements.
-const eventsPerWrite = 50;
+// Events per batch: an event is two small statements. The installation sync records up to
+// 1,000 removed installations, which is four queries.
+const eventsPerWrite = 250;
 
 // Stores the events and adds each to its count: one batch for `eventsPerWrite` events.
 export async function appendAuthFunnelEvents(env: Env, events: AuthFunnelEvent[]): Promise<void> {

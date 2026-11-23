@@ -545,8 +545,8 @@ test("installations and profiles of many accounts are read with one query, by ex
     installation(2, "open"),
     installation(3, "gone"),
   ]);
-  // 233 installations, 25 to a batch.
-  expect(counts.queries).toBe(10);
+  // 233 installations, 100 to a batch.
+  expect(counts.queries).toBe(3);
   await runtimeEnv.DB.prepare("UPDATE installations SET expires_at = ?1 WHERE id = 3")
     .bind(Date.now() - 1000)
     .run();
@@ -576,7 +576,8 @@ test("installations and profiles of many accounts are read with one query, by ex
 
   counts.queries = 0;
   await deleteStoredInstallations(env, ["OpenClaw", "open%", ...many.slice(0, 100)]);
-  expect(counts.queries).toBe(2);
+  // More accounts than one statement binds: two statements, one batch.
+  expect(counts.queries).toBe(1);
   expect(await readStoredInstallation(env, "openclaw")).toBe(null);
   expect((await readStoredInstallation(env, "open"))?.id).toBe(8);
   expect((await listStoredInstallations(env)).length).toBe(many.length - 100 + 1);
