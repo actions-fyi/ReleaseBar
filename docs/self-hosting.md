@@ -1,6 +1,6 @@
 # Self-hosting and Operations
 
-ReleaseBar is a Svelte frontend and Cloudflare Worker service. The Worker serves the static app shell and public GitHub API routes, while Cloudflare KV, Queues, and a Durable Object coordinate cached dashboard hydration.
+ReleaseBar is a Svelte frontend and Cloudflare Worker service. The Worker serves the static app shell and public GitHub API routes, while Cloudflare KV, Queues, and Durable Objects coordinate cached dashboard hydration.
 
 ## Requirements
 
@@ -57,7 +57,7 @@ Open `http://localhost:8787/steipete` or another owner route.
 
 - `dist/client` as Worker static assets
 - `DASHBOARD_CACHE` as KV storage for dashboard, repository, settings, installation, session, and scheduler records
-- `DASHBOARD_LOCKS` as a Durable Object for single-flight builds, checkpoints, job reservations, and failure state
+- six Durable Object classes, which `wrangler.jsonc` creates with SQLite storage: `BUILD_COORDINATOR` for single-flight builds, checkpoints, job reservations, and failure state; `REFRESH_TARGET_INDEX` and `OWNER_METADATA` for what a webhook needs to know of an owner or repository; `WEBHOOK_ADMISSION` and `WEBHOOK_PROCESSOR` for GitHub deliveries; `SUMMARY_QUOTA` for the AI summary limits. All six are required
 - `REFRESH_QUEUE` for bounded background hydration and webhook work
 
 The Worker runs before static assets so `/api/*` stays dynamic and owner routes return the application shell. The Worker is named `releasebar`.
@@ -68,7 +68,7 @@ The Worker runs before static assets so `/api/*` stays dynamic and owner routes 
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RELEASEBAR_DOMAIN`                     | Custom domain (bare host, such as `releasebar.example.com`); also sets the Worker var `RELEASEDECK_CANONICAL_DOMAIN`. Its zone must be in the deploying account. Unset: no custom domain. |
 | `RELEASEBAR_KV_NAMESPACE_ID`            | ID of a pre-created `DASHBOARD_CACHE` namespace. Unset: Wrangler creates one on the first deploy, without a jurisdiction.                                                                 |
-| `RELEASEBAR_DO_JURISDICTION`            | Jurisdiction for every `DASHBOARD_LOCKS` Durable Object, such as `eu`. Requires `RELEASEBAR_KV_NAMESPACE_ID`, so KV is never created outside it.                                          |
+| `RELEASEBAR_DO_JURISDICTION`            | Jurisdiction for every Durable Object of every class, such as `eu`. Requires `RELEASEBAR_KV_NAMESPACE_ID`, so KV is never created outside it.                                             |
 | `RELEASEBAR_ADMIN_LOGINS`               | Comma-separated GitHub logins for `/_admin` (Worker var `ADMIN_LOGINS`).                                                                                                                  |
 | `RELEASEBAR_WORKERS_DEV`                | `true` or `false`: whether the Worker is also served on `workers.dev`. Unset: as in `wrangler.jsonc`.                                                                                     |
 | `RELEASEBAR_ANTHROPIC_BASE_URL`         | `https://` base URL of the Messages API endpoint for AI summaries (Worker var `ANTHROPIC_BASE_URL`), such as a gateway. Unset: `https://api.anthropic.com`.                               |
@@ -122,7 +122,7 @@ wrangler secret put ANTHROPIC_API_KEY
 
 Only a signed-in user's request generates a summary, so summaries need the GitHub App sign-in to be configured. Anonymous visitors and crawlers get summaries that are already cached; where none is, they are told that signing in generates it.
 
-Each summary that calls the model counts against two limits: `RELEASEBAR_SUMMARY_USER_HOURLY_LIMIT` per GitHub user in each clock hour (UTC), and `RELEASEBAR_SUMMARY_GLOBAL_DAILY_LIMIT` for all users together in each UTC day. A user over a limit sees a message in place of the summary until the window ends. Cached summaries and summaries that end without the model, such as "No commits have landed since the latest release.", count nothing. A failed model call counts, since it may have been billed. The counters live in one `DASHBOARD_LOCKS` Durable Object, in `RELEASEBAR_DO_JURISDICTION` when that is set; without the binding no summary is generated.
+Each summary that calls the model counts against two limits: `RELEASEBAR_SUMMARY_USER_HOURLY_LIMIT` per GitHub user in each clock hour (UTC), and `RELEASEBAR_SUMMARY_GLOBAL_DAILY_LIMIT` for all users together in each UTC day. A user over a limit sees a message in place of the summary until the window ends. Cached summaries and summaries that end without the model, such as "No commits have landed since the latest release.", count nothing. A failed model call counts, since it may have been billed. The counters live in the `SUMMARY_QUOTA` Durable Object, in `RELEASEBAR_DO_JURISDICTION` when that is set; when it cannot be reached no summary is generated.
 
 A release summary reads the commit titles since the latest release. A signed-in user can have any public repository summarized, so its input is capped whatever the commits hold: each title to `RELEASEBAR_SUMMARY_TITLE_CHARS`, and the list to `RELEASEBAR_SUMMARY_INPUT_CHARS`, newest titles first. `npm run deploy` rejects a limit outside its bounds; a Worker var set directly is clamped to them, and ignored unless it is a whole number. A changed limit applies to summaries made after it, not to cached ones.
 
