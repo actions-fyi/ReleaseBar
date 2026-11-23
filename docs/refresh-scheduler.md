@@ -6,13 +6,14 @@ ReleaseBar keeps public dashboard data warm with a small scheduler on the Cloudf
 
 - Cloudflare cron runs every 15 minutes from `wrangler.jsonc`.
 - The D1 database `DB` stores the refresh targets with the index of the owners and repositories each one shows, the refresh jobs with their immutable snapshots and delivery records, the immutable profile snapshots, and the scheduler state (`migrations/0001_refresh.sql`, `docs/data-model.md`).
-- `DASHBOARD_CACHE` stores shared owner metadata/count snapshots, visible dashboard snapshots, and audit events.
+- `DASHBOARD_CACHE` stores shared owner metadata/count snapshots, and visible dashboard snapshots. Audit events are rows of the D1 table `refresh_audit_events`.
 - Durable Objects hold what must be checked and changed in one step. Each is a class with typed RPC methods and SQLite storage, under `worker/objects/`:
   - `BUILD_COORDINATOR` (`BuildCoordinator`), one per dashboard: the build lock, the active job reservation with its dirty marker, the refresh-target failure state, and the strongly consistent progressive-scan checkpoint.
   - `OWNER_METADATA` (`OwnerMetadata`), one per owner: the owner's metadata snapshot, including repositories that turned private or were removed.
   - `WEBHOOK_ADMISSION` (`WebhookAdmission`), a single one: the GitHub deliveries already put on the queue.
   - `WEBHOOK_PROCESSOR` (`WebhookProcessor`), one per owner: pending and processed deliveries, and the lease of the job that drains them.
   - `SUMMARY_QUOTA` (`SummaryQuota`), a single one: the AI summary counters.
+  - `RATE_LIMITER` (`RateLimiter`), one per rate-limited endpoint: the requests of each client in the current minute.
 - `REFRESH_QUEUE` receives background rebuild jobs and GitHub webhook jobs. The binding is required: the Worker has no path without it.
 - User requests return cheap repository metadata first, bounded by the same 15-second cold-response deadline, then enqueue release hydration instead of keeping long scans inside HTTP `waitUntil()`.
 - The admin UI at `/_admin` reads `/api/admin/scheduler` and can trigger `/api/admin/scheduler/run`.
@@ -91,7 +92,7 @@ This means popular or installed accounts can refresh without burning the shared 
 
 Scheduler state, GitHub access, and installation/auth summaries load through separate admin requests so a slow optional section cannot take down the console. The target total is a count query and the listed targets are the ones due soonest; installation totals come from lightweight key listings, and their detail rows and auth counters are bounded samples. Due counts describe the most recent bounded scheduler scan rather than forcing the admin request to read every target and dashboard cache.
 
-Audit events are stored in KV and logged to Worker logs with `area: "scheduler"`. Keep audit detail short and structured so production logs remain searchable.
+Audit events are stored in D1 and logged to Worker logs with `area: "scheduler"`. Keep audit detail short and structured so production logs remain searchable.
 
 ## GitHub Webhooks
 

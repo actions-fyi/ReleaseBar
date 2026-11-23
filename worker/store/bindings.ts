@@ -11,6 +11,7 @@ type DurableObjectBinding = {
 const durableObjectBindingNames: Record<DurableObjectBinding, true> = {
   BUILD_COORDINATOR: true,
   OWNER_METADATA: true,
+  RATE_LIMITER: true,
   SUMMARY_QUOTA: true,
   WEBHOOK_ADMISSION: true,
   WEBHOOK_PROCESSOR: true,

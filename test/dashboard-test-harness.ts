@@ -13,6 +13,7 @@ import type {
 import handler, {
   BuildCoordinator,
   OwnerMetadata,
+  RateLimiter,
   SummaryQuota,
   WebhookAdmission,
   WebhookProcessor,
@@ -90,6 +91,7 @@ type ObjectBinding = (typeof durableObjectBindings)[number];
 const objectClasses = [
   BuildCoordinator,
   OwnerMetadata,
+  RateLimiter,
   SummaryQuota,
   WebhookAdmission,
   WebhookProcessor,
@@ -165,7 +167,14 @@ export function testEnv(env: TestEnv): Env {
   return env as unknown as Env;
 }
 
-export { BuildCoordinator, OwnerMetadata, SummaryQuota, WebhookAdmission, WebhookProcessor };
+export {
+  BuildCoordinator,
+  OwnerMetadata,
+  RateLimiter,
+  SummaryQuota,
+  WebhookAdmission,
+  WebhookProcessor,
+};
 
 // Makes every dashboard's build lock answer as held by someone else, until the test ends.
 export function buildLocksHeld(): void {
@@ -455,37 +464,44 @@ export function kvStore(initial: Record<string, string> = {}) {
   };
 }
 
-export async function refreshAuditEvents(
-  cache: ReturnType<typeof kvStore>,
-): Promise<SchedulerAuditEvent[]> {
-  const current = await cache.list({ prefix: "refresh:audit:v2:" });
-  return (
-    await Promise.all(
-      current.keys.map(
-        async (key) => JSON.parse((await cache.get(key.name)) ?? "{}") as SchedulerAuditEvent,
-      ),
-    )
-  )
-    .filter((event) => event.event)
-    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+// The refresh audit log as the database holds it, newest first.
+export async function refreshAuditEvents(): Promise<SchedulerAuditEvent[]> {
+  const { results } = await runtimeEnv.DB.prepare(
+    "SELECT data FROM refresh_audit_events ORDER BY at DESC",
+  ).all<{ data: string }>();
+  return results.map((row) => JSON.parse(row.data) as SchedulerAuditEvent);
 }
 
-export async function githubAccessRouteRecords(cache: ReturnType<typeof kvStore>): Promise<
+// The GitHub call counts as the database holds them, one per hour and route key.
+export async function githubAccessRouteRecords(): Promise<
   Array<{
-    area?: string;
-    route?: string;
-    source?: string;
-    resource?: string | null;
-    status?: number;
+    area: string;
+    route: string;
+    source: string;
+    resource: string | null;
+    status: number;
+    count: number;
   }>
 > {
-  const accessKeys = await cache.list({ prefix: "github:access:v1:" });
-  const records = await Promise.all(
-    accessKeys.keys.map(async (key) => JSON.parse((await cache.get(key.name)) ?? "{}")),
-  );
-  return records.flatMap((record) =>
-    record.routes && typeof record.routes === "object" ? Object.values(record.routes) : [record],
-  );
+  const { results } = await runtimeEnv.DB.prepare(
+    "SELECT area, route, source, resource, status, count FROM github_access_counts",
+  ).all<{
+    area: string;
+    route: string;
+    source: string;
+    resource: string | null;
+    status: number;
+    count: number;
+  }>();
+  return results;
+}
+
+// How many sign-in funnel events the database holds.
+export async function authFunnelEventCount(): Promise<number> {
+  const row = await runtimeEnv.DB.prepare(
+    "SELECT COUNT(*) AS count FROM auth_funnel_events",
+  ).first<{ count: number }>();
+  return row?.count ?? 0;
 }
 
 export function base64Url(bytes: Uint8Array): string {

@@ -125,7 +125,7 @@ test("worker refresh jobs can use shared quota when no source app token exists",
   expect(acked).toBe(true);
   const updated = ((await storedRefreshJob(job.id)) ?? {}) as RefreshJob;
   expect(updated.status).toBe("succeeded");
-  const auditEvents = await refreshAuditEvents(cache);
+  const auditEvents = await refreshAuditEvents();
   expect(auditEvents.some((event) => event.event === "job_start")).toBe(true);
   expect(auditEvents.some((event) => event.event === "dashboard_build_start")).toBe(true);
   const buildDone = auditEvents.find((event) => event.event === "dashboard_build_done");

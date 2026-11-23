@@ -50,7 +50,6 @@ import {
   appendRefreshAuditEvent,
   isAuditEvent,
   listRefreshAuditEvents,
-  refreshAuditStorageKey,
 } from "./store/refresh-audit.ts";
 import { deleteExpiredProfileSnapshots } from "./store/profile-snapshots.ts";
 import {
@@ -75,7 +74,7 @@ import {
 } from "./store/refresh-targets.ts";
 
 export { indexRefreshJob, writeRefreshJob, writeRefreshJobDelivery };
-export { isAuditEvent, refreshAuditStorageKey };
+export { isAuditEvent };
 
 export function refreshTargetSources(target: RefreshTarget): RefreshTargetSource[] {
   return [

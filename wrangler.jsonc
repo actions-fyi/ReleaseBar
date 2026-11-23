@@ -87,6 +87,7 @@
     "bindings": [
       { "name": "BUILD_COORDINATOR", "class_name": "BuildCoordinator" },
       { "name": "OWNER_METADATA", "class_name": "OwnerMetadata" },
+      { "name": "RATE_LIMITER", "class_name": "RateLimiter" },
       { "name": "SUMMARY_QUOTA", "class_name": "SummaryQuota" },
       { "name": "WEBHOOK_ADMISSION", "class_name": "WebhookAdmission" },
       { "name": "WEBHOOK_PROCESSOR", "class_name": "WebhookProcessor" },
@@ -111,5 +112,6 @@
     },
     // The index of refresh targets is a D1 table: migrations/0001_refresh.sql.
     { "tag": "7a-refresh", "deleted_classes": ["RefreshTargetIndex"] },
+    { "tag": "7b-rate-limits", "new_sqlite_classes": ["RateLimiter"] },
   ],
 }

@@ -517,7 +517,7 @@ test("worker skips request-triggered progressive rebuilds while shared quota is 
     // The rebuild is a refresh job on the queue, and the pause skips that job.
     expect(await queue.deliver(env, context)).toBe(1);
     await Promise.all(waits);
-    const events = await refreshAuditEvents(cache);
+    const events = await refreshAuditEvents();
     expect(
       events.some((event) => event.event === "job_skipped" && event.reason === "shared-quota"),
     ).toBe(true);
@@ -605,7 +605,7 @@ test("worker serves cached dashboards to crawlers without scheduling refreshes",
     const body = (await response.json()) as DashboardPayload;
     expect(body.cache?.state).toBe("partial");
     await Promise.all(waits);
-    const events = await refreshAuditEvents(cache);
+    const events = await refreshAuditEvents();
     expect(events.some((event) => event.event === "dashboard_refresh_schedule")).toBe(false);
     expect(installationListCalls).toBe(0);
     expect(await storedRefreshTarget(key)).toBe(null);
@@ -661,7 +661,7 @@ test("worker serves cache-only cold dashboard status to crawlers", async () => {
     expect(await cache.get(key)).toBe(null);
     expect(installationTokenReads).toBe(0);
     await Promise.all(waits);
-    const events = await refreshAuditEvents(cache);
+    const events = await refreshAuditEvents();
     expect(events.some((event) => event.event === "dashboard_refresh_schedule")).toBe(false);
   } finally {
     globalThis.fetch = originalFetch;
