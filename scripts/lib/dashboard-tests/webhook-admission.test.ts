@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../../../src/types.js";
-import worker, { DashboardBuildLock } from "../../../worker/index.js";
 import {
+  DashboardBuildLock,
   durableLocks,
   kvStore,
   testDashboard,
   testProject,
   webhookSignature,
+  worker,
 } from "../dashboard-test-harness.js";
 
 test("GitHub push webhooks prioritize recent targets beyond the durable hot-cache limit", async () => {

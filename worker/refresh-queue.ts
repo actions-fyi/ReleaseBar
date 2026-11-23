@@ -12,7 +12,6 @@ import {
   graphqlBackoffActive,
   sharedQuotaCooldown,
 } from "./github-audit.js";
-import type { Env, ExecutionContext } from "./runtime.js";
 import { tryJsonParse } from "./schemas.js";
 import { sourceInstallationRegistryCovers, sourceInstallationToken } from "./auth-tokens.js";
 import { markHotCacheStale } from "./build-progress.js";
@@ -55,6 +54,7 @@ import {
 } from "./refresh-targets.js";
 import { processRefreshJobFallback } from "./scheduler.js";
 import { invalidateDashboardTargets } from "./webhook-targets.js";
+import type { BackgroundContext } from "./runtime.js";
 
 export function refreshQueueMessage(job: RefreshJob): RefreshJob {
   const { target: _target, ...message } = job;
@@ -181,7 +181,7 @@ export async function releaseRefreshJobReservation(
 
 export async function enqueueRefreshJob(
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
   target: RefreshTarget,
   reason: string,
   delaySeconds = refreshQueueDeliveryDelaySeconds,
@@ -255,7 +255,7 @@ export async function enqueueRefreshJob(
 
 export async function finishRefreshJobReservation(
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
   job: RefreshJob,
 ): Promise<void> {
   const dirty = await releaseRefreshJobReservation(env, job.targetKey, job.id, true);
@@ -418,7 +418,7 @@ export async function refreshOwnerCounts(
   env: Env,
   owner: string,
   requiredRepo?: string,
-  context?: ExecutionContext,
+  context?: BackgroundContext,
 ): Promise<{
   status: "refreshed" | "missing" | "missing-repo" | "deferred";
   exact?: OwnerRepoCount;
@@ -464,7 +464,7 @@ export async function refreshOwnerCounts(
 
 export async function refreshDueOwnerCounts(
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
   targets: RefreshTarget[],
   now = Date.now(),
 ): Promise<{ considered: number; refreshed: number; deferred: number; failed: number }> {
@@ -480,7 +480,7 @@ export async function refreshDueOwnerCounts(
         .filter(validOwnerSlug),
     ),
   ];
-  const cursor = await env.DASHBOARD_CACHE?.get(refreshOwnerCountCursorKey);
+  const cursor = await env.DASHBOARD_CACHE.get(refreshOwnerCountCursorKey);
   const cursorIndex = cursor ? owners.indexOf(cursor) : -1;
   const rotatedOwners =
     cursorIndex >= 0
@@ -500,7 +500,7 @@ export async function refreshDueOwnerCounts(
   }
   const lastDueOwner = due.at(-1);
   if (lastDueOwner !== undefined) {
-    await env.DASHBOARD_CACHE?.put(refreshOwnerCountCursorKey, lastDueOwner);
+    await env.DASHBOARD_CACHE.put(refreshOwnerCountCursorKey, lastDueOwner);
   }
   let refreshed = 0;
   let deferred = 0;
@@ -525,12 +525,12 @@ export async function refreshDueOwnerCounts(
 
 export async function schedulerTick(
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
   cause: string,
   limit = schedulerBatchLimit,
 ): Promise<{ enqueued: number; considered: number; due: number }> {
   const [stateRaw, jobs, dueOptions] = await Promise.all([
-    env.DASHBOARD_CACHE?.get(refreshStateKey),
+    env.DASHBOARD_CACHE.get(refreshStateKey),
     listRefreshJobs(env),
     schedulerDueOptions(env),
   ]);
@@ -569,7 +569,7 @@ export async function schedulerTick(
       enqueued += 1;
     }
   }
-  await env.DASHBOARD_CACHE?.put(
+  await env.DASHBOARD_CACHE.put(
     refreshStateKey,
     JSON.stringify({
       lastTickAt: new Date().toISOString(),

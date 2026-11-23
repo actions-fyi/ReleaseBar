@@ -1,32 +1,5 @@
 import type { RefreshJob } from "../src/types.js";
 
-export type KVNamespace = {
-  get(key: string): Promise<string | null>;
-  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
-  delete?(key: string): Promise<void>;
-  list?(options?: { prefix?: string; limit?: number; cursor?: string }): Promise<{
-    keys: Array<{ name: string }>;
-    list_complete: boolean;
-    cursor?: string;
-  }>;
-};
-
-export type DurableObjectId = unknown;
-
-export type DurableObjectStub = {
-  fetch(request: Request): Promise<Response>;
-};
-
-export type DurableObjectNamespace = {
-  idFromName(name: string): DurableObjectId;
-  get(id: DurableObjectId): DurableObjectStub;
-  jurisdiction?(jurisdiction: string): DurableObjectNamespace;
-};
-
-export type Queue<Message = unknown> = {
-  send(message: Message, options?: { delaySeconds?: number }): Promise<void>;
-};
-
 export type GitHubWebhookJob = {
   kind: "github-webhook";
   id: string;
@@ -68,48 +41,9 @@ export type GitHubWebhookFanoutJob = {
 
 export type WorkerQueueMessage = RefreshJob | GitHubWebhookJob | GitHubWebhookFanoutJob;
 
-export type MessageBatch<Message = unknown> = {
-  messages: Array<{
-    body: Message;
-    attempts?: number;
-    ack(): void;
-    retry(options?: { delaySeconds?: number }): void;
-  }>;
-};
-
-export type DurableObjectState = {
-  blockConcurrencyWhile?<T>(callback: () => Promise<T>): Promise<T>;
-  storage: {
-    get<T>(key: string): Promise<T | undefined>;
-    put<T>(key: string, value: T): Promise<void>;
-    delete(key: string): Promise<boolean>;
-  };
-};
-
-export type Env = {
-  ADMIN_LOGINS?: string;
-  ASSETS?: { fetch(request: Request): Promise<Response> };
-  AUTH_COOKIE_SECRET?: string;
-  DASHBOARD_CACHE?: KVNamespace;
-  DASHBOARD_LOCKS?: DurableObjectNamespace;
-  GITHUB_APP_CLIENT_ID?: string;
-  GITHUB_APP_CLIENT_SECRET?: string;
-  GITHUB_APP_ID?: string;
-  GITHUB_APP_PRIVATE_KEY?: string;
-  GITHUB_APP_SLUG?: string;
-  GITHUB_WEBHOOK_SECRET?: string;
-  GITHUB_TOKEN?: string;
-  ANTHROPIC_API_KEY?: string;
-  ANTHROPIC_BASE_URL?: string;
-  ANTHROPIC_SUMMARY_MODEL?: string;
-  RELEASE_SUMMARY_INPUT_CHARS?: string;
-  RELEASE_SUMMARY_TITLE_CHARS?: string;
-  SUMMARY_USER_HOURLY_LIMIT?: string;
-  SUMMARY_GLOBAL_DAILY_LIMIT?: string;
-  RELEASEDECK_CANONICAL_DOMAIN?: string;
-  RELEASEBAR_DO_JURISDICTION?: string;
-  REFRESH_QUEUE?: Queue<WorkerQueueMessage>;
-};
+// What code that only schedules background work needs of the execution context. The Durable Object
+// passes its own, to await that work before it answers.
+export type BackgroundContext = Pick<ExecutionContext, "waitUntil">;
 
 const jurisdictionLocks = new WeakMap<DurableObjectNamespace, DurableObjectNamespace>();
 
@@ -122,7 +56,8 @@ export function withLockJurisdiction(env: Env): Env {
   if (!locks.jurisdiction) {
     throw new Error("RELEASEBAR_DO_JURISDICTION is set, but DASHBOARD_LOCKS has no jurisdictions");
   }
-  const scoped = jurisdictionLocks.get(locks) ?? locks.jurisdiction(jurisdiction);
+  const scoped =
+    jurisdictionLocks.get(locks) ?? locks.jurisdiction(jurisdiction as DurableObjectJurisdiction);
   jurisdictionLocks.set(locks, scoped);
   return { ...env, DASHBOARD_LOCKS: scoped };
 }
@@ -139,19 +74,3 @@ export function canonicalDomain(env: Env, url?: URL): string {
   ).split("/")[0];
   return configured || url?.host || "localhost";
 }
-
-export type ExecutionContext = {
-  waitUntil(promise: Promise<unknown>): void;
-};
-
-export type ScheduledEvent = {
-  cron: string;
-  scheduledTime: number;
-};
-
-export type RequestCf = {
-  verifiedBotCategory?: string;
-  botManagement?: {
-    verifiedBot?: boolean;
-  };
-};

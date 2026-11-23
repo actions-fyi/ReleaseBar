@@ -3,8 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, Project, RefreshJob } from "../../../src/types.js";
-import worker from "../../../worker/index.js";
-import { kvStore, testDashboard, testProject } from "../dashboard-test-harness.js";
+import { kvStore, testDashboard, testProject, worker } from "../dashboard-test-harness.js";
 
 test("worker filters shared owner snapshots for cold combined dashboards", async () => {
   const originalFetch = globalThis.fetch;
@@ -355,7 +354,7 @@ test("worker bounds cold owner resolution by the response deadline", async () =>
   let ownerStarted = false;
   const cache = kvStore();
 
-  globalThis.setTimeout = ((callback: TimerHandler, delay?: number) =>
+  globalThis.setTimeout = ((callback: () => void, delay?: number) =>
     originalSetTimeout(callback, delay === 15_000 ? 0 : delay)) as typeof setTimeout;
   globalThis.fetch = async (input, init) => {
     const path = new URL(String(input)).pathname;
@@ -426,7 +425,7 @@ test("worker bounds cold GitHub App token lookup by the response deadline", asyn
   let credentialAborted = false;
   const cache = kvStore();
 
-  globalThis.setTimeout = ((callback: TimerHandler, delay?: number) =>
+  globalThis.setTimeout = ((callback: () => void, delay?: number) =>
     originalSetTimeout(callback, delay === 15_000 ? 0 : delay)) as typeof setTimeout;
   globalThis.fetch = async (input, init) => {
     const path = new URL(String(input)).pathname;
@@ -611,7 +610,7 @@ test("worker chains direct progressive continuation after a cold build timeout",
     schemaVersion: 6,
   });
 
-  globalThis.setTimeout = ((callback: TimerHandler, delay?: number) =>
+  globalThis.setTimeout = ((callback: () => void, delay?: number) =>
     originalSetTimeout(callback, delay === 15_000 ? 0 : delay)) as typeof setTimeout;
   globalThis.fetch = async (input) => {
     const path = new URL(String(input)).pathname;

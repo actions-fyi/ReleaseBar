@@ -2,8 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, RefreshTarget } from "../../../src/types.js";
-import worker, { DashboardBuildLock } from "../../../worker/index.js";
-import { durableLocks, kvStore, testDashboard, testProject } from "../dashboard-test-harness.js";
+import {
+  DashboardBuildLock,
+  durableLocks,
+  kvStore,
+  testDashboard,
+  testProject,
+  worker,
+} from "../dashboard-test-harness.js";
 
 test("push webhooks bypass terminal target backoff before invalidating caches", async () => {
   const owner = "backedoff";
@@ -448,7 +454,7 @@ test("processed webhook retries take over followers behind a stale matching leas
         return callback();
       },
     },
-    {},
+    { DASHBOARD_CACHE: kvStore() },
   );
 
   const response = await lock.fetch(

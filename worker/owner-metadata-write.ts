@@ -1,7 +1,6 @@
 import { slugOwner } from "../scripts/lib/dashboard.js";
 import type { DashboardPayload } from "../src/types.js";
 import { jsonResponse } from "./http.js";
-import type { Env, RequestCf } from "./runtime.js";
 import { dashboardTotals } from "./build-progress.js";
 import {
   crawlerUserAgentPattern,
@@ -572,7 +571,9 @@ export function safeIso(value: string | null | undefined): number {
 }
 
 export function isCrawlerRequest(request: Request): boolean {
-  const cf = (request as Request & { cf?: RequestCf }).cf;
+  // verifiedBotCategory is not in the generated request properties yet.
+  const cf: (Partial<IncomingRequestCfProperties> & { verifiedBotCategory?: string }) | undefined =
+    (request as Request<unknown, IncomingRequestCfProperties>).cf;
   if (cf?.verifiedBotCategory || cf?.botManagement?.verifiedBot) return true;
   return crawlerUserAgentPattern.test(request.headers.get("user-agent") ?? "");
 }

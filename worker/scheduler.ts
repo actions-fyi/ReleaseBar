@@ -6,7 +6,7 @@ import {
   sharedQuotaCooldown,
   sharedQuotaDeferUntil,
 } from "./github-audit.js";
-import { canonicalDomain, type Env } from "./runtime.js";
+import { canonicalDomain } from "./runtime.js";
 import { tryJsonParse } from "./schemas.js";
 import { resolveOwners } from "./app-shell.js";
 import { sourceInstallationToken } from "./auth-tokens.js";
@@ -471,7 +471,7 @@ export async function schedulerAdminPayload(env: Env): Promise<SchedulerAdminPay
     refreshTargetInventory(env),
     listRefreshJobs(env),
     listAuditEvents(env),
-    env.DASHBOARD_CACHE?.get(refreshStateKey),
+    env.DASHBOARD_CACHE.get(refreshStateKey),
     schedulerDueOptions(env),
   ]);
   const state = stateRaw

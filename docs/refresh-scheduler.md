@@ -4,7 +4,7 @@ ReleaseBar keeps public dashboard data warm with a small scheduler on the Cloudf
 
 ## Runtime Pieces
 
-- Cloudflare cron runs every 15 minutes from `wrangler.toml`.
+- Cloudflare cron runs every 15 minutes from `wrangler.jsonc`.
 - `DASHBOARD_CACHE` stores compact refresh targets, shared owner metadata/count snapshots, immutable profile and per-job snapshots, latest job states, visible dashboard snapshots, audit events, and scheduler state.
 - `DASHBOARD_LOCKS` Durable Objects hold the active job reservation, refresh-target failure state, and strongly consistent progressive-scan checkpoint for each dashboard.
 - `REFRESH_QUEUE` receives background rebuild jobs in production.

@@ -1,14 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { claudeText } from "../dashboard-test-harness.js";
+import { type FakeLocks, claudeText, testEnv } from "../dashboard-test-harness.js";
 import { type RawWranglerConfig, deployConfig } from "../deploy-config.js";
 import { claudeSummaryText } from "../../../worker/release-summary.js";
-import {
-  type DurableObjectNamespace,
-  type Env,
-  withLockJurisdiction,
-} from "../../../worker/runtime.js";
+import { withLockJurisdiction } from "../../../worker/runtime.js";
 
 const kvId = "0123456789abcdef0123456789abcdef";
 
@@ -26,7 +22,7 @@ test("deploy config refuses to deploy without any setting unless allowed", () =>
   );
 });
 
-test("deploy config without settings is the generic wrangler.toml when allowed", () => {
+test("deploy config without settings is the generic wrangler.jsonc when allowed", () => {
   const config = deployConfig(base, { RELEASEBAR_ALLOW_GENERIC: "true" });
   assert.deepEqual(config, { ...base, vars: base.vars, kv_namespaces: base.kv_namespaces });
   assert.equal(config.routes, undefined);
@@ -99,12 +95,16 @@ test("Claude summaries go to ANTHROPIC_BASE_URL when it is set", async () => {
   const maxTokens = 100;
   const request = { model: "claude-haiku-5-5", maxTokens, system: "s", user: "u" };
   try {
-    await claudeSummaryText({ ANTHROPIC_API_KEY: "claude-key" }, request, async () => undefined);
     await claudeSummaryText(
-      {
+      testEnv({ ANTHROPIC_API_KEY: "claude-key" }),
+      request,
+      async () => undefined,
+    );
+    await claudeSummaryText(
+      testEnv({
         ANTHROPIC_API_KEY: "claude-key",
         ANTHROPIC_BASE_URL: "https://gateway.example.com/anthropic",
-      },
+      }),
       request,
       async () => undefined,
     );
@@ -117,8 +117,8 @@ test("Claude summaries go to ANTHROPIC_BASE_URL when it is set", async () => {
   ]);
 });
 
-function fakeLocks(calls: string[]): DurableObjectNamespace {
-  const namespace: DurableObjectNamespace = {
+function fakeLocks(calls: string[]): FakeLocks {
+  const namespace: FakeLocks = {
     idFromName: (name) => name,
     get: () => ({ fetch: async () => new Response(null) }),
     jurisdiction: (jurisdiction) => {
@@ -130,13 +130,13 @@ function fakeLocks(calls: string[]): DurableObjectNamespace {
 }
 
 test("lock jurisdiction leaves the binding alone when unset", () => {
-  const env = { DASHBOARD_LOCKS: fakeLocks([]) } as Env;
+  const env = testEnv({ DASHBOARD_LOCKS: fakeLocks([]) });
   assert.equal(withLockJurisdiction(env), env);
 });
 
 test("lock jurisdiction scopes every Durable Object to the configured jurisdiction", () => {
   const calls: string[] = [];
-  const env = { DASHBOARD_LOCKS: fakeLocks(calls), RELEASEBAR_DO_JURISDICTION: "eu" } as Env;
+  const env = testEnv({ DASHBOARD_LOCKS: fakeLocks(calls), RELEASEBAR_DO_JURISDICTION: "eu" });
   const scoped = withLockJurisdiction(env);
   assert.equal(scoped.DASHBOARD_LOCKS?.idFromName("lock"), "eu:lock");
   assert.equal(withLockJurisdiction(env).DASHBOARD_LOCKS, scoped.DASHBOARD_LOCKS);
@@ -144,11 +144,11 @@ test("lock jurisdiction scopes every Durable Object to the configured jurisdicti
 });
 
 test("lock jurisdiction fails loudly on a binding without jurisdictions", () => {
-  const locks: DurableObjectNamespace = {
+  const locks: FakeLocks = {
     idFromName: (name) => name,
     get: () => ({ fetch: async () => new Response(null) }),
   };
   assert.throws(() =>
-    withLockJurisdiction({ DASHBOARD_LOCKS: locks, RELEASEBAR_DO_JURISDICTION: "eu" } as Env),
+    withLockJurisdiction(testEnv({ DASHBOARD_LOCKS: locks, RELEASEBAR_DO_JURISDICTION: "eu" })),
   );
 });

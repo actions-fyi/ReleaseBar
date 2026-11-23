@@ -6,7 +6,6 @@ import {
 } from "../scripts/lib/dashboard.js";
 import type { ApiQuota, DashboardPayload, DashboardProfile, Project } from "../src/types.js";
 import { sha256Base64Url } from "./crypto.js";
-import type { Env } from "./runtime.js";
 import { tryJsonParse } from "./schemas.js";
 import { dashboardTotals } from "./build-progress.js";
 import {
@@ -138,7 +137,7 @@ export function dashboardWithVisibleProjects(payload: DashboardPayload): Dashboa
 }
 
 export async function readCachedRaw(env: Env, key: string): Promise<DashboardPayload | null> {
-  const raw = await env.DASHBOARD_CACHE?.get(key);
+  const raw = await env.DASHBOARD_CACHE.get(key);
   return raw ? tryJsonParse<DashboardPayload>(raw, `dashboard ${key}`) : null;
 }
 
@@ -190,11 +189,11 @@ export async function manualRefreshCooldownKey(key: string): Promise<string> {
 }
 
 export async function manualRefreshCooldownActive(env: Env, key: string): Promise<boolean> {
-  return Boolean(await env.DASHBOARD_CACHE?.get(await manualRefreshCooldownKey(key)));
+  return Boolean(await env.DASHBOARD_CACHE.get(await manualRefreshCooldownKey(key)));
 }
 
 export async function markManualRefreshCooldown(env: Env, key: string): Promise<void> {
-  await env.DASHBOARD_CACHE?.put(await manualRefreshCooldownKey(key), new Date().toISOString(), {
+  await env.DASHBOARD_CACHE.put(await manualRefreshCooldownKey(key), new Date().toISOString(), {
     expirationTtl: manualRefreshCooldownSeconds,
   });
 }
@@ -208,7 +207,7 @@ export function profileSnapshotStorageKey(profile: DashboardProfile): string {
 }
 
 export async function readProfile(env: Env, owner: string): Promise<DashboardProfile | null> {
-  const raw = await env.DASHBOARD_CACHE?.get(profileKey(owner));
+  const raw = await env.DASHBOARD_CACHE.get(profileKey(owner));
   if (!raw) return null;
   const parsed = tryJsonParse<DashboardProfile>(raw, `profile ${owner}`);
   return parsed?.owner === slugOwner(owner) ? parsed : null;
@@ -216,7 +215,7 @@ export async function readProfile(env: Env, owner: string): Promise<DashboardPro
 
 export async function readProfileSnapshot(env: Env, key: string): Promise<DashboardProfile | null> {
   if (!key.startsWith(refreshProfileSnapshotPrefix)) return null;
-  const raw = await env.DASHBOARD_CACHE?.get(key);
+  const raw = await env.DASHBOARD_CACHE.get(key);
   if (!raw) return null;
   const parsed = tryJsonParse<DashboardProfile>(raw, `profile snapshot ${key}`);
   return parsed?.owner ? parsed : null;
@@ -224,8 +223,8 @@ export async function readProfileSnapshot(env: Env, key: string): Promise<Dashbo
 
 export async function ensureProfileSnapshot(env: Env, profile: DashboardProfile): Promise<string> {
   const key = profileSnapshotStorageKey(profile);
-  if (!(await env.DASHBOARD_CACHE?.get(key))) {
-    await env.DASHBOARD_CACHE?.put(key, JSON.stringify(profile), {
+  if (!(await env.DASHBOARD_CACHE.get(key))) {
+    await env.DASHBOARD_CACHE.put(key, JSON.stringify(profile), {
       expirationTtl: dashboardStorageTtlSeconds,
     });
   }
@@ -234,15 +233,15 @@ export async function ensureProfileSnapshot(env: Env, profile: DashboardProfile)
 
 export async function writeProfile(env: Env, profile: DashboardProfile): Promise<void> {
   await Promise.all([
-    env.DASHBOARD_CACHE?.put(profileKey(profile.owner), JSON.stringify(profile)),
-    env.DASHBOARD_CACHE?.put(profileSnapshotStorageKey(profile), JSON.stringify(profile), {
+    env.DASHBOARD_CACHE.put(profileKey(profile.owner), JSON.stringify(profile)),
+    env.DASHBOARD_CACHE.put(profileSnapshotStorageKey(profile), JSON.stringify(profile), {
       expirationTtl: dashboardStorageTtlSeconds,
     }),
   ]);
 }
 
 export async function deleteProfile(env: Env, owner: string): Promise<void> {
-  await env.DASHBOARD_CACHE?.delete?.(profileKey(owner));
+  await env.DASHBOARD_CACHE.delete(profileKey(owner));
 }
 
 export async function writeCached(
@@ -251,7 +250,7 @@ export async function writeCached(
   payload: DashboardPayload,
   ttlSeconds = dashboardStorageTtlSeconds,
 ): Promise<void> {
-  await env.DASHBOARD_CACHE?.put(key, JSON.stringify(payload), {
+  await env.DASHBOARD_CACHE.put(key, JSON.stringify(payload), {
     expirationTtl: ttlSeconds,
   });
 }

@@ -1,7 +1,7 @@
 import type { ApiQuota, GitHubAccessRouteSummary, GitHubAccessSummary } from "../src/types.js";
 import { jsonResponse, workerFetch } from "./http.js";
-import type { Env, ExecutionContext } from "./runtime.js";
 import { tryJsonParse } from "./schemas.js";
+import type { BackgroundContext } from "./runtime.js";
 
 const githubAccessPrefix = "github:access:v1:";
 const githubAccessTtlSeconds = 14 * 24 * 60 * 60;
@@ -28,7 +28,7 @@ const sharedQuotaEnrichmentMinimumRemaining: Record<string, number> = {
   _: 1000,
 };
 
-const githubAccessWriteChains = new WeakMap<ExecutionContext, Promise<void>>();
+const githubAccessWriteChains = new WeakMap<BackgroundContext, Promise<void>>();
 
 type StoredGitHubAccessShard = {
   count?: number;
@@ -168,7 +168,7 @@ async function markSharedQuotaCooldown(
   reason: string,
   level: SharedQuotaCooldown["level"] = "critical",
 ): Promise<void> {
-  if (!env?.DASHBOARD_CACHE || quota.source !== "shared") return;
+  if (!env || quota.source !== "shared") return;
   const resetAt =
     quota.resetAt ?? new Date(Date.now() + sharedQuotaCooldownFallbackSeconds * 1000).toISOString();
   const item: SharedQuotaCooldown = {
@@ -223,7 +223,7 @@ async function sharedQuotaState(
       ? [sharedQuotaBudgetKey(resource), sharedQuotaBudgetKey(null)]
       : [sharedQuotaBudgetKey(null)],
   );
-  if (!resource && env.DASHBOARD_CACHE?.list) {
+  if (!resource) {
     let cursor: string | undefined;
     do {
       const page = await env.DASHBOARD_CACHE.list({
@@ -238,14 +238,14 @@ async function sharedQuotaState(
   let selected: SharedQuotaCooldown | null = null;
   let selectedUntil = 0;
   for (const key of keys) {
-    const raw = await env.DASHBOARD_CACHE?.get(key);
+    const raw = await env.DASHBOARD_CACHE.get(key);
     if (!raw) continue;
     const parsed = tryJsonParse<SharedQuotaCooldown>(raw, `shared quota cooldown ${key}`);
     if (!parsed?.active) continue;
     if (!includeConserve && parsed.level === "conserve") continue;
     const reset = parsed.resetAt ? Date.parse(parsed.resetAt) : 0;
     if (Number.isFinite(reset) && reset > 0 && reset <= Date.now()) {
-      await env.DASHBOARD_CACHE?.delete?.(key).catch(() => undefined);
+      await env.DASHBOARD_CACHE.delete(key).catch(() => undefined);
       continue;
     }
     const until = Date.parse(sharedQuotaDeferUntil(parsed));
@@ -299,7 +299,7 @@ export async function graphqlBackoffActive(
   operation: string,
 ): Promise<boolean> {
   return Boolean(
-    await env?.DASHBOARD_CACHE?.get(githubGraphqlBackoffKey(source, account, operation)),
+    await env?.DASHBOARD_CACHE.get(githubGraphqlBackoffKey(source, account, operation)),
   );
 }
 
@@ -310,7 +310,7 @@ export async function markGraphqlBackoff(
   operation: string,
   status: number,
 ): Promise<void> {
-  await env?.DASHBOARD_CACHE?.put(
+  await env?.DASHBOARD_CACHE.put(
     githubGraphqlBackoffKey(source, account, operation),
     JSON.stringify({
       active: true,
@@ -335,7 +335,7 @@ async function recordGitHubAccessCounter(
   status: number,
   quota: ApiQuota,
 ): Promise<void> {
-  if (!env?.DASHBOARD_CACHE) return;
+  if (!env) return;
   const route = githubPathBucket(path);
   const routeKey = `${area}:${status}:${quota.source}:${quota.account ?? "_"}:${quota.resource ?? "_"}:${route}`;
   const key = githubAccessCounterKey(Math.floor(Math.random() * githubAccessShardCount));
@@ -400,7 +400,7 @@ export async function recordAuditedGitHubAccess(
   quota: ApiQuota,
   rateLimited = false,
   forceWait = false,
-  context?: ExecutionContext,
+  context?: BackgroundContext,
 ): Promise<void> {
   auditGitHubTokenUse(area, path, status, quota);
   const write = () =>
@@ -458,7 +458,7 @@ export function auditGitHubFetch(
   quotaSource: ApiQuota["source"],
   quotaAccount: string | null,
   env?: Env,
-  context?: ExecutionContext,
+  context?: BackgroundContext,
   signal?: AbortSignal,
 ): typeof fetch {
   return async (input, init) => {
@@ -620,19 +620,6 @@ export async function githubAccessSummary(
 ): Promise<GitHubAccessSummary> {
   const cooldown = await sharedQuotaCooldown(env);
   const cache = env.DASHBOARD_CACHE;
-  if (!cache?.list) {
-    return {
-      generatedAt: new Date().toISOString(),
-      hours,
-      buckets: 0,
-      total: 0,
-      cooldown,
-      byArea: [],
-      bySource: [],
-      byStatus: [],
-      topRoutes: [],
-    };
-  }
   const list = cache.list.bind(cache);
   const pages = await Promise.all(
     githubAccessHours(hours).map((hour) =>

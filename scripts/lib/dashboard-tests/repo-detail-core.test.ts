@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { RepoDetailPayload } from "../../../src/types.js";
-import worker from "../../../worker/index.js";
-import { githubAccessRouteRecords, kvStore } from "../dashboard-test-harness.js";
+import { githubAccessRouteRecords, kvStore, worker } from "../dashboard-test-harness.js";
 
 test("worker builds cached repository detail with releases and stats", async () => {
   const originalFetch = globalThis.fetch;

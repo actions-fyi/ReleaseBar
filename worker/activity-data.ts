@@ -12,7 +12,6 @@ import type {
 } from "../src/types.js";
 import { sha256Base64Url } from "./crypto.js";
 import { auditGitHubFetch, quotaFromGitHubResponse } from "./github-audit.js";
-import type { Env } from "./runtime.js";
 import { type GitHubPublicEvent, gitHubPublicEventListSchema, tryJsonParse } from "./schemas.js";
 import {
   activityEventPageLimit,
@@ -71,7 +70,7 @@ export async function readOwnerActivity(
   env: Env,
   key: string,
 ): Promise<OwnerActivityPayload | null> {
-  const raw = await env.DASHBOARD_CACHE?.get(key);
+  const raw = await env.DASHBOARD_CACHE.get(key);
   return raw ? tryJsonParse<OwnerActivityPayload>(raw, `owner activity ${key}`) : null;
 }
 
@@ -80,7 +79,7 @@ export async function writeOwnerActivity(
   key: string,
   payload: OwnerActivityPayload,
 ): Promise<void> {
-  await env.DASHBOARD_CACHE?.put(key, JSON.stringify(payload), {
+  await env.DASHBOARD_CACHE.put(key, JSON.stringify(payload), {
     expirationTtl: dashboardStorageTtlSeconds,
   });
 }
@@ -89,7 +88,7 @@ export async function readRepoActivity(
   env: Env,
   key: string,
 ): Promise<RepoDetailActivityPayload | null> {
-  const raw = await env.DASHBOARD_CACHE?.get(key);
+  const raw = await env.DASHBOARD_CACHE.get(key);
   return raw ? tryJsonParse<RepoDetailActivityPayload>(raw, `repo activity ${key}`) : null;
 }
 
@@ -98,7 +97,7 @@ export async function writeRepoActivity(
   key: string,
   payload: RepoDetailActivityPayload,
 ): Promise<void> {
-  await env.DASHBOARD_CACHE?.put(key, JSON.stringify(payload), {
+  await env.DASHBOARD_CACHE.put(key, JSON.stringify(payload), {
     expirationTtl: dashboardStorageTtlSeconds,
   });
 }
@@ -107,7 +106,7 @@ export async function readOwnerActivitySummary(
   env: Env,
   key: string,
 ): Promise<OwnerActivitySummary | null> {
-  const raw = await env.DASHBOARD_CACHE?.get(key);
+  const raw = await env.DASHBOARD_CACHE.get(key);
   return raw ? tryJsonParse<OwnerActivitySummary>(raw, `owner activity summary ${key}`) : null;
 }
 
@@ -116,7 +115,7 @@ export async function writeOwnerActivitySummary(
   key: string,
   summary: OwnerActivitySummary,
 ): Promise<void> {
-  await env.DASHBOARD_CACHE?.put(key, JSON.stringify(summary), {
+  await env.DASHBOARD_CACHE.put(key, JSON.stringify(summary), {
     expirationTtl: dashboardStorageTtlSeconds,
   });
 }

@@ -7,7 +7,6 @@ import type {
   RepoDetailPayload,
 } from "../../../src/types.js";
 import { activitySummaryPromptVersion } from "../../../worker/config.js";
-import worker from "../../../worker/index.js";
 import { summaryRateLimitSettings, summaryRateLimits } from "../../../worker/summary-limits.js";
 import {
   summaryGlobalLimitMessage,
@@ -21,6 +20,7 @@ import {
   kvStore,
   signedIn,
   testProject,
+  worker,
 } from "../dashboard-test-harness.js";
 import { deployConfig } from "../deploy-config.js";
 
@@ -247,7 +247,7 @@ test("anonymous requests get a cached summary", async () => {
 
 test("a signed-in user generates summaries up to the hourly limit", async () => {
   const cache = twoOwners();
-  const locks = durableLocks({ SUMMARY_USER_HOURLY_LIMIT: "1" });
+  const locks = durableLocks({ DASHBOARD_CACHE: cache, SUMMARY_USER_HOURLY_LIMIT: "1" });
   await withModel(async (modelCalls) => {
     const first = await summaryFor(cache, locks, 1, ownerActivityUrl("acme"));
     assert.equal(first.status, httpAccepted);
@@ -272,7 +272,7 @@ test("a signed-in user generates summaries up to the hourly limit", async () => 
 
 test("the daily limit for all users stops further summaries", async () => {
   const cache = twoOwners();
-  const locks = durableLocks({ SUMMARY_GLOBAL_DAILY_LIMIT: "1" });
+  const locks = durableLocks({ DASHBOARD_CACHE: cache, SUMMARY_GLOBAL_DAILY_LIMIT: "1" });
   await withModel(async (modelCalls) => {
     await summaryFor(cache, locks, 1, ownerActivityUrl("acme"));
     const refused = await summaryFor(cache, locks, 2, ownerActivityUrl("beta"));
@@ -285,7 +285,7 @@ test("the daily limit for all users stops further summaries", async () => {
 test("a summary that never calls the model is not counted", async () => {
   const cache = twoOwners();
   await cache.put(repoDetailKey, JSON.stringify(repoDetail()));
-  const locks = durableLocks({ SUMMARY_USER_HOURLY_LIMIT: "1" });
+  const locks = durableLocks({ DASHBOARD_CACHE: cache, SUMMARY_USER_HOURLY_LIMIT: "1" });
   await withModel(async (modelCalls) => {
     // GitHub returns no commit titles, so the release summary ends without the model.
     await summaryFor(cache, locks, 1, `${origin}/api/repos/acme/releasebar`);

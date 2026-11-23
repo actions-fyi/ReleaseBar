@@ -59,7 +59,7 @@ Open `http://localhost:8787/steipete` or another owner route.
 
 ## Cloudflare resources
 
-`wrangler.toml` binds:
+`wrangler.jsonc` binds:
 
 - `dist` as Worker static assets
 - `DASHBOARD_CACHE` as KV storage for dashboard, repository, settings, installation, session, and scheduler records
@@ -68,7 +68,7 @@ Open `http://localhost:8787/steipete` or another owner route.
 
 The Worker runs before static assets so `/api/*` stays dynamic and owner routes return the application shell. The Worker is named `releasebar`.
 
-`wrangler.toml` is generic: it names no account, custom domain, admin login or resource ID. A deployment supplies its own through environment variables, and `npm run deploy` writes them into `wrangler.deploy.json` (git-ignored) before deploying from it. With Workers Builds, set these as **build variables** (Settings → Build → Variables and secrets) and set the deploy command to `npm run deploy`. For non-production branch builds, use `npm run deploy:preview`.
+`wrangler.jsonc` is generic: it names no account, custom domain, admin login or resource ID. A deployment supplies its own through environment variables, and `npm run deploy` writes them into `wrangler.deploy.json` (git-ignored) before deploying from it. With Workers Builds, set these as **build variables** (Settings → Build → Variables and secrets) and set the deploy command to `npm run deploy`. For non-production branch builds, use `npm run deploy:preview`.
 
 | Variable                                | Effect                                                                                                                                                                                    |
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -76,14 +76,14 @@ The Worker runs before static assets so `/api/*` stays dynamic and owner routes 
 | `RELEASEBAR_KV_NAMESPACE_ID`            | ID of a pre-created `DASHBOARD_CACHE` namespace. Unset: Wrangler creates one on the first deploy, without a jurisdiction.                                                                 |
 | `RELEASEBAR_DO_JURISDICTION`            | Jurisdiction for every `DASHBOARD_LOCKS` Durable Object, such as `eu`. Requires `RELEASEBAR_KV_NAMESPACE_ID`, so KV is never created outside it.                                          |
 | `RELEASEBAR_ADMIN_LOGINS`               | Comma-separated GitHub logins for `/_admin` (Worker var `ADMIN_LOGINS`).                                                                                                                  |
-| `RELEASEBAR_WORKERS_DEV`                | `true` or `false`: whether the Worker is also served on `workers.dev`. Unset: as in `wrangler.toml`.                                                                                      |
+| `RELEASEBAR_WORKERS_DEV`                | `true` or `false`: whether the Worker is also served on `workers.dev`. Unset: as in `wrangler.jsonc`.                                                                                     |
 | `RELEASEBAR_ANTHROPIC_BASE_URL`         | `https://` base URL of the Messages API endpoint for AI summaries (Worker var `ANTHROPIC_BASE_URL`), such as a gateway. Unset: `https://api.anthropic.com`.                               |
 | `RELEASEBAR_SUMMARY_INPUT_CHARS`        | Characters a release summary sends the model in all, from 1,000 to 400,000 (Worker var `RELEASE_SUMMARY_INPUT_CHARS`). Unset: 48,000.                                                     |
 | `RELEASEBAR_SUMMARY_TITLE_CHARS`        | Characters of each commit title in a release summary, from 20 to 1,000 (Worker var `RELEASE_SUMMARY_TITLE_CHARS`). Unset: 160.                                                            |
 | `RELEASEBAR_SUMMARY_USER_HOURLY_LIMIT`  | AI summaries one signed-in user may generate per hour, from 1 to 1,000 (Worker var `SUMMARY_USER_HOURLY_LIMIT`). Unset: 30.                                                               |
 | `RELEASEBAR_SUMMARY_GLOBAL_DAILY_LIMIT` | AI summaries all users together may generate per day, from 1 to 100,000 (Worker var `SUMMARY_GLOBAL_DAILY_LIMIT`). Unset: 1,000.                                                          |
 
-`npm run deploy` fails when none of these is set, so a lost build variable can't silently drop a deployment's domain and admins. Set `RELEASEBAR_ALLOW_GENERIC=true` to deploy the generic `wrangler.toml` on purpose.
+`npm run deploy` fails when none of these is set, so a lost build variable can't silently drop a deployment's domain and admins. Set `RELEASEBAR_ALLOW_GENERIC=true` to deploy the generic `wrangler.jsonc` on purpose.
 
 The queues `releasebar-refresh` and `releasebar-refresh-dlq` must exist before the first deploy. To keep all data in one jurisdiction, create the queues and the KV namespace in it, and set the same jurisdiction for Durable Objects; a jurisdiction can't be changed once a resource exists:
 
@@ -143,10 +143,10 @@ npm run build
 wrangler deploy
 ```
 
-Pushes to `main` are built and deployed by Cloudflare's GitHub app (Workers Builds), which runs the `[build]` command of `wrangler.toml` and `wrangler deploy`. No workflow deploys, and GitHub holds no Cloudflare token.
+Pushes to `main` are built and deployed by Cloudflare's GitHub app (Workers Builds), which runs the `build.command` of `wrangler.jsonc` and `wrangler deploy`. No workflow deploys, and GitHub holds no Cloudflare token.
 
 Pull requests are gated by the org's Test TypeScript check, which runs the `typecheck`, `lint`, `format:check`, `build` and `test` scripts, and by `.github/workflows/cloudflare.yml`, which dry-runs the Wrangler deployment without credentials. `npm run build` is the offline build; `npm run build:data` also fetches dashboard data from GitHub.
 
 ## Admin
 
-`ADMIN_LOGINS` in `wrangler.toml` is a comma-separated list of GitHub logins that may open `/_admin`. Without it, nobody can.
+`ADMIN_LOGINS` in `wrangler.jsonc` is a comma-separated list of GitHub logins that may open `/_admin`. Without it, nobody can.

@@ -8,13 +8,14 @@ import type {
   RepoDetailPayload,
   RefreshTarget,
 } from "../../../src/types.js";
-import worker, { DashboardBuildLock } from "../../../worker/index.js";
 import {
+  DashboardBuildLock,
   durableLocks,
   kvStore,
   testDashboard,
   testProject,
   webhookSignature,
+  worker,
 } from "../dashboard-test-harness.js";
 
 test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes", async () => {

@@ -16,6 +16,7 @@
     "src/routing.ts",
     "src/types.ts",
     "src/wasm.d.ts",
-    "worker/**/*.ts"
+    "worker/**/*.ts",
+    "worker-configuration.d.ts"
   ]
 }

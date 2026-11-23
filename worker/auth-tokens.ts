@@ -11,7 +11,6 @@ import {
   verifySignedJson,
 } from "./crypto.js";
 import { jsonResponse, redirectResponse, workerFetch } from "./http.js";
-import type { Env, ExecutionContext } from "./runtime.js";
 import { gitHubInstallationTokenSchema, parseGitHubResponse } from "./schemas.js";
 import {
   appSlug,
@@ -64,6 +63,7 @@ import {
   writeInstallationRegistry,
 } from "./installation-registry.js";
 import { authInstallCallbackRateLimited } from "./refresh-targets.js";
+import type { BackgroundContext } from "./runtime.js";
 
 export async function requireAdmin(
   request: Request,
@@ -192,11 +192,11 @@ export async function cachedInstallationToken(
   signal?: AbortSignal,
 ): Promise<string | null> {
   const cacheKey = `auth:installation-token:${installationId}`;
-  const cached = await env.DASHBOARD_CACHE?.get(cacheKey);
+  const cached = await env.DASHBOARD_CACHE.get(cacheKey);
   if (cached) return cached;
   const token = await githubInstallationToken(env, installationId, signal);
   if (token) {
-    await env.DASHBOARD_CACHE?.put(cacheKey, token, {
+    await env.DASHBOARD_CACHE.put(cacheKey, token, {
       expirationTtl: installationTokenTtlSeconds,
     });
   }
@@ -231,7 +231,7 @@ export async function sourceInstallationToken(
       !installation &&
       registryStale &&
       registryInstallation &&
-      !(await env.DASHBOARD_CACHE?.get(installationMissKey(account)))
+      !(await env.DASHBOARD_CACHE.get(installationMissKey(account)))
     ) {
       installation = registryInstallation;
     }
@@ -453,9 +453,6 @@ export async function storedSessionCookie(env: Env, session: StoredAuthSession):
   if (!env.AUTH_COOKIE_SECRET) {
     throw new Error("missing auth cookie secret");
   }
-  if (!env.DASHBOARD_CACHE) {
-    throw new Error("missing auth session storage");
-  }
   const id = randomNonce();
   await env.DASHBOARD_CACHE.put(`auth:session:${id}`, JSON.stringify(session), {
     expirationTtl: sessionMaxAgeSeconds,
@@ -467,7 +464,7 @@ export async function storedSessionCookie(env: Env, session: StoredAuthSession):
 export async function callbackResponse(
   request: Request,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
 ): Promise<Response> {
   if (!authConfigured(env) || !env.AUTH_COOKIE_SECRET) {
     return jsonResponse({ error: "GitHub login is not configured" }, 503, {
@@ -579,7 +576,7 @@ export async function logoutResponse(request: Request, env: Env): Promise<Respon
       ? await verifySignedJson<AuthSession>(env.AUTH_COOKIE_SECRET, token)
       : null;
     if (session?.id) {
-      await env.DASHBOARD_CACHE?.delete?.(`auth:session:${session.id}`);
+      await env.DASHBOARD_CACHE.delete(`auth:session:${session.id}`);
     }
   }
   return redirectResponse(safeReturnTo(url.searchParams.get("returnTo"), url.origin), {
@@ -590,7 +587,7 @@ export async function logoutResponse(request: Request, env: Env): Promise<Respon
 export async function installResponse(
   request: Request,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
 ): Promise<Response> {
   const url = new URL(request.url);
   if (!env.AUTH_COOKIE_SECRET) {
@@ -656,7 +653,7 @@ export async function installResponse(
 export async function authResponse(
   request: Request,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
 ): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === "/api/auth/login") return loginResponse(request, env);

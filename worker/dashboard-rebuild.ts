@@ -13,7 +13,7 @@ import {
   sharedQuotaDeferUntil,
 } from "./github-audit.js";
 import { corsHeaders, jsonResponse } from "./http.js";
-import { canonicalDomain, type Env, type ExecutionContext } from "./runtime.js";
+import { type BackgroundContext, canonicalDomain } from "./runtime.js";
 import { statusPayload } from "./admin.js";
 import { ownerListFromUrl, repoListFromUrl, uniqueSorted } from "./app-shell.js";
 import { appTokenConfigured, dashboardReleaseDataAllowed } from "./auth-oauth.js";
@@ -657,7 +657,7 @@ export async function continueProgressiveBuild(
 export function scheduleProgressiveBuild(
   dashboard: DashboardRequest,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
   reason: string,
   target: RefreshTarget | null,
   initialBuild?: Promise<DashboardPayload | null>,
@@ -701,7 +701,7 @@ export async function refreshDashboardMetadataFirst(
   signal?: AbortSignal,
   resetProgress = false,
   boundedInitialPage = false,
-  context?: ExecutionContext,
+  context?: BackgroundContext,
 ): Promise<DashboardPayload | null> {
   const lock = await acquireBuildLock(env, dashboard.key);
   if (!lock) {

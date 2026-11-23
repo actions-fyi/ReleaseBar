@@ -11,7 +11,6 @@ import type {
   RefreshTarget,
 } from "../src/types.js";
 import { type StoredInstallationRecord, storedInstallationSchema } from "./auth-observability.js";
-import type { Env, ExecutionContext } from "./runtime.js";
 import { type GitHubInstallationRepository, safeJsonParse } from "./schemas.js";
 import { uniqueSorted } from "./app-shell.js";
 import { appTokenConfigured } from "./auth-oauth.js";
@@ -32,6 +31,7 @@ import {
 import { safeIso } from "./owner-metadata-write.js";
 import { enqueueRefreshJob, refreshTargetBackoffActive } from "./refresh-queue.js";
 import { auditSyncEvent, rememberRefreshTarget } from "./refresh-targets.js";
+import type { BackgroundContext } from "./runtime.js";
 
 export function isPublicInstallationRepository(repo: GitHubInstallationRepository): boolean {
   if (repo.private === true) {
@@ -131,7 +131,6 @@ export async function writeInstallationRegistry(
   installations: AuthInstallation[],
 ): Promise<void> {
   const cache = env.DASHBOARD_CACHE;
-  if (!cache) return;
   const normalized = installations.map(normalizedInstallation);
   const stale = (
     await Promise.all(
@@ -161,7 +160,7 @@ export async function writeInstallationRegistry(
 
 export async function warmInstallationCaches(
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
   installations: AuthInstallation[],
 ): Promise<void> {
   const accounts = [
@@ -205,10 +204,10 @@ export function installationCacheNeedsWarm(
 
 export function scheduleInstallationCacheWarm(
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
   installations: AuthInstallation[],
 ): void {
-  if (!env.DASHBOARD_CACHE || installations.length === 0) return;
+  if (installations.length === 0) return;
   context.waitUntil(
     warmInstallationCaches(env, context, installations).catch((error) =>
       auditSyncEvent(env, {
@@ -226,7 +225,7 @@ export async function readInstallationRegistry(
 ): Promise<StoredInstallationRecord | null> {
   const account = slugOwner(accountLogin);
   if (!validOwnerSlug(account)) return null;
-  const raw = await env.DASHBOARD_CACHE?.get(installationRegistryKey(account));
+  const raw = await env.DASHBOARD_CACHE.get(installationRegistryKey(account));
   if (!raw) return null;
   return safeJsonParse(storedInstallationSchema, raw, `app installation ${account}`);
 }

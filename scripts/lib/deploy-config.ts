@@ -1,4 +1,4 @@
-// Builds the Wrangler config a deployment uses from the generic wrangler.toml and the deployment's
+// Builds the Wrangler config a deployment uses from the generic wrangler.jsonc and the deployment's
 // own settings, so no host, account resource or login has to be committed to the repository.
 
 import { parseWholeNumber, summaryLimitSettings } from "../../worker/summary-limits.js";
@@ -103,7 +103,7 @@ export function deployConfig(base: RawWranglerConfig, settings: DeploySettings):
     throw new Error(
       "No RELEASEBAR_* deployment setting is set, so the deploy would drop this deployment's " +
         "custom domain and admin logins. Set the build variables, or RELEASEBAR_ALLOW_GENERIC=true " +
-        "to deploy the generic wrangler.toml on purpose.",
+        "to deploy the generic wrangler.jsonc on purpose.",
     );
   }
   if (jurisdiction && !kvId) {

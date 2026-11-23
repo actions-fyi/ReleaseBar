@@ -3,8 +3,13 @@ import { generateKeyPairSync } from "node:crypto";
 import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, RefreshJob } from "../../../src/types.js";
-import worker from "../../../worker/index.js";
-import { kvStore, signedJson, testDashboard, testProject } from "../dashboard-test-harness.js";
+import {
+  kvStore,
+  signedJson,
+  testDashboard,
+  testProject,
+  worker,
+} from "../dashboard-test-harness.js";
 
 test("worker only exposes public selected installation repositories", async () => {
   const sessionId = "session-public-repos";
@@ -88,7 +93,7 @@ test("worker only exposes public selected installation repositories", async () =
       { waitUntil: () => undefined },
     );
     assert.equal(response.status, 200);
-    const body = await response.json();
+    const body = await response.json<any>();
     assert.deepEqual(body.installations[0].repositories, ["steipete/public-repo"]);
     assert.equal(body.installNeeded, false);
 
@@ -103,7 +108,7 @@ test("worker only exposes public selected installation repositories", async () =
       { waitUntil: () => undefined },
     );
     assert.equal(repoRoute.status, 200);
-    const repoRouteBody = await repoRoute.json();
+    const repoRouteBody = await repoRoute.json<any>();
     assert.equal(repoRouteBody.installNeeded, false);
 
     const escapedRepoRoute = await worker.fetch(
@@ -117,7 +122,7 @@ test("worker only exposes public selected installation repositories", async () =
       { waitUntil: () => undefined },
     );
     assert.equal(escapedRepoRoute.status, 200);
-    const escapedRepoRouteBody = await escapedRepoRoute.json();
+    const escapedRepoRouteBody = await escapedRepoRoute.json<any>();
     assert.equal(escapedRepoRouteBody.installNeeded, false);
   } finally {
     globalThis.fetch = originalFetch;
@@ -180,7 +185,7 @@ test("worker allows mixed-account dashboards to use partitioned App quota", asyn
       { waitUntil: () => undefined },
     );
     assert.equal(response.status, 200);
-    const body = await response.json();
+    const body = await response.json<any>();
     assert.equal(body.installNeeded, false);
     assert.equal(body.installReason, null);
   } finally {

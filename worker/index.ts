@@ -14,14 +14,7 @@ import {
   isRepoDetailApiPath,
   isTrustProfileApiPath,
 } from "./routes.js";
-import {
-  type Env,
-  type ExecutionContext,
-  type MessageBatch,
-  type ScheduledEvent,
-  type WorkerQueueMessage,
-  withLockJurisdiction,
-} from "./runtime.js";
+import { type WorkerQueueMessage, withLockJurisdiction } from "./runtime.js";
 import { ownerActivityResponse, repoActivityResponse } from "./activity.js";
 import { adminResponse, profileResponse } from "./admin.js";
 import { assetResponse, ownerActivityPageOwner } from "./app-shell.js";
@@ -112,9 +105,13 @@ export default {
       headers: response.headers,
     });
   },
-  async scheduled(event: ScheduledEvent, rawEnv: Env, context: ExecutionContext): Promise<void> {
+  async scheduled(
+    controller: ScheduledController,
+    rawEnv: Env,
+    context: ExecutionContext,
+  ): Promise<void> {
     const env = withLockJurisdiction(rawEnv);
-    context.waitUntil(schedulerTick(env, context, `cron:${event.cron}`, schedulerBatchLimit));
+    context.waitUntil(schedulerTick(env, context, `cron:${controller.cron}`, schedulerBatchLimit));
   },
   async queue(
     batch: MessageBatch<WorkerQueueMessage>,
@@ -285,7 +282,7 @@ export default {
       }
     }
   },
-};
+} satisfies ExportedHandler<Env, WorkerQueueMessage>;
 
 export async function routeRequest(
   request: Request,

@@ -2,7 +2,7 @@ import { slugOwner, validOwnerSlug } from "../scripts/lib/dashboard.js";
 import type { DashboardProfile, Owner, RefreshTarget } from "../src/types.js";
 import { randomNonce } from "./crypto.js";
 import { jsonResponse } from "./http.js";
-import type { DurableObjectState, Env, GitHubWebhookJob, StoredWebhookPending } from "./runtime.js";
+import type { GitHubWebhookJob, StoredWebhookPending } from "./runtime.js";
 import { tryJsonParse } from "./schemas.js";
 import { dashboardSubtitle } from "./app-shell.js";
 import { isStoredBuildProgress, storedBuildProgressExpired } from "./build-progress.js";
@@ -287,7 +287,7 @@ export class DashboardBuildLock {
       }
       const mutate = async () => {
         let current = await this.state.storage.get<RefreshTarget>("refresh-target");
-        if (!current && this.env.DASHBOARD_CACHE) {
+        if (!current) {
           const raw = await this.env.DASHBOARD_CACHE.get(refreshTargetStorageKey(key));
           if (raw) {
             const parsed = tryJsonParse<RefreshTarget>(raw, `refresh target ${key}`);
@@ -297,7 +297,7 @@ export class DashboardBuildLock {
         const updated = applyRefreshTargetMutation(snapshot, current ?? null, mutation);
         await Promise.all([
           this.state.storage.put("refresh-target", updated),
-          this.env.DASHBOARD_CACHE?.put(refreshTargetStorageKey(key), JSON.stringify(updated), {
+          this.env.DASHBOARD_CACHE.put(refreshTargetStorageKey(key), JSON.stringify(updated), {
             expirationTtl: dashboardStorageTtlSeconds,
           }),
         ]);

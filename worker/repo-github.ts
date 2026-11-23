@@ -14,7 +14,6 @@ import {
   responseRateLimitSignal,
 } from "./github-audit.js";
 import { workerFetch } from "./http.js";
-import type { Env } from "./runtime.js";
 import { gitHubSearchCountSchema, parseGitHubResponse, tryJsonParse } from "./schemas.js";
 import type { GenericSchema, InferOutput } from "valibot";
 import { lastPageFromLink } from "./audience-data.js";
@@ -189,7 +188,7 @@ export async function readRepoDetailAuxRecord<T>(
   env: Env | undefined,
   key: string,
 ): Promise<RepoDetailAuxCacheRecord<T> | null> {
-  const raw = await env?.DASHBOARD_CACHE?.get(key);
+  const raw = await env?.DASHBOARD_CACHE.get(key);
   if (!raw) return null;
   return tryJsonParse<RepoDetailAuxCacheRecord<T>>(raw, `repo detail aux ${key}`);
 }
@@ -212,7 +211,7 @@ export async function writeRepoDetailAux<T>(
   ttlSeconds = repoDetailAuxTtlSeconds,
   etag?: string | null,
 ): Promise<void> {
-  await env?.DASHBOARD_CACHE?.put(
+  await env?.DASHBOARD_CACHE.put(
     key,
     JSON.stringify({ generatedAt: new Date().toISOString(), data, ...(etag ? { etag } : {}) }),
     { expirationTtl: ttlSeconds },

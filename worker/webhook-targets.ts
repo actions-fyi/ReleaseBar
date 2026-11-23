@@ -3,7 +3,6 @@ import type { ActivityRange, RefreshTarget } from "../src/types.js";
 import { mapConcurrent } from "./concurrency.js";
 import { randomNonce } from "./crypto.js";
 import type {
-  Env,
   GitHubWebhookFanoutJob,
   GitHubWebhookJob,
   StoredWebhookPending,
@@ -290,9 +289,7 @@ export async function indexedWebhookTargets(
         ? { source, cursor: nextCursor, backfillFailed: undefined }
         : source === "owner"
           ? { source: "repo", cursor: undefined, backfillFailed: undefined }
-          : env.DASHBOARD_CACHE?.list
-            ? { source: "kv-owner", cursor: undefined, backfillFailed: undefined }
-            : null,
+          : { source: "kv-owner", cursor: undefined, backfillFailed: undefined },
     };
   }
   const page = await kvIndexedWebhookTargets(env, source, value, cursor);
@@ -300,9 +297,7 @@ export async function indexedWebhookTargets(
     ? { source, cursor: page.nextCursor, backfillFailed: undefined }
     : source === "owner"
       ? { source: "repo" as const, cursor: undefined, backfillFailed: undefined }
-      : env.DASHBOARD_CACHE?.list
-        ? { source: "kv-owner" as const, cursor: undefined, backfillFailed: undefined }
-        : null;
+      : { source: "kv-owner" as const, cursor: undefined, backfillFailed: undefined };
   return { targets: page.targets, next };
 }
 
@@ -312,14 +307,13 @@ export async function kvIndexedWebhookTargets(
   value: string,
   cursor?: string,
 ): Promise<{ targets: RefreshTarget[]; nextCursor?: string }> {
-  if (!env.DASHBOARD_CACHE?.list) return { targets: [] };
   const page = await env.DASHBOARD_CACHE.list({
     prefix: refreshTargetIndexSource(source, value),
     limit: webhookTargetPageSize,
     ...(cursor ? { cursor } : {}),
   });
   const indexed = await mapConcurrent(page.keys, 16, async (key) => {
-    const raw = await env.DASHBOARD_CACHE?.get(key.name);
+    const raw = await env.DASHBOARD_CACHE.get(key.name);
     const indexedValue = raw
       ? tryJsonParse<RefreshTarget | string>(raw, `refresh target index ${key.name}`)
       : null;
@@ -343,7 +337,6 @@ export async function currentWebhookTargets(
   env: Env,
   targets: RefreshTarget[],
 ): Promise<RefreshTarget[]> {
-  if (!env.DASHBOARD_CACHE) return targets;
   const current = await mapConcurrent(targets, 16, (target) => readRefreshTarget(env, target.key));
   return freshestWebhookTargets([
     ...current.filter((target): target is RefreshTarget => target !== null),
@@ -439,14 +432,13 @@ export async function legacyWebhookTargets(
   cursor?: string,
   backfillFailed = false,
 ): Promise<WebhookTargetPage> {
-  if (!env.DASHBOARD_CACHE?.list) return { targets: [], next: null };
   const page = await env.DASHBOARD_CACHE.list({
     prefix: refreshTargetPrefix,
     limit: webhookTargetPageSize,
     ...(cursor ? { cursor } : {}),
   });
   const readTargets = await mapConcurrent(page.keys, 16, async (key) => {
-    const raw = await env.DASHBOARD_CACHE?.get(key.name);
+    const raw = await env.DASHBOARD_CACHE.get(key.name);
     const target = raw ? tryJsonParse<RefreshTarget>(raw, `refresh target ${key.name}`) : null;
     return isRefreshTarget(target) && currentDashboardCacheKey(target.key) ? target : null;
   });
@@ -478,13 +470,12 @@ export async function legacyOwnerWebhookSeedTargets(
   owner: string,
   fullName: string,
 ): Promise<RefreshTarget[]> {
-  if (!env.DASHBOARD_CACHE?.list) return [];
   const page = await env.DASHBOARD_CACHE.list({
     prefix: `${refreshTargetPrefix}${dashboardCachePrefix}${owner}:`,
     limit: refreshTargetSourceLimit,
   });
   const targets = await mapConcurrent(page.keys, 8, async (key) => {
-    const raw = await env.DASHBOARD_CACHE?.get(key.name);
+    const raw = await env.DASHBOARD_CACHE.get(key.name);
     const target = raw ? tryJsonParse<RefreshTarget>(raw, `refresh target ${key.name}`) : null;
     return isRefreshTarget(target) && webhookTargetMatches(target, owner, fullName) ? target : null;
   });
@@ -504,9 +495,8 @@ export async function webhookTargetPage(
   backfillFailed?: boolean,
   priorityIncludeReleaseDataOnly = false,
 ): Promise<WebhookTargetPage> {
-  if (!env.DASHBOARD_CACHE?.list && !env.DASHBOARD_LOCKS) return { targets: [], next: null };
   const indexReady =
-    (await env.DASHBOARD_CACHE?.get(refreshTargetIndexReadyKey)) ===
+    (await env.DASHBOARD_CACHE.get(refreshTargetIndexReadyKey)) ===
     String(refreshTargetIndexVersion);
   const selectedSource =
     source ?? (indexReady ? (env.DASHBOARD_LOCKS ? "indexed" : "owner") : "legacy");
@@ -603,7 +593,7 @@ export async function invalidateRepoProjectCache(env: Env, fullName: string): Pr
   await Promise.all(
     [true, false].flatMap((includeUnreleased) =>
       [true, false].map((includeReleaseData) =>
-        env.DASHBOARD_CACHE?.delete?.(
+        env.DASHBOARD_CACHE.delete(
           `repo:v2:${fullName}:${includeUnreleased ? "unreleased" : "released"}:${includeReleaseData ? "release" : "metadata"}`,
         ),
       ),
@@ -615,14 +605,13 @@ export async function invalidateRepoDetailCaches(env: Env, fullName: string): Pr
   const [owner, repo] = fullName.split("/");
   if (!owner || !repo) return;
   await Promise.all([
-    env.DASHBOARD_CACHE?.delete?.(repoDetailCacheKey(owner, repo)),
+    env.DASHBOARD_CACHE.delete(repoDetailCacheKey(owner, repo)),
     deleteCachePrefix(env, repoDetailAuxCachePrefix(fullName)),
   ]);
 }
 
 export async function deleteCachePrefix(env: Env, prefix: string): Promise<void> {
   const cache = env.DASHBOARD_CACHE;
-  if (!cache?.list || !cache.delete) return;
   const list = cache.list.bind(cache);
   const deleteKey = cache.delete.bind(cache);
   let cursor: string | undefined;
@@ -643,17 +632,17 @@ export async function invalidatePublicRepoCaches(env: Env, fullName: string): Pr
   await Promise.all([
     invalidateRepoProjectCache(env, fullName),
     invalidateRepoDetailCaches(env, fullName),
-    env.DASHBOARD_CACHE?.delete?.(socialRepoCacheKey(owner, repo)),
+    env.DASHBOARD_CACHE.delete(socialRepoCacheKey(owner, repo)),
     ...(["day", "week", "month"] as ActivityRange[]).map((range) =>
-      env.DASHBOARD_CACHE?.delete?.(repoActivityCacheKey(owner, repo, range)),
+      env.DASHBOARD_CACHE.delete(repoActivityCacheKey(owner, repo, range)),
     ),
     ...repoAudienceRanges.map((range) =>
-      env.DASHBOARD_CACHE?.delete?.(repoAudienceCacheKey(owner, repo, range)),
+      env.DASHBOARD_CACHE.delete(repoAudienceCacheKey(owner, repo, range)),
     ),
-    env.DASHBOARD_CACHE?.delete?.(repoAudienceUserReposKey(owner)),
-    env.DASHBOARD_CACHE?.delete?.(trustProfileCacheKey(owner)),
+    env.DASHBOARD_CACHE.delete(repoAudienceUserReposKey(owner)),
+    env.DASHBOARD_CACHE.delete(trustProfileCacheKey(owner)),
     ...(["day", "week", "month"] as ActivityRange[]).map((range) =>
-      env.DASHBOARD_CACHE?.delete?.(ownerActivityCacheKey(owner, range)),
+      env.DASHBOARD_CACHE.delete(ownerActivityCacheKey(owner, range)),
     ),
     deleteCachePrefix(env, "repo-audience:v5:"),
     deleteCachePrefix(env, "owner-activity:v"),
@@ -680,6 +669,6 @@ export async function invalidateDashboardTargets(
 ): Promise<void> {
   await markHotCacheStale(env);
   await mapWebhookTargets(targets, async (target) => {
-    await Promise.all([env.DASHBOARD_CACHE?.delete?.(target.key), deleteProgress(env, target.key)]);
+    await Promise.all([env.DASHBOARD_CACHE.delete(target.key), deleteProgress(env, target.key)]);
   });
 }

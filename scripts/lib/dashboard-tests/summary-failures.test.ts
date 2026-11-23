@@ -11,7 +11,6 @@ import {
   summaryRetryMaxMs,
   summaryRetryMultiplier,
 } from "../../../worker/config.js";
-import worker from "../../../worker/index.js";
 import { summaryFailedMessage, summaryRetryDue } from "../../../worker/release-summary.js";
 import {
   claudeJson,
@@ -19,6 +18,7 @@ import {
   kvStore,
   signedIn,
   testProject,
+  worker,
 } from "../dashboard-test-harness.js";
 
 const httpOk = 200;

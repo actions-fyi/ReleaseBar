@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ownerActivityFromPath, ownerFromPath, repoFromPath } from "../../../src/routing.js";
-import worker from "../../../worker/index.js";
-import { kvStore } from "../dashboard-test-harness.js";
+import { kvStore, worker } from "../dashboard-test-harness.js";
 
 test("page route parsers reject malformed percent encoding", () => {
   for (const invalid of ["%", "%GG", "%C0%AF", "%E0%A4%A"]) {

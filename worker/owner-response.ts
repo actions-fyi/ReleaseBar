@@ -1,7 +1,6 @@
 import { dashboardCacheKey, slugOwner, validOwnerSlug } from "../scripts/lib/dashboard.js";
 import type { DashboardPayload, Owner } from "../src/types.js";
 import { corsHeaders, jsonResponse } from "./http.js";
-import type { Env, ExecutionContext } from "./runtime.js";
 import { rebuildingPayload, statusPayload, unresolvedDashboardRequest } from "./admin.js";
 import { ownerListFromUrl, repoListFromUrl, resolveOwners, uniqueSorted } from "./app-shell.js";
 import {
@@ -59,11 +58,12 @@ import {
   rememberRefreshTarget,
 } from "./refresh-targets.js";
 import { dashboardRequest } from "./request-lock.js";
+import type { BackgroundContext } from "./runtime.js";
 
 export async function ownerResponse(
   request: Request,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
 ): Promise<Response> {
   const url = new URL(request.url);
   const allowRefresh = allowRequestRefresh(request);
