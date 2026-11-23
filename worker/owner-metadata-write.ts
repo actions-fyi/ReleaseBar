@@ -3,6 +3,7 @@ import type { DashboardPayload } from "../src/types.ts";
 import { jsonResponse } from "./http.ts";
 import { ownerMetadataObjectName } from "./runtime.ts";
 import { dashboardTotals } from "./build-progress.ts";
+import { safeIso } from "./time.ts";
 import {
   crawlerUserAgentPattern,
   type OwnerMetadataMutation,
@@ -554,11 +555,7 @@ export async function rememberOwnerMetadata(
   );
 }
 
-export function safeIso(value: string | null | undefined): number {
-  if (!value) return 0;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
+export { safeIso };
 
 export function isCrawlerRequest(request: Request): boolean {
   // verifiedBotCategory is not in the generated request properties yet.
