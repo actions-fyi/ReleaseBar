@@ -9,11 +9,8 @@ import {
 import { randomNonce } from "../crypto.ts";
 import { sleep } from "../dashboard-rebuild.ts";
 import { safeIso } from "../owner-metadata-write.ts";
-import {
-  type GitHubWebhookJob,
-  type StoredWebhookPending,
-  withLockJurisdiction,
-} from "../runtime.ts";
+import type { GitHubWebhookJob, StoredWebhookPending } from "../runtime.ts";
+import { withLockJurisdiction } from "../store/bindings.ts";
 import { processGitHubWebhook } from "../webhook.ts";
 import {
   mergePendingWebhook,

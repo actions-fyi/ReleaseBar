@@ -7,7 +7,7 @@ import {
   hasDeploySettings,
 } from "../shared/deploy-config.ts";
 import { claudeSummaryText } from "../worker/release-summary.ts";
-import { durableObjectBindings, withLockJurisdiction } from "../worker/runtime.ts";
+import { durableObjectBindings, withLockJurisdiction } from "../worker/store/bindings.ts";
 
 const kvId = "0123456789abcdef0123456789abcdef";
 

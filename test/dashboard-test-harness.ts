@@ -18,8 +18,8 @@ import {
   type OwnerMetadataSnapshot,
   refreshTargetSourceLimit,
 } from "../worker/config.ts";
+import { durableObjectBindings } from "../worker/store/bindings.ts";
 import {
-  durableObjectBindings,
   ownerMetadataObjectName,
   refreshTargetIndexName,
   type WorkerQueueMessage,

@@ -14,7 +14,8 @@ import {
   isRepoDetailApiPath,
   isTrustProfileApiPath,
 } from "./routes.ts";
-import { type WorkerQueueMessage, withLockJurisdiction } from "./runtime.ts";
+import type { WorkerQueueMessage } from "./runtime.ts";
+import { withLockJurisdiction } from "./store/bindings.ts";
 import { ownerActivityResponse, repoActivityResponse } from "./activity.ts";
 import { adminResponse, profileResponse } from "./admin.ts";
 import { assetResponse, ownerActivityPageOwner } from "./app-shell.ts";
