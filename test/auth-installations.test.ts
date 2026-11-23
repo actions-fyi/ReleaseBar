@@ -2,7 +2,14 @@ import { generateKeyPairSync } from "node:crypto";
 import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { RefreshJob } from "../src/types.ts";
-import { kvStore, signedJson, testDashboard, testEnv, worker } from "./dashboard-test-harness.ts";
+import {
+  kvStore,
+  signedJson,
+  storedRefreshJobSnapshot,
+  testDashboard,
+  testEnv,
+  worker,
+} from "./dashboard-test-harness.ts";
 
 test("worker rejects oversized custom source requests", async () => {
   const owners = Array.from({ length: 9 }, (_, index) => `owner-${index}`).join(",");
@@ -257,14 +264,13 @@ test("worker queues shared cache warming after login discovers an installation",
     expect(sentJobs.length).toBe(1);
     expect(sentJobs[0]?.reason).toBe("installation-warm");
     expect(sentJobs[0]?.targetKey ?? "").toMatch(/openclaw/);
-    const snapshot = JSON.parse(
-      (await cache.get(sentJobs[0]?.targetSnapshotKey ?? "")) ?? "{}",
-    ) as RefreshJob;
+    const snapshot = ((await storedRefreshJobSnapshot(sentJobs[0]?.targetSnapshotKey)) ??
+      {}) as RefreshJob;
     expect(snapshot.target?.owners).toStrictEqual(["openclaw"]);
     expect(snapshot.target?.repos).toStrictEqual(["outside/releasebar"]);
     expect(snapshot.target?.includeReleaseData).toBe(false);
     expect(snapshot.target?.profileSnapshotKey).toBe(
-      `refresh:profile-snapshot:v1:openclaw:${encodeURIComponent(profile.updatedAt)}`,
+      `profile-snapshot:openclaw:${encodeURIComponent(profile.updatedAt)}`,
     );
   } finally {
     globalThis.fetch = originalFetch;

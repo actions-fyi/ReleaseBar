@@ -21,36 +21,21 @@ import {
   githubWebhookCoalescingBatchSize,
   githubWebhookPendingLimit,
   githubWebhookPendingLimitBytes,
-  refreshTargetIndexVersion,
-  refreshTargetSourceLimit,
   releaseSummaryPromptVersion,
   repoAudienceRanges,
   webhookPriorityTargetLimit,
   webhookRecentTargetMs,
   webhookTargetBatchSize,
   webhookTargetConcurrency,
-  webhookTargetPageSize,
 } from "./config.ts";
 import { safeIso } from "./owner-metadata-write.ts";
-import {
-  currentDashboardCacheKey,
-  isRefreshTarget,
-  persistRefreshTargetWithIndexes,
-  readRefreshTarget,
-} from "./refresh-targets.ts";
+import { isRefreshTarget } from "./refresh-targets.ts";
 import { repoDetailCacheKey } from "./release-summary.ts";
 import { ownerActivityCacheKey, repoDetailAuxCachePrefix } from "./repo-github.ts";
 import { webhookHex } from "./request-lock.ts";
 import { socialRepoCacheKey } from "./social-card.ts";
 import { deleteCacheEntries, deleteCacheEntry } from "./store/cache.ts";
-import {
-  indexedRefreshTargetPage,
-  indexedRefreshTargets,
-  listRefreshTargetKeyIndex,
-  listStoredRefreshTargets,
-  markRefreshTargetIndexReady,
-  refreshTargetIndexReady,
-} from "./store/refresh-targets.ts";
+import { indexedRefreshTargetPage, indexedRefreshTargets } from "./store/refresh-targets.ts";
 
 export async function validWebhookSignature(
   secret: string,
@@ -240,7 +225,7 @@ export function pendingWebhookBatch(
 
 export type WebhookTargetPage = {
   targets: RefreshTarget[];
-  next: Pick<GitHubWebhookFanoutJob, "source" | "cursor" | "backfillFailed"> | null;
+  next: Pick<GitHubWebhookFanoutJob, "source" | "cursor"> | null;
   prioritized?: boolean;
 };
 
@@ -278,72 +263,27 @@ export function webhookTargetIndexedByOwner(target: RefreshTarget, owner: string
   );
 }
 
+// A page of the targets listed under one source, with what follows it: the next page of the
+// source, then the repository's targets after the owner's, then nothing.
 export async function indexedWebhookTargets(
   env: Env,
   source: "owner" | "repo",
   value: string,
   cursor?: string,
 ): Promise<WebhookTargetPage> {
-  const { targets, nextCursor } = await durableIndexedWebhookTargets(env, source, value, cursor);
+  const page = await indexedRefreshTargetPage(env, { kind: source, value }, cursor);
   return {
-    targets,
-    next: nextCursor
-      ? { source, cursor: nextCursor, backfillFailed: undefined }
+    targets: freshestWebhookTargets(page.targets.filter(isRefreshTarget)),
+    next: page.nextCursor
+      ? { source, cursor: page.nextCursor }
       : source === "owner"
-        ? { source: "repo", cursor: undefined, backfillFailed: undefined }
-        : { source: "kv-owner", cursor: undefined, backfillFailed: undefined },
+        ? { source: "repo", cursor: undefined }
+        : null,
   };
 }
 
-export async function kvIndexedWebhookTargets(
-  env: Env,
-  source: "owner" | "repo",
-  value: string,
-  cursor?: string,
-): Promise<{ targets: RefreshTarget[]; nextCursor?: string }> {
-  const page = await listRefreshTargetKeyIndex(env, { kind: source, value }, cursor);
-  const indexed = await mapConcurrent(page.entries, 16, async (indexedValue) => {
-    const targetKey =
-      typeof indexedValue === "string"
-        ? indexedValue
-        : isRefreshTarget(indexedValue)
-          ? indexedValue.key
-          : null;
-    return targetKey ? readRefreshTarget(env, targetKey) : null;
-  });
-  return {
-    targets: freshestWebhookTargets(
-      indexed.filter((target): target is RefreshTarget => target !== null),
-    ),
-    nextCursor: page.nextCursor,
-  };
-}
-
-export async function currentWebhookTargets(
-  env: Env,
-  targets: RefreshTarget[],
-): Promise<RefreshTarget[]> {
-  const current = await mapConcurrent(targets, 16, (target) => readRefreshTarget(env, target.key));
-  return freshestWebhookTargets([
-    ...current.filter((target): target is RefreshTarget => target !== null),
-    ...targets,
-  ]);
-}
-
-export async function durableIndexedWebhookTargets(
-  env: Env,
-  source: "owner" | "repo",
-  value: string,
-  cursor?: string,
-): Promise<{ targets: RefreshTarget[]; nextCursor?: string }> {
-  const stored = await indexedRefreshTargetPage(env, { kind: source, value }, cursor);
-  const indexed = freshestWebhookTargets(stored.targets.filter(isRefreshTarget));
-  return {
-    targets: await currentWebhookTargets(env, indexed),
-    nextCursor: stored.nextCursor ?? undefined,
-  };
-}
-
+// The targets a webhook refreshes first: the most recently seen ones that show the owner or the
+// repository.
 export async function prioritizedIndexedWebhookTargets(
   env: Env,
   owner: string,
@@ -358,144 +298,48 @@ export async function prioritizedIndexedWebhookTargets(
     read("owner", owner),
     read("repo", fullName),
   ]);
-  const selected = freshestWebhookTargets(
+  const targets = freshestWebhookTargets(
     [...ownerTargets, ...repoTargets]
       .filter((target) => webhookTargetMatches(target, owner, fullName))
       .filter((target) => !includeReleaseDataOnly || target.includeReleaseData),
   )
     .sort(compareWebhookTargets)
     .slice(0, webhookPriorityTargetLimit);
-  const targets = freshestWebhookTargets(await currentWebhookTargets(env, selected))
-    .filter((target) => webhookTargetMatches(target, owner, fullName))
-    .filter((target) => !includeReleaseDataOnly || target.includeReleaseData)
-    .sort(compareWebhookTargets);
   return {
     targets,
-    next: { source: "owner", cursor: undefined, backfillFailed: undefined },
+    next: { source: "owner", cursor: undefined },
     prioritized: true,
   };
 }
 
-export async function legacyWebhookTargets(
-  env: Env,
-  owner: string,
-  fullName: string,
-  cursor?: string,
-  backfillFailed = false,
-): Promise<WebhookTargetPage> {
-  const page = await listStoredRefreshTargets(env, "any-version", webhookTargetPageSize, cursor);
-  const validTargets = page.targets.filter(
-    (target) => isRefreshTarget(target) && currentDashboardCacheKey(target.key),
-  );
-  const backfillResults = await mapConcurrent(
-    validTargets.filter((target) => target.indexVersion !== refreshTargetIndexVersion),
-    4,
-    (target) => persistRefreshTargetWithIndexes(env, target),
-  );
-  const pageBackfillFailed = backfillResults.some(
-    (result) => result.persisted && result.target.indexVersion !== refreshTargetIndexVersion,
-  );
-  const failed = backfillFailed || pageBackfillFailed;
-  if (page.complete && !failed) {
-    await markRefreshTargetIndexReady(env);
-  }
-  return {
-    targets: validTargets.filter((target) => webhookTargetMatches(target, owner, fullName)),
-    next: page.complete
-      ? null
-      : { source: "legacy", cursor: page.nextCursor, backfillFailed: failed },
-  };
-}
-
-export async function legacyOwnerWebhookSeedTargets(
-  env: Env,
-  owner: string,
-  fullName: string,
-): Promise<RefreshTarget[]> {
-  const page = await listStoredRefreshTargets(
-    env,
-    { owner },
-    refreshTargetSourceLimit,
-    undefined,
-    8,
-  );
-  return freshestWebhookTargets(
-    page.targets.filter(
-      (target) => isRefreshTarget(target) && webhookTargetMatches(target, owner, fullName),
-    ),
-  )
-    .sort(compareWebhookTargets)
-    .slice(0, webhookPriorityTargetLimit);
-}
-
+// The targets a webhook for `fullName` refreshes, a page at a time. Without `source`, the
+// prioritized targets; then the owner's targets in key order, then the repository's that the
+// owner's pages did not hold.
 export async function webhookTargetPage(
   env: Env,
   owner: string,
   fullName: string,
   source?: GitHubWebhookFanoutJob["source"],
   cursor?: string,
-  backfillFailed?: boolean,
   priorityIncludeReleaseDataOnly = false,
 ): Promise<WebhookTargetPage> {
-  const indexReady = await refreshTargetIndexReady(env);
-  const selectedSource = source ?? (indexReady ? "indexed" : "legacy");
-  if (selectedSource === "legacy") {
-    if (source === undefined && priorityIncludeReleaseDataOnly) {
-      return {
-        targets: [],
-        next: { source: "legacy", cursor: undefined, backfillFailed: undefined },
-        prioritized: true,
-      };
-    }
-    const page = await legacyWebhookTargets(env, owner, fullName, cursor, backfillFailed);
-    return page;
+  if (source === undefined) {
+    return prioritizedIndexedWebhookTargets(env, owner, fullName, priorityIncludeReleaseDataOnly);
   }
-  if (selectedSource === "indexed") {
-    if (source === undefined) {
-      return prioritizedIndexedWebhookTargets(env, owner, fullName, priorityIncludeReleaseDataOnly);
-    }
-    const page = await indexedWebhookTargets(env, "owner", owner, cursor);
-    return {
-      ...page,
-      targets: page.targets.filter((target) => webhookTargetMatches(target, owner, fullName)),
-    };
-  }
-  if (selectedSource === "kv-owner" || selectedSource === "kv-repo") {
-    const kvSource = selectedSource === "kv-owner" ? "owner" : "repo";
-    const value = kvSource === "owner" ? owner : fullName;
-    const page = await kvIndexedWebhookTargets(env, kvSource, value, cursor);
-    return {
-      targets: page.targets.filter(
-        (target) =>
-          target.indexVersion !== refreshTargetIndexVersion &&
-          webhookTargetMatches(target, owner, fullName) &&
-          (kvSource !== "repo" || !webhookTargetIndexedByOwner(target, owner)),
-      ),
-      next: page.nextCursor
-        ? { source: selectedSource, cursor: page.nextCursor, backfillFailed: undefined }
-        : selectedSource === "kv-owner"
-          ? { source: "kv-repo", cursor: undefined, backfillFailed: undefined }
-          : null,
-    };
-  }
-  if (source === undefined && priorityIncludeReleaseDataOnly) {
-    return {
-      targets: [],
-      next: { source: "owner", cursor: undefined, backfillFailed: undefined },
-      prioritized: true,
-    };
-  }
-  const value = selectedSource === "owner" ? owner : fullName;
-  const page = await indexedWebhookTargets(env, selectedSource, value, cursor);
-  const result: WebhookTargetPage = {
+  const page = await indexedWebhookTargets(
+    env,
+    source,
+    source === "owner" ? owner : fullName,
+    cursor,
+  );
+  return {
     ...page,
     targets: page.targets.filter(
       (target) =>
         webhookTargetMatches(target, owner, fullName) &&
-        (selectedSource !== "repo" || !webhookTargetIndexedByOwner(target, owner)),
+        (source !== "repo" || !webhookTargetIndexedByOwner(target, owner)),
     ),
   };
-  return result;
 }
 
 export async function mapWebhookTargets<T>(

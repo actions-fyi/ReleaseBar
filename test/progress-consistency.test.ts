@@ -1,7 +1,13 @@
 import { expect, test, vi } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.ts";
-import { BuildCoordinator, kvStore, testProject, worker } from "./dashboard-test-harness.ts";
+import {
+  BuildCoordinator,
+  kvStore,
+  storeRefreshJob,
+  testProject,
+  worker,
+} from "./dashboard-test-harness.ts";
 
 test("worker does not restore stale KV progress after an authoritative Durable Object miss", async () => {
   const key = dashboardCacheKey({
@@ -46,8 +52,8 @@ test("worker does not restore stale KV progress after an authoritative Durable O
       projects: [staleProject],
       updatedAt: "2026-06-11T07:00:00Z",
     }),
-    [`refresh:job:v1:${job.id}`]: JSON.stringify(job),
   });
+  await storeRefreshJob(job);
   const originalFetch = globalThis.fetch;
   let acked = false;
   try {
@@ -167,8 +173,8 @@ test("worker does not persist delayed progress older than its tombstone", async 
     [`progress:tombstone:v1:${key}`]: JSON.stringify({
       clearedAt: "2999-01-01T00:00:00Z",
     }),
-    [`refresh:job:v1:${job.id}`]: JSON.stringify(job),
   });
+  await storeRefreshJob(job);
   const originalFetch = globalThis.fetch;
   let retryDelaySeconds: number | undefined;
 

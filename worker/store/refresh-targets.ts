@@ -1,36 +1,64 @@
 // Refresh targets: the dashboards the scheduler keeps fresh, and the index of the targets that
 // show an owner or a repository, which a webhook for that source asks.
 //
-// A target is a KV entry. The index is a Durable Object per source, with KV entries as its older
-// form. Step 7a of the stack migration moves both to D1 (docs/data-model.md).
+// A target is a row of `refresh_targets` in D1, and the index is `refresh_target_sources`: one
+// row per target and source (migrations/0001_refresh.sql). D1 expires nothing by itself:
+// `deleteExpiredRefreshTargets` deletes the targets nobody has seen for the storage lifetime.
 
 import type { RefreshTarget } from "../../src/types.ts";
-import { mapConcurrent } from "../concurrency.ts";
 import {
   dashboardCachePrefix,
   dashboardStorageTtlSeconds,
-  refreshTargetIndexPrefix,
-  refreshTargetIndexReadyKey,
-  refreshTargetIndexVersion,
-  refreshTargetPrefix,
+  refreshTargetEntryLimitBytes,
+  refreshTargetSourceLimit,
   webhookTargetPageSize,
 } from "../config.ts";
-import { sha256Base64Url } from "../crypto.ts";
-import type {
-  RefreshTargetIndexPage,
-  RefreshTargetIndexUpsert,
-} from "../objects/refresh-target-index.ts";
-import { refreshTargetIndexName } from "../runtime.ts";
 import { tryJsonParse } from "../schemas.ts";
+import { safeIso } from "../time.ts";
 
 export type RefreshTargetSource = { kind: "owner" | "repo"; value: string };
 
-export function refreshTargetStorageKey(key: string): string {
-  return `${refreshTargetPrefix}${key}`;
+// "created" and "updated" store the target with its sources. "too-large" refuses a target over
+// the entry limit, and "full" a new target of a source that has `refreshTargetSourceLimit`
+// targets already.
+export type RefreshTargetWrite = "created" | "updated" | "too-large" | "full";
+
+export type RefreshTargetPage = { targets: RefreshTarget[]; nextCursor?: string };
+
+type ValueRow = { value: string };
+
+// D1 takes 100 bound parameters per statement. A source takes two in a count and three in an
+// insert.
+const sourcesPerCount = 45;
+const sourcesPerInsert = 30;
+
+function chunks<Item>(items: Item[], size: number): Item[][] {
+  const result: Item[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+  return result;
 }
 
-export function refreshTargetIndexSource(kind: "owner" | "repo", source: string): string {
-  return `${refreshTargetIndexPrefix}${kind}:${encodeURIComponent(source.toLowerCase())}:`;
+function parseTargets(rows: ValueRow[]): RefreshTarget[] {
+  return rows
+    .map((row) => tryJsonParse<RefreshTarget>(row.value, "refresh target"))
+    .filter((target): target is RefreshTarget => target !== null);
+}
+
+// Targets seen before this are no longer stored: KV dropped them by itself, D1 does not.
+function seenCutoff(now = Date.now()): number {
+  return now - dashboardStorageTtlSeconds * 1000;
+}
+
+// The key range of the targets of dashboards with the current cache key version.
+function currentKeyRange(): [from: string, before: string] {
+  const last = dashboardCachePrefix.length - 1;
+  return [
+    dashboardCachePrefix,
+    dashboardCachePrefix.slice(0, last) +
+      String.fromCharCode(dashboardCachePrefix.charCodeAt(last) + 1),
+  ];
 }
 
 // The target as it was stored, not validated.
@@ -38,176 +66,179 @@ export async function readStoredRefreshTarget(
   env: Env,
   key: string,
 ): Promise<RefreshTarget | null> {
-  const raw = await env.DASHBOARD_CACHE.get(refreshTargetStorageKey(key));
-  if (!raw) return null;
-  return tryJsonParse<RefreshTarget>(raw, `refresh target ${key}`);
+  const row = await env.DB.prepare("SELECT value FROM refresh_targets WHERE key = ?")
+    .bind(key)
+    .first<ValueRow>();
+  return row ? tryJsonParse<RefreshTarget>(row.value, `refresh target ${key}`) : null;
 }
 
-export async function writeRefreshTarget(env: Env, target: RefreshTarget): Promise<void> {
-  await env.DASHBOARD_CACHE.put(refreshTargetStorageKey(target.key), JSON.stringify(target), {
-    expirationTtl: dashboardStorageTtlSeconds,
-  });
+// The sources among `sources` that hold `refreshTargetSourceLimit` other targets already.
+async function fullSources(
+  env: Env,
+  sources: RefreshTargetSource[],
+  targetKey: string,
+): Promise<number> {
+  if (sources.length === 0) return 0;
+  const statements = chunks(sources, sourcesPerCount).map((chunk) =>
+    env.DB.prepare(
+      `SELECT COUNT(*) AS full FROM (
+         SELECT 1 FROM refresh_target_sources
+         WHERE (kind, value) IN (VALUES ${chunk.map(() => "(?, ?)").join(", ")})
+           AND target_key <> ?
+         GROUP BY kind, value
+         HAVING COUNT(*) >= ?
+       )`,
+    ).bind(
+      ...chunk.flatMap((source) => [source.kind, source.value]),
+      targetKey,
+      refreshTargetSourceLimit,
+    ),
+  );
+  const results = await env.DB.batch<{ full: number }>(statements);
+  return results.reduce((total, result) => total + (result.results[0]?.full ?? 0), 0);
 }
 
-export function deleteRefreshTarget(env: Env, key: string): Promise<void> {
-  return env.DASHBOARD_CACHE.delete(refreshTargetStorageKey(key));
+// Stores the target and lists it under each of its sources, in one transaction. The limits are
+// checked before the write, not with it: targets admitted at the same moment can take a source
+// a few rows over its limit.
+export async function writeRefreshTarget(
+  env: Env,
+  target: RefreshTarget,
+  sources: RefreshTargetSource[],
+): Promise<RefreshTargetWrite> {
+  const value = JSON.stringify(target);
+  if (new TextEncoder().encode(value).byteLength > refreshTargetEntryLimitBytes) {
+    return "too-large";
+  }
+  const existing = await env.DB.prepare("SELECT 1 AS stored FROM refresh_targets WHERE key = ?")
+    .bind(target.key)
+    .first<{ stored: number }>();
+  if (!existing && (await fullSources(env, sources, target.key)) > 0) return "full";
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO refresh_targets (key, next_due_at, last_seen_at, value) VALUES (?, ?, ?, ?)
+       ON CONFLICT (key) DO UPDATE SET
+         next_due_at = excluded.next_due_at,
+         last_seen_at = excluded.last_seen_at,
+         value = excluded.value`,
+    ).bind(target.key, safeIso(target.nextDueAt), safeIso(target.lastSeenAt), value),
+    env.DB.prepare("DELETE FROM refresh_target_sources WHERE target_key = ?").bind(target.key),
+    ...chunks(sources, sourcesPerInsert).map((chunk) =>
+      env.DB.prepare(
+        `INSERT INTO refresh_target_sources (kind, value, target_key)
+         VALUES ${chunk.map(() => "(?, ?, ?)").join(", ")}`,
+      ).bind(...chunk.flatMap((source) => [source.kind, source.value, target.key])),
+    ),
+  ]);
+  return existing ? "updated" : "created";
 }
 
-// Which stored targets a listing covers:
-// - "current": the targets of dashboards with the current cache key version.
-// - "any-version": every stored target, whatever its dashboard's cache key version.
-// - an owner: the current targets whose dashboard key starts with that owner.
-export type StoredRefreshTargetScope = "current" | "any-version" | { owner: string };
-
-function scopePrefix(scope: StoredRefreshTargetScope): string {
-  if (scope === "any-version") return refreshTargetPrefix;
-  if (scope === "current") return `${refreshTargetPrefix}${dashboardCachePrefix}`;
-  return `${refreshTargetPrefix}${dashboardCachePrefix}${scope.owner}:`;
+// Deletes the target and takes it out of the index of its sources.
+export async function deleteRefreshTarget(env: Env, key: string): Promise<void> {
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM refresh_target_sources WHERE target_key = ?").bind(key),
+    env.DB.prepare("DELETE FROM refresh_targets WHERE key = ?").bind(key),
+  ]);
 }
 
-async function readListedRefreshTarget(env: Env, name: string): Promise<RefreshTarget | null> {
-  const raw = await env.DASHBOARD_CACHE.get(name);
-  return raw ? tryJsonParse<RefreshTarget>(raw, `refresh target ${name}`) : null;
-}
-
-// A page of stored targets, not validated. `complete` tells that no page follows.
+// A page of the stored targets of dashboards with the current cache key version, in key order
+// after `cursor`, not validated. No `nextCursor` tells that no page follows.
 export async function listStoredRefreshTargets(
   env: Env,
-  scope: StoredRefreshTargetScope,
   limit: number,
   cursor?: string,
-  concurrency = 16,
-): Promise<{ targets: RefreshTarget[]; complete: boolean; nextCursor?: string }> {
-  const page = await env.DASHBOARD_CACHE.list({
-    prefix: scopePrefix(scope),
-    limit,
-    ...(cursor ? { cursor } : {}),
-  });
-  const targets = await mapConcurrent(page.keys, concurrency, (key) =>
-    readListedRefreshTarget(env, key.name),
-  );
+): Promise<RefreshTargetPage> {
+  const [from, before] = currentKeyRange();
+  const { results } = await env.DB.prepare(
+    `SELECT key, value FROM refresh_targets
+     WHERE key >= ? AND key < ? AND key > ?
+     ORDER BY key LIMIT ?`,
+  )
+    .bind(from, before, cursor ?? "", limit + 1)
+    .all<ValueRow & { key: string }>();
+  const page = results.slice(0, limit);
   return {
-    targets: targets.filter((target): target is RefreshTarget => target !== null),
-    complete: page.list_complete,
-    nextCursor: page.list_complete ? undefined : page.cursor,
+    targets: parseTargets(page),
+    nextCursor: results.length > limit ? page.at(-1)?.key : undefined,
   };
 }
 
-// How many current targets are stored, with the first `sampleLimit` of them, not validated.
+// How many current targets are stored, with the `sampleLimit` of them that are due soonest, not
+// validated.
 export async function countStoredRefreshTargets(
   env: Env,
   sampleLimit: number,
 ): Promise<{ total: number; targets: RefreshTarget[] }> {
-  const sampleKeys: string[] = [];
-  let total = 0;
-  let cursor: string | undefined;
-  do {
-    const page = await env.DASHBOARD_CACHE.list({
-      prefix: scopePrefix("current"),
-      limit: 1000,
-      ...(cursor ? { cursor } : {}),
-    });
-    total += page.keys.length;
-    for (const key of page.keys) {
-      if (sampleKeys.length >= sampleLimit) break;
-      sampleKeys.push(key.name);
-    }
-    cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor);
-  const targets = await mapConcurrent(sampleKeys, 16, (key) => readListedRefreshTarget(env, key));
+  const [from, before] = currentKeyRange();
+  const [count, sample] = await env.DB.batch<{ total?: number; value?: string }>([
+    env.DB.prepare("SELECT COUNT(*) AS total FROM refresh_targets WHERE key >= ? AND key < ?").bind(
+      from,
+      before,
+    ),
+    env.DB.prepare(
+      `SELECT value FROM refresh_targets
+       WHERE key >= ? AND key < ?
+       ORDER BY next_due_at, key LIMIT ?`,
+    ).bind(from, before, sampleLimit),
+  ]);
   return {
-    total,
-    targets: targets.filter((target): target is RefreshTarget => target !== null),
+    total: count?.results[0]?.total ?? 0,
+    targets: parseTargets((sample?.results ?? []) as ValueRow[]),
   };
 }
 
-// Whether every stored target has been written to the index of its sources.
-export async function refreshTargetIndexReady(env: Env): Promise<boolean> {
-  return (
-    (await env.DASHBOARD_CACHE.get(refreshTargetIndexReadyKey)) ===
-    String(refreshTargetIndexVersion)
-  );
-}
-
-export async function markRefreshTargetIndexReady(env: Env): Promise<void> {
-  await env.DASHBOARD_CACHE.put(refreshTargetIndexReadyKey, String(refreshTargetIndexVersion), {
-    expirationTtl: dashboardStorageTtlSeconds,
-  });
-}
-
-function sourceIndex(env: Env, source: RefreshTargetSource) {
-  return env.REFRESH_TARGET_INDEX.getByName(refreshTargetIndexName(source.kind, source.value));
-}
-
-// Adds the target to the index of one source, or updates it there.
-export async function upsertIndexedRefreshTarget(
-  env: Env,
-  source: RefreshTargetSource,
-  target: RefreshTarget,
-): Promise<RefreshTargetIndexUpsert> {
-  return await sourceIndex(env, source).upsert(target);
-}
-
-export async function removeIndexedRefreshTarget(
-  env: Env,
-  source: RefreshTargetSource,
-  key: string,
-): Promise<void> {
-  await sourceIndex(env, source).remove(key);
-}
-
-// Every target the source's index holds, most recently seen first, not validated.
+// The targets listed under the source, most recently seen first, not validated: at most
+// `refreshTargetSourceLimit` of them.
 export async function indexedRefreshTargets(
   env: Env,
   source: RefreshTargetSource,
 ): Promise<RefreshTarget[]> {
-  return await sourceIndex(env, source).list();
+  const { results } = await env.DB.prepare(
+    `SELECT targets.value FROM refresh_target_sources AS sources
+     JOIN refresh_targets AS targets ON targets.key = sources.target_key
+     WHERE sources.kind = ? AND sources.value = ? AND targets.last_seen_at >= ?
+     ORDER BY targets.last_seen_at DESC, targets.key LIMIT ?`,
+  )
+    .bind(source.kind, source.value, seenCutoff(), refreshTargetSourceLimit)
+    .all<ValueRow>();
+  return parseTargets(results);
 }
 
-// The targets the source's index holds, in key order, after `cursor`, not validated.
+// A page of the targets listed under the source, in key order after `cursor`, not validated.
 export async function indexedRefreshTargetPage(
   env: Env,
   source: RefreshTargetSource,
   cursor?: string,
-): Promise<RefreshTargetIndexPage> {
-  return await sourceIndex(env, source).page(cursor, webhookTargetPageSize);
+): Promise<RefreshTargetPage> {
+  const { results } = await env.DB.prepare(
+    `SELECT sources.target_key AS key, targets.value FROM refresh_target_sources AS sources
+     JOIN refresh_targets AS targets ON targets.key = sources.target_key
+     WHERE sources.kind = ? AND sources.value = ? AND sources.target_key > ?
+       AND targets.last_seen_at >= ?
+     ORDER BY sources.target_key LIMIT ?`,
+  )
+    .bind(source.kind, source.value, cursor ?? "", seenCutoff(), webhookTargetPageSize + 1)
+    .all<ValueRow & { key: string }>();
+  const page = results.slice(0, webhookTargetPageSize);
+  return {
+    targets: parseTargets(page),
+    nextCursor: results.length > webhookTargetPageSize ? page.at(-1)?.key : undefined,
+  };
 }
 
-// Records the target's key under each of its sources, in the older form of the index.
-export async function writeRefreshTargetKeyIndex(
-  env: Env,
-  sources: RefreshTargetSource[],
-  targetKey: string,
-): Promise<void> {
-  const hash = (await sha256Base64Url(targetKey)).slice(0, 32);
-  await Promise.all(
-    sources.map(({ kind, value }) =>
-      env.DASHBOARD_CACHE.put(
-        `${refreshTargetIndexSource(kind, value)}${hash}`,
-        JSON.stringify(targetKey),
-        { expirationTtl: dashboardStorageTtlSeconds },
-      ),
+// Deletes up to `limit` targets that nobody has seen for the storage lifetime, the longest
+// unseen first, with their index rows. Returns how many targets it deleted.
+export async function deleteExpiredRefreshTargets(env: Env, limit: number): Promise<number> {
+  const expired = `SELECT key FROM refresh_targets WHERE last_seen_at < ?
+                   ORDER BY last_seen_at LIMIT ?`;
+  const cutoff = seenCutoff();
+  // One transaction: both statements select the same targets.
+  const [, targets] = await env.DB.batch([
+    env.DB.prepare(`DELETE FROM refresh_target_sources WHERE target_key IN (${expired})`).bind(
+      cutoff,
+      limit,
     ),
-  );
-}
-
-// A page of the older form of a source's index. An entry is a target key, or the whole target as
-// the first version stored it; neither is validated.
-export async function listRefreshTargetKeyIndex(
-  env: Env,
-  source: RefreshTargetSource,
-  cursor?: string,
-): Promise<{ entries: Array<RefreshTarget | string | null>; nextCursor?: string }> {
-  const page = await env.DASHBOARD_CACHE.list({
-    prefix: refreshTargetIndexSource(source.kind, source.value),
-    limit: webhookTargetPageSize,
-    ...(cursor ? { cursor } : {}),
-  });
-  const entries = await mapConcurrent(page.keys, 16, async (key) => {
-    const raw = await env.DASHBOARD_CACHE.get(key.name);
-    return raw
-      ? tryJsonParse<RefreshTarget | string>(raw, `refresh target index ${key.name}`)
-      : null;
-  });
-  return { entries, nextCursor: page.list_complete ? undefined : page.cursor };
+    env.DB.prepare(`DELETE FROM refresh_targets WHERE key IN (${expired})`).bind(cutoff, limit),
+  ]);
+  return targets?.meta.changes ?? 0;
 }

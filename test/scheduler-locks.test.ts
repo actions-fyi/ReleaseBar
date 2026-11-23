@@ -11,11 +11,19 @@ import {
 import { mutateRefreshTargetState } from "../worker/refresh-targets.ts";
 import {
   BuildCoordinator,
+  deleteStoredRefreshTarget,
   kvStore,
   objectsUnavailable,
-  RefreshTargetIndex,
-  testEnv,
+  storedOwnerCountCursor,
+  storedProfileSnapshot,
+  storedRefreshJobSnapshot,
+  storedRefreshTarget,
+  storeProfileSnapshot,
+  storeRefreshJob,
+  storeRefreshTarget,
+  storeRefreshTargets,
   testDashboard,
+  testEnv,
   testProject,
   worker,
 } from "./dashboard-test-harness.ts";
@@ -39,9 +47,7 @@ test("worker Queue messages stay bounded when profile filters are large", async 
     updatedAt: "2026-06-11T07:00:00Z",
     updatedBy: "profiled",
   };
-  const profileSnapshotKey = `refresh:profile-snapshot:v1:profiled:${encodeURIComponent(
-    profile.updatedAt,
-  )}`;
+  const profileSnapshotKey = await storeProfileSnapshot(profile);
   const target: RefreshTarget = {
     key,
     kind: "dashboard",
@@ -58,10 +64,8 @@ test("worker Queue messages stay bounded when profile filters are large", async 
     nextDueAt: "2000-01-01T00:00:00Z",
     failureCount: 0,
   };
-  const cache = kvStore({
-    [`refresh:target:v1:${key}`]: JSON.stringify(target),
-    [profileSnapshotKey]: JSON.stringify(profile),
-  });
+  const cache = kvStore();
+  await storeRefreshTarget(target);
   const sentJobs: RefreshJob[] = [];
   const waits: Promise<unknown>[] = [];
 
@@ -90,22 +94,19 @@ test("worker Queue messages stay bounded when profile filters are large", async 
   expect(sentJobs.length).toBe(1);
   expect(sentJobs[0]?.target).toBe(undefined);
   expect(JSON.stringify(sentJobs[0]).length < 4096).toBe(true);
-  const snapshot = JSON.parse(
-    (await cache.get(sentJobs[0]?.targetSnapshotKey ?? "")) ?? "{}",
-  ) as RefreshJob;
+  const snapshot = ((await storedRefreshJobSnapshot(sentJobs[0]?.targetSnapshotKey)) ??
+    {}) as RefreshJob;
   expect(snapshot.target?.profileSnapshotKey).toBe(profileSnapshotKey);
   expect(JSON.stringify(snapshot.target).length < 4096).toBe(true);
-  expect(await cache.get("refresh:target-index:v1:ready")).toBe(null);
-  const storedProfile = JSON.parse((await cache.get(profileSnapshotKey)) ?? "{}") as {
-    hiddenRepos?: string[];
-  };
-  expect(storedProfile.hiddenRepos?.length).toBe(5000);
+  const storedProfile = await storedProfileSnapshot(profileSnapshotKey);
+  expect(storedProfile?.hiddenRepos.length).toBe(5000);
 });
 
 test("owner count scheduling rotates beyond a deferred owner cap", async () => {
   const now = new Date().toISOString();
   const staleAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const owners = Array.from({ length: 21 }, (_, index) => `owner${String(index).padStart(3, "0")}`);
+  const targets: RefreshTarget[] = [];
   const entries = Object.fromEntries(
     owners.flatMap((owner) => {
       const key = dashboardCacheKey({
@@ -130,8 +131,8 @@ test("owner count scheduling rotates beyond a deferred owner cap", async () => {
         nextDueAt: "2999-01-01T00:00:00Z",
         failureCount: 0,
       };
+      targets.push(target);
       return [
-        [`refresh:target:v1:${key}`, JSON.stringify(target)],
         [key, JSON.stringify(testDashboard(owner, [project]))],
         [
           `owner-metadata:v1:${owner}`,
@@ -152,6 +153,7 @@ test("owner count scheduling rotates beyond a deferred owner cap", async () => {
     }),
   );
   const cache = kvStore(entries);
+  await storeRefreshTargets(targets);
   const run = async () => {
     const waits: Promise<unknown>[] = [];
     await (
@@ -171,9 +173,9 @@ test("owner count scheduling rotates beyond a deferred owner cap", async () => {
   };
 
   await run();
-  expect(await cache.get("refresh:owner-count-cursor:v1")).toBe("owner019");
+  expect(await storedOwnerCountCursor()).toBe("owner019");
   await run();
-  expect(await cache.get("refresh:owner-count-cursor:v1")).toBe("owner018");
+  expect(await storedOwnerCountCursor()).toBe("owner018");
 });
 
 test("owner count scheduling throttles recent incomplete scans", async () => {
@@ -202,7 +204,6 @@ test("owner count scheduling throttles recent incomplete scans", async () => {
     failureCount: 0,
   };
   const cache = kvStore({
-    [`refresh:target:v1:${key}`]: JSON.stringify(target),
     [key]: JSON.stringify(testDashboard("large-owner", [project])),
     "owner-metadata:v1:large-owner": JSON.stringify({
       owner: "large-owner",
@@ -218,6 +219,7 @@ test("owner count scheduling throttles recent incomplete scans", async () => {
       projects: [project],
     }),
   });
+  await storeRefreshTarget(target);
   const originalFetch = globalThis.fetch;
   let graphqlRequests = 0;
   globalThis.fetch = async (input) => {
@@ -236,7 +238,7 @@ test("owner count scheduling throttles recent incomplete scans", async () => {
     globalThis.fetch = originalFetch;
   }
   expect(graphqlRequests).toBe(0);
-  expect(await cache.get("refresh:owner-count-cursor:v1")).toBe(null);
+  expect(await storedOwnerCountCursor()).toBe(null);
 });
 
 // Runs `check` with the clock moved forward.
@@ -334,8 +336,8 @@ test("dashboard target mutations preserve terminal backoff across stale observat
     message: "terminal failure",
     terminal: true,
   });
-  // The cache loses the target; the object still knows it.
-  await cache.delete(`refresh:target:v1:${input.key}`);
+  // The database loses the target; the object still knows it.
+  await deleteStoredRefreshTarget(input.key);
   const observedAgain = await mutate(null, {
     kind: "observe",
     input,
@@ -347,9 +349,7 @@ test("dashboard target mutations preserve terminal backoff across stale observat
   expect(observedAgain.nextDueAt).toBe(failed.nextDueAt);
   expect(observedAgain.terminalBackoffUntil).toBe(failed.nextDueAt);
   expect(observedAgain.message).toBe("terminal failure");
-  const stored = JSON.parse(
-    (await cache.get(`refresh:target:v1:${input.key}`)) ?? "{}",
-  ) as RefreshTarget;
+  const stored = ((await storedRefreshTarget(input.key)) ?? {}) as RefreshTarget;
   expect(stored.terminalBackoffUntil).toBe(failed.nextDueAt);
 });
 
@@ -442,7 +442,7 @@ test("worker falls back to KV progress when the Durable Object is unavailable", 
     }
     throw new Error(`unexpected fetch ${path}`);
   };
-  objectsUnavailable(BuildCoordinator, RefreshTargetIndex);
+  objectsUnavailable(BuildCoordinator);
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/owner"),
@@ -538,8 +538,8 @@ test("worker resumes marked KV progress after an authoritative Durable Object mi
       updatedAt: "2026-06-11T07:00:00Z",
       durableFallback: true,
     }),
-    [`refresh:job:v1:${job.id}`]: JSON.stringify(job),
   });
+  await storeRefreshJob(job);
   const originalFetch = globalThis.fetch;
   const hydratedRepos: string[] = [];
   let acked = false;

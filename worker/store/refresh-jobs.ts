@@ -1,64 +1,83 @@
-// Refresh jobs: one record per job, a snapshot of each job as it was enqueued, listed newest
-// first, and a record of each delivery of a job to the queue handler.
-//
-// All three are KV entries. Step 7a of the stack migration moves them to D1
-// (docs/data-model.md).
+// Refresh jobs: one row of `refresh_jobs` per job, with the job as it was enqueued (its
+// snapshot, which carries the target) and its latest state, and one row of
+// `refresh_job_deliveries` per delivery of a job to the queue handler
+// (migrations/0001_refresh.sql). D1 expires nothing by itself: `deleteExpiredRefreshJobs`
+// deletes what has not changed for the job lifetime.
 
 import type { RefreshJob } from "../../src/types.ts";
-import {
-  legacyRefreshJobIndexKey,
-  refreshJobDeliveryPrefix,
-  refreshJobIndexPrefix,
-  refreshJobListLimit,
-  refreshJobPrefix,
-} from "../config.ts";
+import { refreshJobListLimit } from "../config.ts";
 import { tryJsonParse } from "../schemas.ts";
 import { safeIso } from "../time.ts";
 
-const refreshJobTtlSeconds = 14 * 24 * 60 * 60;
+const refreshJobLifetimeMs = 14 * 24 * 60 * 60 * 1000;
+const snapshotKeyPrefix = "refresh-job:";
 
-function newestFirst(at: string): string {
-  const timestamp = safeIso(at) || Date.now();
-  return String(Number.MAX_SAFE_INTEGER - timestamp).padStart(16, "0");
+type ValueRow = { value: string };
+
+function parseJobs(rows: ValueRow[], context: string): RefreshJob[] {
+  return rows
+    .map((row) => tryJsonParse<RefreshJob>(row.value, context))
+    .filter((job): job is RefreshJob => job !== null);
 }
 
-export function refreshJobStorageKey(id: string): string {
-  return `${refreshJobPrefix}${id}`;
+// What names the snapshot of a job: a job carries it as `targetSnapshotKey`.
+export function refreshJobSnapshotKey(job: Pick<RefreshJob, "id">): string {
+  return `${snapshotKeyPrefix}${job.id}`;
 }
 
-// Where the snapshot of a job is stored: a job carries it as `targetSnapshotKey`.
-export function refreshJobIndexStorageKey(job: Pick<RefreshJob, "id" | "createdAt">): string {
-  return `${refreshJobIndexPrefix}${newestFirst(job.createdAt)}:${job.id}`;
-}
-
-export function refreshJobDeliveryStorageKey(job: RefreshJob): string {
-  return `${refreshJobDeliveryPrefix}${newestFirst(job.updatedAt)}:${job.id}:${job.attempts}`;
-}
-
+// Stores the latest state of a job.
 export async function writeRefreshJob(env: Env, job: RefreshJob): Promise<void> {
-  await env.DASHBOARD_CACHE.put(refreshJobStorageKey(job.id), JSON.stringify(job), {
-    expirationTtl: refreshJobTtlSeconds,
-  });
+  await env.DB.prepare(
+    `INSERT INTO refresh_jobs (id, target_key, created_at, updated_at, value)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (id) DO UPDATE SET updated_at = excluded.updated_at, value = excluded.value`,
+  )
+    .bind(
+      job.id,
+      job.targetKey,
+      safeIso(job.createdAt) || Date.now(),
+      safeIso(job.updatedAt) || Date.now(),
+      JSON.stringify(job),
+    )
+    .run();
 }
 
-// The job as it was stored, not validated.
+// The latest state of a job as it was stored, not validated. Null for a job that was enqueued
+// and has not been delivered yet: it has a snapshot only.
 export async function readStoredRefreshJob(env: Env, id: string): Promise<RefreshJob | null> {
-  const raw = await env.DASHBOARD_CACHE.get(refreshJobStorageKey(id));
-  if (!raw) return null;
-  return tryJsonParse<RefreshJob>(raw, `refresh job ${id}`);
+  const row = await env.DB.prepare("SELECT value FROM refresh_jobs WHERE id = ?")
+    .bind(id)
+    .first<{ value: string | null }>();
+  return row?.value ? tryJsonParse<RefreshJob>(row.value, `refresh job ${id}`) : null;
 }
 
+// Records that a delivery of the job started.
 export async function writeRefreshJobDelivery(env: Env, job: RefreshJob): Promise<void> {
-  await env.DASHBOARD_CACHE.put(refreshJobDeliveryStorageKey(job), JSON.stringify(job), {
-    expirationTtl: refreshJobTtlSeconds,
-  });
+  await env.DB.prepare(
+    `INSERT INTO refresh_job_deliveries (job_id, attempt, updated_at, value) VALUES (?, ?, ?, ?)
+     ON CONFLICT (job_id, attempt) DO UPDATE
+     SET updated_at = excluded.updated_at, value = excluded.value`,
+  )
+    .bind(job.id, job.attempts, safeIso(job.updatedAt) || Date.now(), JSON.stringify(job))
+    .run();
 }
 
 // Stores the snapshot of a job as it is enqueued.
 export async function indexRefreshJob(env: Env, job: RefreshJob): Promise<void> {
-  await env.DASHBOARD_CACHE.put(refreshJobIndexStorageKey(job), JSON.stringify(job), {
-    expirationTtl: refreshJobTtlSeconds,
-  });
+  const createdAt = safeIso(job.createdAt) || Date.now();
+  await env.DB.prepare(
+    `INSERT INTO refresh_jobs (id, target_key, created_at, updated_at, snapshot)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (id) DO UPDATE SET snapshot = excluded.snapshot`,
+  )
+    .bind(
+      job.id,
+      job.targetKey,
+      createdAt,
+      safeIso(job.updatedAt) || createdAt,
+      JSON.stringify(job),
+    )
+    .run();
 }
 
 // The snapshot a job's `targetSnapshotKey` names, not validated. Null for any other key.
@@ -66,39 +85,55 @@ export async function readStoredRefreshJobSnapshot(
   env: Env,
   key: string,
 ): Promise<RefreshJob | null> {
-  if (!key.startsWith(refreshJobIndexPrefix)) return null;
-  const raw = await env.DASHBOARD_CACHE.get(key);
-  if (!raw) return null;
-  return tryJsonParse<RefreshJob>(raw, `refresh job snapshot ${key}`);
+  if (!key.startsWith(snapshotKeyPrefix)) return null;
+  const row = await env.DB.prepare("SELECT snapshot FROM refresh_jobs WHERE id = ?")
+    .bind(key.slice(snapshotKeyPrefix.length))
+    .first<{ snapshot: string | null }>();
+  return row?.snapshot
+    ? tryJsonParse<RefreshJob>(row.snapshot, `refresh job snapshot ${key}`)
+    : null;
 }
 
-async function listStoredJobs(env: Env, prefix: string, context: string): Promise<RefreshJob[]> {
-  const page = await env.DASHBOARD_CACHE.list({ prefix, limit: refreshJobListLimit });
-  const jobs = await Promise.all(
-    page.keys.slice(0, refreshJobListLimit).map(async (key) => {
-      const raw = await env.DASHBOARD_CACHE.get(key.name);
-      return raw ? tryJsonParse<RefreshJob>(raw, `${context} ${key.name}`) : null;
-    }),
-  );
-  return jobs.filter((job): job is RefreshJob => job !== null);
-}
-
-// The newest job snapshots, not validated.
-export function listStoredRefreshJobSnapshots(env: Env): Promise<RefreshJob[]> {
-  return listStoredJobs(env, refreshJobIndexPrefix, "refresh job index");
+// The newest jobs, each in its latest state, or as it was enqueued while it has none; not
+// validated.
+export async function listStoredRefreshJobs(env: Env): Promise<RefreshJob[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT COALESCE(value, snapshot) AS value FROM refresh_jobs
+     WHERE COALESCE(value, snapshot) IS NOT NULL
+     ORDER BY created_at DESC, id LIMIT ?`,
+  )
+    .bind(refreshJobListLimit)
+    .all<ValueRow>();
+  return parseJobs(results, "refresh job");
 }
 
 // The newest delivery records, not validated.
-export function listStoredRefreshJobDeliveries(env: Env): Promise<RefreshJob[]> {
-  return listStoredJobs(env, refreshJobDeliveryPrefix, "refresh job delivery");
+export async function listStoredRefreshJobDeliveries(env: Env): Promise<RefreshJob[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT value FROM refresh_job_deliveries
+     ORDER BY updated_at DESC, job_id, attempt LIMIT ?`,
+  )
+    .bind(refreshJobListLimit)
+    .all<ValueRow>();
+  return parseJobs(results, "refresh job delivery");
 }
 
-// The job IDs of the list that came before the snapshots.
-export async function readLegacyRefreshJobIds(env: Env): Promise<string[]> {
-  const raw = await env.DASHBOARD_CACHE.get(legacyRefreshJobIndexKey);
-  if (!raw) return [];
-  const parsed = tryJsonParse<string[]>(raw, legacyRefreshJobIndexKey);
-  return Array.isArray(parsed)
-    ? parsed.filter((item): item is string => typeof item === "string")
-    : [];
+// Deletes up to `limit` jobs and up to `limit` delivery records that have not changed for the
+// job lifetime, the oldest first. Returns how many rows it deleted.
+export async function deleteExpiredRefreshJobs(env: Env, limit: number): Promise<number> {
+  const cutoff = Date.now() - refreshJobLifetimeMs;
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `DELETE FROM refresh_jobs WHERE id IN (
+         SELECT id FROM refresh_jobs WHERE updated_at < ? ORDER BY updated_at LIMIT ?
+       )`,
+    ).bind(cutoff, limit),
+    env.DB.prepare(
+      `DELETE FROM refresh_job_deliveries WHERE (job_id, attempt) IN (
+         SELECT job_id, attempt FROM refresh_job_deliveries
+         WHERE updated_at < ? ORDER BY updated_at LIMIT ?
+       )`,
+    ).bind(cutoff, limit),
+  ]);
+  return results.reduce((total, result) => total + result.meta.changes, 0);
 }
