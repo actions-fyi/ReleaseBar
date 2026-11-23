@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import type {
   OwnerActivityPayload,
   RepoDetailActivityPayload,
@@ -49,9 +48,9 @@ test("worker throttles cached warming repository detail refreshes", async () => 
       },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 202);
+    expect(response.status).toBe(202);
     const body = (await response.json()) as RepoDetailPayload;
-    assert.equal(body.cache.state, "warming");
+    expect(body.cache.state).toBe("warming");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -96,11 +95,11 @@ test("worker refreshes cached warming repository detail after short grace window
         },
       },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as RepoDetailPayload;
-    assert.equal(body.cache.state, "stale");
-    assert.equal(body.cache.message, "refreshing repository statistics");
-    assert.equal(waitUntilPromises.length, 1);
+    expect(body.cache.state).toBe("stale");
+    expect(body.cache.message).toBe("refreshing repository statistics");
+    expect(waitUntilPromises.length).toBe(1);
     await Promise.all(waitUntilPromises);
   } finally {
     globalThis.fetch = originalFetch;
@@ -146,11 +145,11 @@ test("worker serves stale repository detail to crawlers without refreshing", asy
         },
       },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as RepoDetailPayload;
-    assert.equal(body.cache.state, "stale");
-    assert.equal(body.cache.message, "showing cached repository statistics");
-    assert.equal(waitUntilPromises.length, 0);
+    expect(body.cache.state).toBe("stale");
+    expect(body.cache.message).toBe("showing cached repository statistics");
+    expect(waitUntilPromises.length).toBe(0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -173,10 +172,10 @@ test("worker keeps crawler-only auxiliary API misses off GitHub", async () => {
         { DASHBOARD_CACHE: kvStore(), GITHUB_TOKEN: "shared-token" },
         { waitUntil: () => undefined },
       );
-      assert.equal(response.status, 202, url);
+      expect(response.status, url).toBe(202);
       const body = (await response.json()) as { cache?: { state?: string; message?: string } };
-      assert.equal(body.cache?.state, "warming");
-      assert.match(body.cache?.message ?? "", /crawler/);
+      expect(body.cache?.state).toBe("warming");
+      expect(body.cache?.message ?? "").toMatch(/crawler/);
     }
   } finally {
     globalThis.fetch = originalFetch;
@@ -228,8 +227,8 @@ test("worker summarizes commits since release in the background", async () => {
       url.hostname === "api.github.com" &&
       url.pathname === "/repos/acme/releasebar/compare/v1.0.0...abcdef1"
     ) {
-      assert.equal(url.searchParams.get("per_page"), "100");
-      assert.equal(url.searchParams.get("page"), "1");
+      expect(url.searchParams.get("per_page")).toBe("100");
+      expect(url.searchParams.get("page")).toBe("1");
       return Response.json({
         total_commits: 2,
         commits: [
@@ -240,11 +239,11 @@ test("worker summarizes commits since release in the background", async () => {
     }
     if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
       const headers = new Headers(init?.headers);
-      assert.equal(headers.get("authorization"), "Bearer claude-key");
+      expect(headers.get("authorization")).toBe("Bearer claude-key");
       const body = JSON.parse(String(init?.body ?? "{}"));
-      assert.equal(body.model, "claude-haiku-5-5");
-      assert.equal(body.output_config?.effort, "low");
-      assert.match(JSON.stringify(body.messages), /Add release summary panel/);
+      expect(body.model).toBe("claude-haiku-5-5");
+      expect(body.output_config?.effort).toBe("low");
+      expect(JSON.stringify(body.messages)).toMatch(/Add release summary panel/);
       return Response.json({
         content: claudeText(
           "ReleaseBar added an AI summary panel and tightened the cache key for generated summaries.",
@@ -265,24 +264,23 @@ test("worker summarizes commits since release in the background", async () => {
       },
       { waitUntil: (promise) => queued.push(promise) },
     );
-    assert.equal(response.status, 202);
+    expect(response.status).toBe(202);
     const body = (await response.json()) as RepoDetailPayload;
-    assert.equal(body.releaseSummary?.state, "warming");
+    expect(body.releaseSummary?.state).toBe("warming");
     await Promise.all(queued);
     const cached = JSON.parse(
       (await cache.get("repo-detail:v4:acme/releasebar")) ?? "{}",
     ) as RepoDetailPayload;
-    assert.equal(cached.releaseSummary?.state, "ready");
-    assert.equal(cached.releaseSummary?.model, "claude-haiku-5-5");
-    assert.match(cached.releaseSummary?.text ?? "", /AI summary panel/);
-    assert.equal(cached.releaseSummary?.commitsUsed, 2);
-    assert.equal(cached.generatedAt, generatedAt);
-    assert.equal(cached.cache.state, "warming");
-    assert.equal(cached.cache.generatedAt, generatedAt);
-    assert.notEqual(
+    expect(cached.releaseSummary?.state).toBe("ready");
+    expect(cached.releaseSummary?.model).toBe("claude-haiku-5-5");
+    expect(cached.releaseSummary?.text ?? "").toMatch(/AI summary panel/);
+    expect(cached.releaseSummary?.commitsUsed).toBe(2);
+    expect(cached.generatedAt).toBe(generatedAt);
+    expect(cached.cache.state).toBe("warming");
+    expect(cached.cache.generatedAt).toBe(generatedAt);
+    expect(
       await cache.get("release-summary:v1:acme/releasebar:v1.0.0:abcdef1:claude-haiku-5-5"),
-      null,
-    );
+    ).not.toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -350,12 +348,12 @@ test("worker summarizes recent repository activity in the background", async () 
     }
     if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
       const headers = new Headers(init?.headers);
-      assert.equal(headers.get("authorization"), "Bearer claude-key");
+      expect(headers.get("authorization")).toBe("Bearer claude-key");
       const body = JSON.parse(String(init?.body ?? "{}"));
-      assert.equal(body.model, "claude-haiku-5-5");
-      assert.equal(body.output_config?.effort, "low");
-      assert.match(JSON.stringify(body.messages), /Repository: acme\/unreleased/);
-      assert.match(JSON.stringify(body.messages), /Add repository activity summary/);
+      expect(body.model).toBe("claude-haiku-5-5");
+      expect(body.output_config?.effort).toBe("low");
+      expect(JSON.stringify(body.messages)).toMatch(/Repository: acme\/unreleased/);
+      expect(JSON.stringify(body.messages)).toMatch(/Add repository activity summary/);
       return Response.json({
         content: claudeText(
           "acme/unreleased added a recent-work panel for unreleased projects and polished the copy around that flow.",
@@ -378,20 +376,20 @@ test("worker summarizes recent repository activity in the background", async () 
       },
       { waitUntil: (promise) => queued.push(promise) },
     );
-    assert.equal(response.status, 202);
+    expect(response.status).toBe(202);
     const body = (await response.json()) as RepoDetailActivityPayload;
-    assert.equal(body.fullName, "acme/unreleased");
-    assert.equal(body.range, "month");
-    assert.equal(body.summary?.state, "warming");
-    assert.equal(body.totals.commits, 2);
+    expect(body.fullName).toBe("acme/unreleased");
+    expect(body.range).toBe("month");
+    expect(body.summary?.state).toBe("warming");
+    expect(body.totals.commits).toBe(2);
     await Promise.all(queued);
     const cached = JSON.parse(
       (await cache.get("repo-activity:v1:acme/unreleased:month")) ?? "{}",
     ) as RepoDetailActivityPayload;
-    assert.equal(cached.summary?.state, "ready", cached.summary?.message ?? "");
-    assert.equal(cached.summary?.model, "claude-haiku-5-5");
-    assert.match(cached.summary?.text ?? "", /recent-work panel/);
-    assert.equal(cached.summary?.promptVersion, 4);
+    expect(cached.summary?.state, cached.summary?.message ?? "").toBe("ready");
+    expect(cached.summary?.model).toBe("claude-haiku-5-5");
+    expect(cached.summary?.text ?? "").toMatch(/recent-work panel/);
+    expect(cached.summary?.promptVersion).toBe(4);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -456,7 +454,7 @@ test("worker hides activity from forks of repositories owned by the profile", as
         query?: string;
         variables?: Record<string, string>;
       };
-      assert.match(body.query ?? "", /query ReleaseBarActivityForkOrigins/);
+      expect(body.query ?? "").toMatch(/query ReleaseBarActivityForkOrigins/);
       const data: Record<string, unknown> = {};
       for (let index = 0; body.variables?.[`owner${index}`]; index += 1) {
         data[`repo${index}`] =
@@ -487,22 +485,16 @@ test("worker hides activity from forks of repositories owned by the profile", as
       { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as OwnerActivityPayload;
-    assert.equal(graphqlCalls, 3);
-    assert.equal(
-      body.events.some((event) => event.repo === "contributor/tool"),
-      false,
-    );
-    assert.equal(
-      body.events.some((event) => event.repo === "upstream/other-100"),
-      true,
-    );
-    assert.equal(body.totals.events, externalRepoCount + 1);
-    assert.equal(body.totals.commits, externalRepoCount + 1);
-    assert.equal(body.totals.repositories, externalRepoCount + 1);
-    assert.equal(await cache.get("owner-activity:v1:acme:week"), null);
-    assert.notEqual(await cache.get("owner-activity:v2:acme:week"), null);
+    expect(graphqlCalls).toBe(3);
+    expect(body.events.some((event) => event.repo === "contributor/tool")).toBe(false);
+    expect(body.events.some((event) => event.repo === "upstream/other-100")).toBe(true);
+    expect(body.totals.events).toBe(externalRepoCount + 1);
+    expect(body.totals.commits).toBe(externalRepoCount + 1);
+    expect(body.totals.repositories).toBe(externalRepoCount + 1);
+    expect(await cache.get("owner-activity:v1:acme:week")).toBe(null);
+    expect(await cache.get("owner-activity:v2:acme:week")).not.toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -525,7 +517,7 @@ test("worker summarizes public owner activity in the background", async () => {
       });
     }
     if (url.hostname === "api.github.com" && url.pathname === "/users/acme/events/public") {
-      assert.equal(url.searchParams.get("per_page"), "100");
+      expect(url.searchParams.get("per_page")).toBe("100");
       if (url.searchParams.get("page") !== "1") {
         return Response.json([]);
       }
@@ -612,24 +604,24 @@ test("worker summarizes public owner activity in the background", async () => {
     if (url.hostname === "api.anthropic.com" && url.pathname === "/v1/messages") {
       summaryCalls += 1;
       const headers = new Headers(init?.headers);
-      assert.equal(headers.get("authorization"), "Bearer claude-key");
+      expect(headers.get("authorization")).toBe("Bearer claude-key");
       const body = JSON.parse(String(init?.body ?? "{}"));
-      assert.equal(body.model, "claude-haiku-5-5");
-      assert.equal(body.output_config?.effort, "low");
-      assert.equal(body.max_tokens, 4200);
-      assert.equal(body.output_config?.format?.type, "json_schema");
-      assert.match(body.system, /do not restate those facts/i);
-      assert.match(body.system, /one or two short sentences/i);
-      assert.doesNotMatch(body.system, /Say this is public activity/i);
+      expect(body.model).toBe("claude-haiku-5-5");
+      expect(body.output_config?.effort).toBe("low");
+      expect(body.max_tokens).toBe(4200);
+      expect(body.output_config?.format?.type).toBe("json_schema");
+      expect(body.system).toMatch(/do not restate those facts/i);
+      expect(body.system).toMatch(/one or two short sentences/i);
+      expect(body.system).not.toMatch(/Say this is public activity/i);
       const inputText = JSON.stringify(body.messages);
-      assert.match(inputText, /Repository: acme\/releasebar/);
-      assert.match(inputText, /Summary target: yes/);
-      assert.match(inputText, /Totals: 127 items; 4 commits; 1 PR; 122 comments/);
-      assert.match(inputText, /Repository: acme\/other/);
-      assert.match(inputText, /Remove a redundant refresh path/);
-      assert.match(inputText, /Add owner activity panel/);
-      assert.match(inputText, /Events included: 125/);
-      assert.equal(inputText.match(/Repository: acme\/releasebar/g)?.length, 1);
+      expect(inputText).toMatch(/Repository: acme\/releasebar/);
+      expect(inputText).toMatch(/Summary target: yes/);
+      expect(inputText).toMatch(/Totals: 127 items; 4 commits; 1 PR; 122 comments/);
+      expect(inputText).toMatch(/Repository: acme\/other/);
+      expect(inputText).toMatch(/Remove a redundant refresh path/);
+      expect(inputText).toMatch(/Add owner activity panel/);
+      expect(inputText).toMatch(/Events included: 125/);
+      expect(inputText.match(/Repository: acme\/releasebar/g)?.length).toBe(1);
       return Response.json({
         content: claudeJson({
           summary:
@@ -662,39 +654,36 @@ test("worker summarizes public owner activity in the background", async () => {
       },
       { waitUntil: (promise) => queued.push(promise) },
     );
-    assert.equal(response.status, 202);
+    expect(response.status).toBe(202);
     const body = (await response.json()) as OwnerActivityPayload;
-    assert.equal(body.owner.login, "acme");
-    assert.equal(body.range, "week");
-    assert.equal(body.totals.commits, 4);
-    assert.equal(body.totals.pullRequests, 1);
-    assert.equal(body.totals.issues, 1);
-    assert.equal(body.totals.repositories, 2);
-    assert.equal(body.repositories[0]?.events, 127);
-    assert.equal(body.repositories[0]?.commits, 4);
-    assert.equal(body.repositories[0]?.pullRequests, 1);
-    assert.equal(body.repositories[0]?.comments, 122);
+    expect(body.owner.login).toBe("acme");
+    expect(body.range).toBe("week");
+    expect(body.totals.commits).toBe(4);
+    expect(body.totals.pullRequests).toBe(1);
+    expect(body.totals.issues).toBe(1);
+    expect(body.totals.repositories).toBe(2);
+    expect(body.repositories[0]?.events).toBe(127);
+    expect(body.repositories[0]?.commits).toBe(4);
+    expect(body.repositories[0]?.pullRequests).toBe(1);
+    expect(body.repositories[0]?.comments).toBe(122);
     const commitEvent = body.events.find((event) => event.kind === "commit");
-    assert.match(commitEvent?.title ?? "", /\+3 commits/);
-    assert.equal(
-      body.events.some((event) => event.repo === "acme/private"),
-      false,
-    );
-    assert.equal(body.summary?.state, "warming");
+    expect(commitEvent?.title ?? "").toMatch(/\+3 commits/);
+    expect(body.events.some((event) => event.repo === "acme/private")).toBe(false);
+    expect(body.summary?.state).toBe("warming");
     await Promise.all(queued);
-    assert.equal(summaryCalls, 1);
+    expect(summaryCalls).toBe(1);
     const cached = JSON.parse(
       (await cache.get("owner-activity:v2:acme:week")) ?? "{}",
     ) as OwnerActivityPayload;
-    assert.equal(cached.summary?.state, "ready", cached.summary?.message ?? "");
-    assert.match(cached.summary?.text ?? "", /activity summaries/);
-    assert.match(cached.summary?.repositories?.[0]?.text ?? "", /grouped activity summaries/);
-    assert.match(cached.summary?.repositories?.[0]?.text ?? "", /cache path/);
-    assert.match(cached.summary?.repositories?.[1]?.text ?? "", /redundant refresh path/);
-    assert.doesNotMatch(cached.summary?.text ?? "", /GitHub activity|public activity/i);
-    assert.notEqual(cached.summary?.inputHash, null);
-    assert.equal(cached.summary?.eventsUsed, 125);
-    assert.equal(cached.summary?.promptVersion, 4);
+    expect(cached.summary?.state, cached.summary?.message ?? "").toBe("ready");
+    expect(cached.summary?.text ?? "").toMatch(/activity summaries/);
+    expect(cached.summary?.repositories?.[0]?.text ?? "").toMatch(/grouped activity summaries/);
+    expect(cached.summary?.repositories?.[0]?.text ?? "").toMatch(/cache path/);
+    expect(cached.summary?.repositories?.[1]?.text ?? "").toMatch(/redundant refresh path/);
+    expect(cached.summary?.text ?? "").not.toMatch(/GitHub activity|public activity/i);
+    expect(cached.summary?.inputHash).not.toBe(null);
+    expect(cached.summary?.eventsUsed).toBe(125);
+    expect(cached.summary?.promptVersion).toBe(4);
   } finally {
     globalThis.fetch = originalFetch;
   }

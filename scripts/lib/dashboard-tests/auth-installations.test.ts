@@ -1,6 +1,5 @@
-import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { RefreshJob } from "../../../src/types.js";
 import { kvStore, signedJson, testDashboard, testEnv, worker } from "../dashboard-test-harness.js";
@@ -13,8 +12,8 @@ test("worker rejects oversized custom source requests", async () => {
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 400);
-  assert.match(await response.text(), /too many custom sources/);
+  expect(response.status).toBe(400);
+  expect(await response.text()).toMatch(/too many custom sources/);
 });
 
 test("worker exposes GitHub App auth endpoints", async () => {
@@ -28,8 +27,8 @@ test("worker exposes GitHub App auth endpoints", async () => {
   const context = { waitUntil: () => undefined };
 
   const anonymous = await worker.fetch(new Request("https://release.bar/api/me"), env, context);
-  assert.equal(anonymous.status, 200);
-  assert.deepEqual(await anonymous.json(), {
+  expect(anonymous.status).toBe(200);
+  expect(await anonymous.json()).toStrictEqual({
     configured: true,
     quotaConfigured: false,
     user: null,
@@ -48,30 +47,29 @@ test("worker exposes GitHub App auth endpoints", async () => {
     env,
     context,
   );
-  assert.equal(login.status, 302);
+  expect(login.status).toBe(302);
   const location = login.headers.get("location") ?? "";
-  assert.equal(location.startsWith("https://github.com/login/oauth/authorize?"), true);
-  assert.match(location, /client_id=Iv123/);
-  assert.match(location, /redirect_uri=https%3A%2F%2Frelease.bar%2Fapi%2Fauth%2Fcallback/);
-  assert.equal(new URL(location).searchParams.has("scope"), false);
-  assert.match(login.headers.get("set-cookie") ?? "", /rd_oauth_state_[^=]+=.+HttpOnly/);
+  expect(location.startsWith("https://github.com/login/oauth/authorize?")).toBe(true);
+  expect(location).toMatch(/client_id=Iv123/);
+  expect(location).toMatch(/redirect_uri=https%3A%2F%2Frelease.bar%2Fapi%2Fauth%2Fcallback/);
+  expect(new URL(location).searchParams.has("scope")).toBe(false);
+  expect(login.headers.get("set-cookie") ?? "").toMatch(/rd_oauth_state_[^=]+=.+HttpOnly/);
 
   const badCallback = await worker.fetch(
     new Request("https://release.bar/api/auth/callback?code=x&state=bad"),
     env,
     context,
   );
-  assert.equal(badCallback.status, 400);
-  assert.equal((await env.DASHBOARD_CACHE.list({ prefix: "auth:funnel:v1:" })).keys.length, 0);
+  expect(badCallback.status).toBe(400);
+  expect((await env.DASHBOARD_CACHE.list({ prefix: "auth:funnel:v1:" })).keys.length).toBe(0);
 
   const install = await worker.fetch(
     new Request("https://release.bar/api/auth/install?returnTo=/openclaw"),
     env,
     context,
   );
-  assert.equal(install.status, 302);
-  assert.equal(
-    install.headers.get("location"),
+  expect(install.status).toBe(302);
+  expect(install.headers.get("location")).toBe(
     "https://github.com/apps/releasebar-app/installations/new",
   );
 });
@@ -94,7 +92,7 @@ test("worker binds OAuth callbacks to the initiating browser", async () => {
   const location = new URL(login.headers.get("location") ?? "");
   const state = location.searchParams.get("state") ?? "";
   const stateCookie = (login.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
-  assert.equal(stateCookie.length < 256, true);
+  expect(stateCookie.length < 256).toBe(true);
 
   const longLogin = await worker.fetch(
     new Request(
@@ -108,8 +106,8 @@ test("worker binds OAuth callbacks to the initiating browser", async () => {
   const longStatePayload = JSON.parse(
     Buffer.from(longState.split(".")[0] ?? "", "base64url").toString("utf8"),
   ) as { returnTo: string };
-  assert.equal(longState.length < 2048, true);
-  assert.equal(longStatePayload.returnTo, "/");
+  expect(longState.length < 2048).toBe(true);
+  expect(longStatePayload.returnTo).toBe("/");
 
   let oauthExchanges = 0;
   const originalFetch = globalThis.fetch;
@@ -136,19 +134,19 @@ test("worker binds OAuth callbacks to the initiating browser", async () => {
   try {
     const callbackUrl = `https://release.bar/api/auth/callback?code=code&state=${encodeURIComponent(state)}`;
     const unbound = await worker.fetch(new Request(callbackUrl), env, context);
-    assert.equal(unbound.status, 400);
-    assert.equal(oauthExchanges, 0);
+    expect(unbound.status).toBe(400);
+    expect(oauthExchanges).toBe(0);
 
     const callback = await worker.fetch(
       new Request(callbackUrl, { headers: { cookie: stateCookie } }),
       env,
       context,
     );
-    assert.equal(callback.status, 302);
-    assert.equal(callback.headers.get("location"), returnTo);
-    assert.match(callback.headers.get("set-cookie") ?? "", /rd_session=/);
-    assert.match(callback.headers.get("set-cookie") ?? "", /rd_oauth_state_[^=]+=;.*Max-Age=0/);
-    assert.equal(oauthExchanges, 1);
+    expect(callback.status).toBe(302);
+    expect(callback.headers.get("location")).toBe(returnTo);
+    expect(callback.headers.get("set-cookie") ?? "").toMatch(/rd_session=/);
+    expect(callback.headers.get("set-cookie") ?? "").toMatch(/rd_oauth_state_[^=]+=;.*Max-Age=0/);
+    expect(oauthExchanges).toBe(1);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -254,19 +252,18 @@ test("worker queues shared cache warming after login discovers an installation",
       context,
     );
     await Promise.all(waits);
-    assert.equal(callback.status, 302);
-    assert.equal(callback.headers.get("location"), "/openclaw");
-    assert.equal(sentJobs.length, 1);
-    assert.equal(sentJobs[0]?.reason, "installation-warm");
-    assert.match(sentJobs[0]?.targetKey ?? "", /openclaw/);
+    expect(callback.status).toBe(302);
+    expect(callback.headers.get("location")).toBe("/openclaw");
+    expect(sentJobs.length).toBe(1);
+    expect(sentJobs[0]?.reason).toBe("installation-warm");
+    expect(sentJobs[0]?.targetKey ?? "").toMatch(/openclaw/);
     const snapshot = JSON.parse(
       (await cache.get(sentJobs[0]?.targetSnapshotKey ?? "")) ?? "{}",
     ) as RefreshJob;
-    assert.deepEqual(snapshot.target?.owners, ["openclaw"]);
-    assert.deepEqual(snapshot.target?.repos, ["outside/releasebar"]);
-    assert.equal(snapshot.target?.includeReleaseData, false);
-    assert.equal(
-      snapshot.target?.profileSnapshotKey,
+    expect(snapshot.target?.owners).toStrictEqual(["openclaw"]);
+    expect(snapshot.target?.repos).toStrictEqual(["outside/releasebar"]);
+    expect(snapshot.target?.includeReleaseData).toBe(false);
+    expect(snapshot.target?.profileSnapshotKey).toBe(
       `refresh:profile-snapshot:v1:openclaw:${encodeURIComponent(profile.updatedAt)}`,
     );
   } finally {
@@ -305,7 +302,7 @@ test("worker remembers GitHub App installs without OAuth session", async () => {
     const url = new URL(String(input));
     const authorization = new Headers(init?.headers).get("authorization");
     if (url.pathname === "/app/installations/77") {
-      assert.match(authorization ?? "", /^Bearer [^.]+\.[^.]+\.[^.]+$/);
+      expect(authorization ?? "").toMatch(/^Bearer [^.]+\.[^.]+\.[^.]+$/);
       return Response.json({
         id: 77,
         account: {
@@ -330,15 +327,15 @@ test("worker remembers GitHub App installs without OAuth session", async () => {
       { waitUntil: (promise) => waits.push(promise) },
     );
     await Promise.all(waits);
-    assert.equal(install.status, 302);
-    assert.equal(install.headers.get("location"), "/openclaw");
+    expect(install.status).toBe(302);
+    expect(install.headers.get("location")).toBe("/openclaw");
     const remembered = JSON.parse((await cache.get("auth:installation:v1:openclaw")) ?? "{}");
-    assert.equal(remembered.id, 77);
-    assert.equal(remembered.accountLogin, "openclaw");
-    assert.equal(remembered.repositorySelection, "all");
-    assert.equal(sentJobs.length, 1);
-    assert.equal(sentJobs[0]?.reason, "installation-warm");
-    assert.match(sentJobs[0]?.targetKey ?? "", /openclaw/);
+    expect(remembered.id).toBe(77);
+    expect(remembered.accountLogin).toBe("openclaw");
+    expect(remembered.repositorySelection).toBe("all");
+    expect(sentJobs.length).toBe(1);
+    expect(sentJobs[0]?.reason).toBe("installation-warm");
+    expect(sentJobs[0]?.targetKey ?? "").toMatch(/openclaw/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -401,13 +398,13 @@ test("worker reports GitHub App installation coverage for signed-in users", asyn
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = await response.json<any>();
-    assert.equal(body.user.login, "octocat");
-    assert.equal(body.installNeeded, false);
-    assert.equal(body.installReason, null);
-    assert.equal(body.quotaConfigured, true);
-    assert.equal(body.installations[0].accountLogin, "openclaw");
+    expect(body.user.login).toBe("octocat");
+    expect(body.installNeeded).toBe(false);
+    expect(body.installReason).toBe(null);
+    expect(body.quotaConfigured).toBe(true);
+    expect(body.installations[0].accountLogin).toBe("openclaw");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -452,7 +449,7 @@ test("worker detects the signed-in user's GitHub App install with app auth fallb
       return Response.json({ installations: [] });
     }
     if (url.pathname === "/app/installations") {
-      assert.match(authorization ?? "", /^Bearer [^.]+\.[^.]+\.[^.]+$/);
+      expect(authorization ?? "").toMatch(/^Bearer [^.]+\.[^.]+\.[^.]+$/);
       return Response.json([
         {
           id: 99,
@@ -490,14 +487,13 @@ test("worker detects the signed-in user's GitHub App install with app auth fallb
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = await response.json<any>();
-    assert.equal(body.installNeeded, false);
-    assert.equal(body.installReason, null);
-    assert.deepEqual(
+    expect(body.installNeeded).toBe(false);
+    expect(body.installReason).toBe(null);
+    expect(
       body.installations.map((installation: { accountLogin: string }) => installation.accountLogin),
-      ["steipete"],
-    );
+    ).toStrictEqual(["steipete"]);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -548,10 +544,10 @@ test("worker does not prompt signed-in users to install the app for third-party 
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = await response.json<any>();
-    assert.equal(body.installNeeded, false);
-    assert.match(body.installReason, /shared API quota unless f\/prompts\.chat installs/);
+    expect(body.installNeeded).toBe(false);
+    expect(body.installReason).toMatch(/shared API quota unless f\/prompts\.chat installs/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -602,10 +598,10 @@ test("worker still prompts signed-in users to install the app for owner dashboar
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = await response.json<any>();
-    assert.equal(body.installNeeded, true);
-    assert.match(body.installReason, /Install the GitHub App for @openclaw/);
+    expect(body.installNeeded).toBe(true);
+    expect(body.installReason).toMatch(/Install the GitHub App for @openclaw/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -671,7 +667,7 @@ test("worker remembers a just-completed GitHub App install while GitHub catches 
       });
     }
     if (url.pathname === "/app/installations/99") {
-      assert.match(authorization ?? "", /^Bearer [^.]+\.[^.]+\.[^.]+$/);
+      expect(authorization ?? "").toMatch(/^Bearer [^.]+\.[^.]+\.[^.]+$/);
       return Response.json({
         id: 99,
         account: {
@@ -695,16 +691,16 @@ test("worker remembers a just-completed GitHub App install while GitHub catches 
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(install.status, 302);
-    assert.equal(install.headers.get("location"), "/steipete");
+    expect(install.status).toBe(302);
+    expect(install.headers.get("location")).toBe("/steipete");
 
     const stored = JSON.parse((await cache.get(`auth:session:${sessionId}`)) ?? "{}");
     const acknowledgedAt = stored.installationsUpdatedAt;
     const remembered = stored.installations.find(
       (installation: { id: number }) => installation.id === 99,
     );
-    assert.equal(remembered.accountLogin, "steipete");
-    assert.equal(remembered.repositorySelection, "all");
+    expect(remembered.accountLogin).toBe("steipete");
+    expect(remembered.repositorySelection).toBe("all");
 
     const me = await worker.fetch(
       new Request("https://release.bar/api/me?returnTo=/steipete", {
@@ -713,18 +709,17 @@ test("worker remembers a just-completed GitHub App install while GitHub catches 
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(me.status, 200);
+    expect(me.status).toBe(200);
     const body = await me.json<any>();
-    assert.equal(body.installNeeded, false);
-    assert.equal(body.installReason, null);
-    assert.equal(
+    expect(body.installNeeded).toBe(false);
+    expect(body.installReason).toBe(null);
+    expect(
       body.installations.some(
         (installation: { accountLogin: string }) => installation.accountLogin === "steipete",
       ),
-      true,
-    );
+    ).toBe(true);
     const afterMe = JSON.parse((await cache.get(`auth:session:${sessionId}`)) ?? "{}");
-    assert.equal(afterMe.installationsUpdatedAt, acknowledgedAt);
+    expect(afterMe.installationsUpdatedAt).toBe(acknowledgedAt);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -764,10 +759,10 @@ test("worker ignores install callback acknowledgements without signed return sta
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 302);
-    assert.equal(response.headers.get("location"), "/");
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("/");
     const stored = JSON.parse((await cache.get(`auth:session:${sessionId}`)) ?? "{}");
-    assert.equal(stored.installations, undefined);
+    expect(stored.installations).toBe(undefined);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -792,7 +787,7 @@ test("worker records server-verified install callbacks without signed return sta
     const url = new URL(String(input));
     const authorization = new Headers(init?.headers).get("authorization");
     if (url.pathname === "/app/installations/101") {
-      assert.match(authorization ?? "", /^Bearer [^.]+\.[^.]+\.[^.]+$/);
+      expect(authorization ?? "").toMatch(/^Bearer [^.]+\.[^.]+\.[^.]+$/);
       return Response.json({
         id: 101,
         account: {
@@ -814,13 +809,13 @@ test("worker records server-verified install callbacks without signed return sta
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 302);
-    assert.equal(response.headers.get("location"), "/");
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("/");
     const remembered = JSON.parse((await cache.get("auth:installation:v1:outside-org")) ?? "{}");
-    assert.equal(remembered.id, 101);
-    assert.equal(remembered.accountLogin, "outside-org");
+    expect(remembered.id).toBe(101);
+    expect(remembered.accountLogin).toBe("outside-org");
     const events = await cache.list({ prefix: "auth:funnel:v1:" });
-    assert.equal(events.keys.length, 2);
+    expect(events.keys.length).toBe(2);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -828,8 +823,8 @@ test("worker records server-verified install callbacks without signed return sta
 
 test("admin logins come from ADMIN_LOGINS and default to nobody", async () => {
   const { isAdminLogin } = await import("../../../worker/auth-oauth.js");
-  assert.equal(isAdminLogin("steipete", testEnv({})), false);
-  assert.equal(isAdminLogin("anyone", testEnv({ ADMIN_LOGINS: "" })), false);
-  assert.equal(isAdminLogin("Octo", testEnv({ ADMIN_LOGINS: "first, octo ,third" })), true);
-  assert.equal(isAdminLogin("other", testEnv({ ADMIN_LOGINS: "first, octo ,third" })), false);
+  expect(isAdminLogin("steipete", testEnv({}))).toBe(false);
+  expect(isAdminLogin("anyone", testEnv({ ADMIN_LOGINS: "" }))).toBe(false);
+  expect(isAdminLogin("Octo", testEnv({ ADMIN_LOGINS: "first, octo ,third" }))).toBe(true);
+  expect(isAdminLogin("other", testEnv({ ADMIN_LOGINS: "first, octo ,third" }))).toBe(false);
 });

@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import type { TrustProfilePayload } from "../../../src/types.js";
 import { kvStore, worker } from "../dashboard-test-harness.js";
 
@@ -80,40 +79,39 @@ test("worker builds bounded trust profiles for people pages", async () => {
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as TrustProfilePayload;
-    assert.deepEqual(paths, [
+    expect(paths).toStrictEqual([
       "/users/principal",
       "/users/principal/orgs",
       "/users/principal/repos",
     ]);
-    assert.equal(body.login, "principal");
-    assert.equal(body.type, "user");
-    assert.equal(body.profileKind, "user_trust");
-    assert.equal(body.scoreLabel, "trust score");
-    assert.equal(body.tier, "high");
+    expect(body.login).toBe("principal");
+    expect(body.type).toBe("user");
+    expect(body.profileKind).toBe("user_trust");
+    expect(body.scoreLabel).toBe("trust score");
+    expect(body.tier).toBe("high");
     assert.ok((body.accountAgeDays ?? 0) > 3650);
     assert.ok(body.dimensions.trust >= 80);
-    assert.equal(body.stats.totalStars, 130);
-    assert.equal(body.stats.activeRepositories, 2);
-    assert.equal(body.stats.languages[0]?.name, "typescript");
-    assert.equal(body.stats.topics[0]?.name, "developer-tools");
-    assert.equal(body.orgs[0]?.login, "github");
-    assert.equal(body.topRepositories[0]?.fullName, "principal/release-tools");
-    assert.equal(body.factors.find((factor) => factor.key === "age")?.label, "account age");
-    assert.match(
-      body.factors.find((factor) => factor.key === "builder")?.detail ?? "",
+    expect(body.stats.totalStars).toBe(130);
+    expect(body.stats.activeRepositories).toBe(2);
+    expect(body.stats.languages[0]?.name).toBe("typescript");
+    expect(body.stats.topics[0]?.name).toBe("developer-tools");
+    expect(body.orgs[0]?.login).toBe("github");
+    expect(body.topRepositories[0]?.fullName).toBe("principal/release-tools");
+    expect(body.factors.find((factor) => factor.key === "age")?.label).toBe("account age");
+    expect(body.factors.find((factor) => factor.key === "builder")?.detail ?? "").toMatch(
       /recent repos scanned/,
     );
-    assert.match(body.reasons.join(" "), /notable org: github/);
+    expect(body.reasons.join(" ")).toMatch(/notable org: github/);
 
     const cached = await worker.fetch(
       new Request("https://release.bar/api/users/principal/trust"),
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(cached.status, 200);
-    assert.deepEqual(paths, [
+    expect(cached.status).toBe(200);
+    expect(paths).toStrictEqual([
       "/users/principal",
       "/users/principal/orgs",
       "/users/principal/repos",
@@ -165,12 +163,12 @@ test("worker preserves bot tier for typed trust profiles", async () => {
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as TrustProfilePayload;
-    assert.equal(body.login, "crawlerbot");
-    assert.equal(body.tier, "bot");
-    assert.equal(body.score, 0);
-    assert.deepEqual(body.reasons, ["automation account"]);
+    expect(body.login).toBe("crawlerbot");
+    expect(body.tier).toBe("bot");
+    expect(body.score).toBe(0);
+    expect(body.reasons).toStrictEqual(["automation account"]);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -194,7 +192,7 @@ test("worker uses registered app quota for anonymous trust profiles", async () =
   globalThis.fetch = async (input, init) => {
     const url = new URL(String(input));
     const authorization = new Headers(init?.headers).get("authorization");
-    assert.equal(authorization, "Bearer installation-token");
+    expect(authorization).toBe("Bearer installation-token");
     if (url.pathname === "/users/principal") {
       return Response.json({
         login: "principal",
@@ -234,10 +232,10 @@ test("worker uses registered app quota for anonymous trust profiles", async () =
       },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as TrustProfilePayload;
-    assert.equal(body.cache.quota?.source, "app");
-    assert.equal(body.cache.quota?.account, "principal");
+    expect(body.cache.quota?.source).toBe("app");
+    expect(body.cache.quota?.account).toBe("principal");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -270,7 +268,7 @@ test("worker returns org signal profiles for organization accounts", async () =>
       });
     }
     if (url.pathname === "/orgs/openclaw/repos") {
-      assert.equal(url.searchParams.get("type"), "public");
+      expect(url.searchParams.get("type")).toBe("public");
       return Response.json([
         {
           full_name: "openclaw/openclaw",
@@ -316,25 +314,18 @@ test("worker returns org signal profiles for organization accounts", async () =>
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as TrustProfilePayload;
-    assert.deepEqual(paths, ["/users/openclaw", "/orgs/openclaw/repos"]);
-    assert.equal(body.type, "org");
-    assert.equal(body.profileKind, "org_signal");
-    assert.equal(body.scoreLabel, "org signal");
-    assert.equal(body.stats.totalStars, 900);
-    assert.deepEqual(
-      body.topRepositories.map((repo) => repo.fullName),
-      ["openclaw/openclaw"],
-    );
-    assert.equal(body.orgs.length, 0);
+    expect(paths).toStrictEqual(["/users/openclaw", "/orgs/openclaw/repos"]);
+    expect(body.type).toBe("org");
+    expect(body.profileKind).toBe("org_signal");
+    expect(body.scoreLabel).toBe("org signal");
+    expect(body.stats.totalStars).toBe(900);
+    expect(body.topRepositories.map((repo) => repo.fullName)).toStrictEqual(["openclaw/openclaw"]);
+    expect(body.orgs.length).toBe(0);
     assert.ok(body.reasons.includes("organization account"));
-    assert.equal(
-      body.factors.find((factor) => factor.key === "orgs"),
-      undefined,
-    );
-    assert.equal(
-      body.factors.find((factor) => factor.key === "builder")?.label,
+    expect(body.factors.find((factor) => factor.key === "orgs")).toBe(undefined);
+    expect(body.factors.find((factor) => factor.key === "builder")?.label).toBe(
       "repository footprint",
     );
   } finally {
@@ -452,18 +443,18 @@ test("worker refreshes stale trust profiles in the background", async () => {
       },
       { waitUntil: (promise) => queued.push(promise) },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as TrustProfilePayload;
-    assert.equal(body.cache.state, "stale");
-    assert.equal(body.cache.message, "refreshing trust profile");
-    assert.equal(body.name, "Old Principal");
-    assert.equal(queued.length, 1);
+    expect(body.cache.state).toBe("stale");
+    expect(body.cache.message).toBe("refreshing trust profile");
+    expect(body.name).toBe("Old Principal");
+    expect(queued.length).toBe(1);
     await Promise.all(queued);
     const refreshed = JSON.parse(
       (await cache.get("trust-profile:v4:principal")) ?? "{}",
     ) as TrustProfilePayload;
-    assert.equal(refreshed.name, "New Principal");
-    assert.equal(refreshed.cache.state, "fresh");
+    expect(refreshed.name).toBe("New Principal");
+    expect(refreshed.cache.state).toBe("fresh");
   } finally {
     globalThis.fetch = originalFetch;
   }

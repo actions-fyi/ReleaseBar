@@ -1,6 +1,5 @@
-import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, RepoDetailPayload } from "../../../src/types.js";
 import {
@@ -85,9 +84,9 @@ test("signed-in mixed-account fast paths preserve release dashboards", async () 
     env,
     { waitUntil: () => undefined },
   );
-  assert.equal(apiResponse.status, 200);
+  expect(apiResponse.status).toBe(200);
   const apiPayload = (await apiResponse.json()) as DashboardPayload;
-  assert.equal(apiPayload.projects[0]?.releaseName, "hydrated release cache");
+  expect(apiPayload.projects[0]?.releaseName).toBe("hydrated release cache");
 
   const pageResponse = await worker.fetch(
     new Request("https://release.bar/openclaw?owners=steipete", {
@@ -96,10 +95,10 @@ test("signed-in mixed-account fast paths preserve release dashboards", async () 
     env,
     { waitUntil: () => undefined },
   );
-  assert.equal(pageResponse.status, 200);
+  expect(pageResponse.status).toBe(200);
   const html = await pageResponse.text();
-  assert.match(html, /hydrated release cache/);
-  assert.doesNotMatch(html, /metadata cache/);
+  expect(html).toMatch(/hydrated release cache/);
+  expect(html).not.toMatch(/metadata cache/);
 });
 
 test("worker embeds cached crawler dashboard shells without discovering app installs", async () => {
@@ -131,7 +130,7 @@ test("worker embeds cached crawler dashboard shells without discovering app inst
       {
         ASSETS: {
           fetch: async (request: Request) => {
-            assert.equal(new URL(request.url).pathname, "/index.html");
+            expect(new URL(request.url).pathname).toBe("/index.html");
             return new Response(
               '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
               { headers: { "content-type": "text/html" } },
@@ -148,10 +147,10 @@ test("worker embeds cached crawler dashboard shells without discovering app inst
     );
 
     const html = await response.text();
-    assert.equal(response.status, 200);
-    assert.match(html, /id="releasebar-initial-data"/);
-    assert.match(html, /owner\\u002frepo|owner\/repo/);
-    assert.equal(installationListCalls, 0);
+    expect(response.status).toBe(200);
+    expect(html).toMatch(/id="releasebar-initial-data"/);
+    expect(html).toMatch(/owner\\u002frepo|owner\/repo/);
+    expect(installationListCalls).toBe(0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -167,7 +166,7 @@ test("worker embeds cached language-filtered discover data in the app shell", as
     {
       ASSETS: {
         fetch: async (request: Request) => {
-          assert.equal(new URL(request.url).pathname, "/index.html");
+          expect(new URL(request.url).pathname).toBe("/index.html");
           return new Response(
             '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
             { headers: { "content-type": "text/html" } },
@@ -183,10 +182,10 @@ test("worker embeds cached language-filtered discover data in the app shell", as
   );
 
   const html = await response.text();
-  assert.equal(response.status, 200);
-  assert.match(html, /id="releasebar-initial-data"/);
-  assert.match(html, /typedbar/);
-  assert.doesNotMatch(html, /allbar/);
+  expect(response.status).toBe(200);
+  expect(html).toMatch(/id="releasebar-initial-data"/);
+  expect(html).toMatch(/typedbar/);
+  expect(html).not.toMatch(/allbar/);
 });
 
 test("worker preserves partial discover state in embedded app shell data", async () => {
@@ -213,7 +212,7 @@ test("worker preserves partial discover state in embedded app shell data", async
     {
       ASSETS: {
         fetch: async (request: Request) => {
-          assert.equal(new URL(request.url).pathname, "/index.html");
+          expect(new URL(request.url).pathname).toBe("/index.html");
           return new Response(
             '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
             { headers: { "content-type": "text/html" } },
@@ -228,10 +227,10 @@ test("worker preserves partial discover state in embedded app shell data", async
   );
 
   const html = await response.text();
-  assert.equal(response.status, 200);
-  assert.match(html, /id="releasebar-initial-data"/);
-  assert.match(html, /"state":"partial"/);
-  assert.match(html, /"done":false/);
+  expect(response.status).toBe(200);
+  expect(html).toMatch(/id="releasebar-initial-data"/);
+  expect(html).toMatch(/"state":"partial"/);
+  expect(html).toMatch(/"done":false/);
 });
 
 test("worker does not treat view language filters as discover cache selectors", async () => {
@@ -244,7 +243,7 @@ test("worker does not treat view language filters as discover cache selectors", 
     {
       ASSETS: {
         fetch: async (request: Request) => {
-          assert.equal(new URL(request.url).pathname, "/index.html");
+          expect(new URL(request.url).pathname).toBe("/index.html");
           return new Response(
             '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
             { headers: { "content-type": "text/html" } },
@@ -260,10 +259,10 @@ test("worker does not treat view language filters as discover cache selectors", 
   );
 
   const html = await response.text();
-  assert.equal(response.status, 200);
-  assert.match(html, /id="releasebar-initial-data"/);
-  assert.match(html, /allbar/);
-  assert.doesNotMatch(html, /typedbar/);
+  expect(response.status).toBe(200);
+  expect(html).toMatch(/id="releasebar-initial-data"/);
+  expect(html).toMatch(/allbar/);
+  expect(html).not.toMatch(/typedbar/);
 });
 
 test("worker embeds cached public repository detail data in the app shell", async () => {
@@ -289,7 +288,7 @@ test("worker embeds cached public repository detail data in the app shell", asyn
     {
       ASSETS: {
         fetch: async (request: Request) => {
-          assert.equal(new URL(request.url).pathname, "/index.html");
+          expect(new URL(request.url).pathname).toBe("/index.html");
           return new Response(
             '<title>ReleaseBar</title><meta property="og:title" content="ReleaseBar" /><meta property="og:url" content="https://release.bar/" /><meta property="og:image" content="https://release.bar/og/ReleaseBar.svg" /><meta name="twitter:title" content="ReleaseBar" /><meta name="twitter:image" content="https://release.bar/og/ReleaseBar.svg" /><script type="module" src="/assets/index.js"></script>',
             { headers: { "content-type": "text/html" } },
@@ -304,16 +303,14 @@ test("worker embeds cached public repository detail data in the app shell", asyn
   );
 
   const html = await response.text();
-  assert.equal(response.status, 200);
-  assert.match(html, /id="releasebar-initial-data"/);
-  assert.match(html, /"route":"repo"/);
-  assert.match(html, /acme\\u002freleasebar|acme\/releasebar/);
-  assert.match(
-    html,
+  expect(response.status).toBe(200);
+  expect(html).toMatch(/id="releasebar-initial-data"/);
+  expect(html).toMatch(/"route":"repo"/);
+  expect(html).toMatch(/acme\\u002freleasebar|acme\/releasebar/);
+  expect(html).toMatch(
     /property="og:title" content="ReleaseBar release freshness dashboard for acme\/releasebar"/,
   );
-  assert.match(
-    html,
+  expect(html).toMatch(
     /property="og:image" content="https:\/\/release\.bar\/og\/acme%2Freleasebar\.png"/,
   );
 });
@@ -364,12 +361,12 @@ test("worker social cards include owner avatars and repository release metrics",
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(repoResponse.status, 200);
+    expect(repoResponse.status).toBe(200);
     const repoSvg = await repoResponse.text();
-    assert.match(repoSvg, /acme\/releasebar/);
-    assert.match(repoSvg, /v2\.0\.0 · 42 commits since release/);
-    assert.match(repoSvg, /data:image\/png;base64,AQID/);
-    assert.doesNotMatch(repoSvg, /https:\/\/github\.com\/acme\.png\?size=240/);
+    expect(repoSvg).toMatch(/acme\/releasebar/);
+    expect(repoSvg).toMatch(/v2\.0\.0 · 42 commits since release/);
+    expect(repoSvg).toMatch(/data:image\/png;base64,AQID/);
+    expect(repoSvg).not.toMatch(/https:\/\/github\.com\/acme\.png\?size=240/);
 
     const ownerResponse = await worker.fetch(
       new Request("https://release.bar/og/openclaw.svg"),
@@ -377,9 +374,9 @@ test("worker social cards include owner avatars and repository release metrics",
       { waitUntil: () => undefined },
     );
     const ownerSvg = await ownerResponse.text();
-    assert.match(ownerSvg, /@openclaw/);
-    assert.match(ownerSvg, /data:image\/png;base64,AQID/);
-    assert.doesNotMatch(ownerSvg, /https:\/\/github\.com\/openclaw\.png\?size=240/);
+    expect(ownerSvg).toMatch(/@openclaw/);
+    expect(ownerSvg).toMatch(/data:image\/png;base64,AQID/);
+    expect(ownerSvg).not.toMatch(/https:\/\/github\.com\/openclaw\.png\?size=240/);
 
     const pngAssetPaths: string[] = [];
     const pngResponse = await worker.fetch(
@@ -392,17 +389,17 @@ test("worker social cards include owner avatars and repository release metrics",
       },
       { waitUntil: () => undefined },
     );
-    assert.equal(pngResponse.status, 200);
-    assert.equal(pngResponse.headers.get("content-type"), "image/png");
+    expect(pngResponse.status).toBe(200);
+    expect(pngResponse.headers.get("content-type")).toBe("image/png");
     const pngBytes = new Uint8Array(await pngResponse.arrayBuffer());
-    assert.deepEqual(Array.from(pngBytes.slice(0, 8)), [137, 80, 78, 71, 13, 10, 26, 10]);
+    expect(Array.from(pngBytes.slice(0, 8))).toStrictEqual([137, 80, 78, 71, 13, 10, 26, 10]);
     assert.ok(pngBytes.byteLength > 1_000);
-    assert.deepEqual(pngAssetPaths, [
+    expect(pngAssetPaths).toStrictEqual([
       "/resvg.wasm",
       "/jetbrains-mono-latin-400-normal.woff2",
       "/jetbrains-mono-latin-700-normal.woff2",
     ]);
-    assert.notEqual(pngAssetPaths[0], "/og-card.png");
+    expect(pngAssetPaths[0]).not.toBe("/og-card.png");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -417,7 +414,7 @@ test("worker social cards include owner avatars and repository release metrics",
       });
     }
     coldCalls.push(url.pathname);
-    assert.equal((init?.headers as Record<string, string>)?.authorization, "Bearer shared-token");
+    expect((init?.headers as Record<string, string>)?.authorization).toBe("Bearer shared-token");
     if (url.pathname === "/repos/cold/repo") {
       return Response.json({
         owner: { login: "cold" },
@@ -465,14 +462,14 @@ test("worker social cards include owner avatars and repository release metrics",
       { waitUntil: () => undefined },
     );
     const coldSvg = await coldResponse.text();
-    assert.match(coldSvg, /v3\.0\.0 · 9 commits since release/);
-    assert.match(coldSvg, /data:image\/png;base64,BAUG/);
-    assert.deepEqual(coldCalls, [
+    expect(coldSvg).toMatch(/v3\.0\.0 · 9 commits since release/);
+    expect(coldSvg).toMatch(/data:image\/png;base64,BAUG/);
+    expect(coldCalls).toStrictEqual([
       "/repos/cold/repo",
       "/repos/cold/repo/releases",
       "/repos/cold/repo/compare/v3.0.0...main",
     ]);
-    assert.notEqual(await coldStore.get("social-repo:v3:cold/repo"), null);
+    expect(await coldStore.get("social-repo:v3:cold/repo")).not.toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -509,11 +506,11 @@ test("worker social cards include owner avatars and repository release metrics",
       { waitUntil: (promise) => queued.push(promise) },
     );
     const staleSvg = await staleResponse.text();
-    assert.match(staleSvg, /v9\.9\.9 · 7 commits since release/);
-    assert.match(staleSvg, />SR<\/text>/);
-    assert.equal(queued.length, 1);
+    expect(staleSvg).toMatch(/v9\.9\.9 · 7 commits since release/);
+    expect(staleSvg).toMatch(/>SR<\/text>/);
+    expect(queued.length).toBe(1);
     await Promise.all(queued);
-    assert.equal(backgroundCalls > 0, true);
+    expect(backgroundCalls > 0).toBe(true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -548,10 +545,10 @@ test("worker serves cached GitHub discovery dashboards from repository search", 
     const url = new URL(String(input));
     if (url.pathname === "/search/repositories") {
       searchCalls += 1;
-      assert.match(url.searchParams.get("q") ?? "", /language:"TypeScript"/);
-      assert.match(url.searchParams.get("q") ?? "", /pushed:>=/);
-      assert.equal(url.searchParams.get("sort"), "stars");
-      assert.equal((init?.headers as Record<string, string>)?.authorization, "Bearer shared-token");
+      expect(url.searchParams.get("q") ?? "").toMatch(/language:"TypeScript"/);
+      expect(url.searchParams.get("q") ?? "").toMatch(/pushed:>=/);
+      expect(url.searchParams.get("sort")).toBe("stars");
+      expect((init?.headers as Record<string, string>)?.authorization).toBe("Bearer shared-token");
       return Response.json(
         {
           total_count: searchItems.length,
@@ -601,19 +598,19 @@ test("worker serves cached GitHub discovery dashboards from repository search", 
       env,
       context,
     );
-    assert.equal(first.status, 200);
-    assert.equal(first.headers.get("cache-control"), "no-store");
+    expect(first.status).toBe(200);
+    expect(first.headers.get("cache-control")).toBe("no-store");
     const body = (await first.json()) as DashboardPayload;
-    assert.equal(body.title, "GitHub Hot");
-    assert.equal(body.projects[0]?.fullName, "acme/releasebar");
-    assert.equal(body.projects[0]?.version, "repo search");
-    assert.deepEqual(body.projects[0]?.topics, ["releases", "dashboard"]);
-    assert.equal(body.projects[0]?.openIssues, 7);
-    assert.equal(body.cache?.state, "partial");
-    assert.equal(body.cache?.progress?.done, false);
-    assert.equal(body.cache?.progress?.limit, searchItems.length);
-    assert.equal(body.cache?.quota?.remaining, 4999);
-    assert.match(body.cache?.message ?? "", /repository search/);
+    expect(body.title).toBe("GitHub Hot");
+    expect(body.projects[0]?.fullName).toBe("acme/releasebar");
+    expect(body.projects[0]?.version).toBe("repo search");
+    expect(body.projects[0]?.topics).toStrictEqual(["releases", "dashboard"]);
+    expect(body.projects[0]?.openIssues).toBe(7);
+    expect(body.cache?.state).toBe("partial");
+    expect(body.cache?.progress?.done).toBe(false);
+    expect(body.cache?.progress?.limit).toBe(searchItems.length);
+    expect(body.cache?.quota?.remaining).toBe(4999);
+    expect(body.cache?.message ?? "").toMatch(/repository search/);
 
     await Promise.all(waitUntil.splice(0));
 
@@ -622,13 +619,12 @@ test("worker serves cached GitHub discovery dashboards from repository search", 
       env,
       context,
     );
-    assert.equal(second.status, 200);
+    expect(second.status).toBe(200);
     const firstBatch = (await second.json()) as DashboardPayload;
-    assert.equal(firstBatch.cache?.state, "partial");
-    assert.equal(firstBatch.cache?.progress?.done, false);
-    assert.equal(firstBatch.cache?.progress?.scanned, 8);
-    assert.equal(
-      firstBatch.projects.filter((project) => project.version === "repo search").length,
+    expect(firstBatch.cache?.state).toBe("partial");
+    expect(firstBatch.cache?.progress?.done).toBe(false);
+    expect(firstBatch.cache?.progress?.scanned).toBe(8);
+    expect(firstBatch.projects.filter((project) => project.version === "repo search").length).toBe(
       5,
     );
 
@@ -639,26 +635,20 @@ test("worker serves cached GitHub discovery dashboards from repository search", 
       env,
       context,
     );
-    assert.equal(third.status, 200);
+    expect(third.status).toBe(200);
     const hydrated = (await third.json()) as DashboardPayload;
-    assert.equal(hydrated.cache?.state, "fresh");
-    assert.equal(hydrated.cache?.progress?.done, true);
-    assert.equal(hydrated.cache?.progress?.scanned, searchItems.length);
-    assert.equal(
-      hydrated.projects.filter((project) => project.version === "repo search").length,
-      0,
-    );
-    assert.equal(hydrated.projects[0]?.version, "v1.2.3");
-    assert.equal(hydrated.projects[0]?.commitsSinceRelease, null);
-    assert.equal(hydrated.projects[0]?.openPullRequests, 0);
-    assert.equal(hydrated.projects[12]?.version, "unreleased");
-    assert.equal(hydrated.projects[12]?.releaseDate, null);
-    assert.equal(searchCalls, 1);
-    assert.equal(hydratedPaths.length, searchItems.length);
-    assert.equal(
-      hydratedPaths.every((path) => /^\/repos\/acme\/[^/]+\/releases$/.test(path)),
-      true,
-    );
+    expect(hydrated.cache?.state).toBe("fresh");
+    expect(hydrated.cache?.progress?.done).toBe(true);
+    expect(hydrated.cache?.progress?.scanned).toBe(searchItems.length);
+    expect(hydrated.projects.filter((project) => project.version === "repo search").length).toBe(0);
+    expect(hydrated.projects[0]?.version).toBe("v1.2.3");
+    expect(hydrated.projects[0]?.commitsSinceRelease).toBe(null);
+    expect(hydrated.projects[0]?.openPullRequests).toBe(0);
+    expect(hydrated.projects[12]?.version).toBe("unreleased");
+    expect(hydrated.projects[12]?.releaseDate).toBe(null);
+    expect(searchCalls).toBe(1);
+    expect(hydratedPaths.length).toBe(searchItems.length);
+    expect(hydratedPaths.every((path) => /^\/repos\/acme\/[^/]+\/releases$/.test(path))).toBe(true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -705,10 +695,10 @@ test("worker does not rehydrate completed GitHub discovery cache", async () => {
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as DashboardPayload;
-    assert.equal(body.projects[0]?.version, "v2.0.0");
-    assert.equal(body.cache?.state, "fresh");
+    expect(body.projects[0]?.version).toBe("v2.0.0");
+    expect(body.cache?.state).toBe("fresh");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -756,13 +746,13 @@ test("worker serves stale discovery caches to crawlers without searching GitHub"
       env,
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get("cache-control"), "no-store");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     const body = (await response.json()) as DashboardPayload;
-    assert.equal(body.projects[0]?.version, "v2.0.0");
-    assert.equal(body.cache?.state, "stale");
-    assert.equal(body.cache?.message, "showing cached discovery results");
-    assert.equal(waits.length, 0);
+    expect(body.projects[0]?.version).toBe("v2.0.0");
+    expect(body.cache?.state).toBe("stale");
+    expect(body.cache?.message).toBe("showing cached discovery results");
+    expect(waits.length).toBe(0);
   } finally {
     globalThis.fetch = originalFetch;
   }

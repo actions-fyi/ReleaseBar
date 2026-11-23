@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 
 import { type FakeLocks, claudeText, testEnv } from "../dashboard-test-harness.js";
 import { type RawWranglerConfig, deployConfig } from "../deploy-config.js";
@@ -24,8 +23,8 @@ test("deploy config refuses to deploy without any setting unless allowed", () =>
 
 test("deploy config without settings is the generic wrangler.jsonc when allowed", () => {
   const config = deployConfig(base, { RELEASEBAR_ALLOW_GENERIC: "true" });
-  assert.deepEqual(config, { ...base, vars: base.vars, kv_namespaces: base.kv_namespaces });
-  assert.equal(config.routes, undefined);
+  expect(config).toStrictEqual({ ...base, vars: base.vars, kv_namespaces: base.kv_namespaces });
+  expect(config.routes).toBe(undefined);
 });
 
 test("deploy config applies the deployment's domain, KV namespace, jurisdiction and admins", () => {
@@ -37,10 +36,10 @@ test("deploy config applies the deployment's domain, KV namespace, jurisdiction 
     RELEASEBAR_WORKERS_DEV: "false",
     RELEASEBAR_ANTHROPIC_BASE_URL: " https://gateway.example.com/anthropic ",
   });
-  assert.deepEqual(config.routes, [{ pattern: "releasebar.example.com", custom_domain: true }]);
-  assert.deepEqual(config.kv_namespaces, [{ binding: "DASHBOARD_CACHE", id: kvId }]);
-  assert.equal(config.workers_dev, false);
-  assert.deepEqual(config.vars, {
+  expect(config.routes).toStrictEqual([{ pattern: "releasebar.example.com", custom_domain: true }]);
+  expect(config.kv_namespaces).toStrictEqual([{ binding: "DASHBOARD_CACHE", id: kvId }]);
+  expect(config.workers_dev).toBe(false);
+  expect(config.vars).toStrictEqual({
     ANTHROPIC_SUMMARY_MODEL: "claude-haiku-5-5",
     RELEASEDECK_CANONICAL_DOMAIN: "releasebar.example.com",
     ADMIN_LOGINS: "octocat,hubot",
@@ -54,7 +53,7 @@ test("deploy config sets the release summary limits from their build variables",
     RELEASEBAR_SUMMARY_INPUT_CHARS: " 20000 ",
     RELEASEBAR_SUMMARY_TITLE_CHARS: "80",
   });
-  assert.deepEqual(config.vars, {
+  expect(config.vars).toStrictEqual({
     ANTHROPIC_SUMMARY_MODEL: "claude-haiku-5-5",
     RELEASE_SUMMARY_INPUT_CHARS: "20000",
     RELEASE_SUMMARY_TITLE_CHARS: "80",
@@ -111,7 +110,7 @@ test("Claude summaries go to ANTHROPIC_BASE_URL when it is set", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
-  assert.deepEqual(requested, [
+  expect(requested).toStrictEqual([
     "https://api.anthropic.com/v1/messages",
     "https://gateway.example.com/anthropic/v1/messages",
   ]);
@@ -131,16 +130,16 @@ function fakeLocks(calls: string[]): FakeLocks {
 
 test("lock jurisdiction leaves the binding alone when unset", () => {
   const env = testEnv({ DASHBOARD_LOCKS: fakeLocks([]) });
-  assert.equal(withLockJurisdiction(env), env);
+  expect(withLockJurisdiction(env)).toBe(env);
 });
 
 test("lock jurisdiction scopes every Durable Object to the configured jurisdiction", () => {
   const calls: string[] = [];
   const env = testEnv({ DASHBOARD_LOCKS: fakeLocks(calls), RELEASEBAR_DO_JURISDICTION: "eu" });
   const scoped = withLockJurisdiction(env);
-  assert.equal(scoped.DASHBOARD_LOCKS?.idFromName("lock"), "eu:lock");
-  assert.equal(withLockJurisdiction(env).DASHBOARD_LOCKS, scoped.DASHBOARD_LOCKS);
-  assert.deepEqual(calls, ["eu"]);
+  expect(scoped.DASHBOARD_LOCKS?.idFromName("lock")).toBe("eu:lock");
+  expect(withLockJurisdiction(env).DASHBOARD_LOCKS).toBe(scoped.DASHBOARD_LOCKS);
+  expect(calls).toStrictEqual(["eu"]);
 });
 
 test("lock jurisdiction fails loudly on a binding without jurisdictions", () => {

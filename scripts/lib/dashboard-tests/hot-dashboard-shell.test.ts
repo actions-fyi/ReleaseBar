@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../dashboard.js";
 import { attentionReasons, needsAttention, releaseDebtText } from "../../../src/dashboard-view.js";
 import type { DashboardPayload } from "../../../src/types.js";
@@ -28,27 +27,30 @@ test("need attention explains release debt, stale releases, CI, and open work", 
     releaseDate: "2026-05-01T00:00:00Z",
   });
 
-  assert.equal(needsAttention(stale), true);
-  assert.deepEqual(attentionReasons(stale, Date.parse("2026-05-15T00:00:00Z")), [
+  expect(needsAttention(stale)).toBe(true);
+  expect(attentionReasons(stale, Date.parse("2026-05-15T00:00:00Z"))).toStrictEqual([
     "last release 134 days ago",
   ]);
-  assert.equal(needsAttention(pressured), true);
-  assert.deepEqual(attentionReasons(pressured), ["CI failing", "12 open PRs", "120 open issues"]);
-  assert.equal(needsAttention(releaseDebt), true);
-  assert.equal(needsAttention({ ...pressured, archived: true }), false);
-  assert.equal(releaseDebtText({ ...releaseDebt, archived: true }), null);
-  assert.deepEqual(attentionReasons({ ...pressured, archived: true }), []);
-  assert.deepEqual(attentionReasons(releaseDebt, Date.parse("2026-05-15T00:00:00Z")), [
+  expect(needsAttention(pressured)).toBe(true);
+  expect(attentionReasons(pressured)).toStrictEqual([
+    "CI failing",
+    "12 open PRs",
+    "120 open issues",
+  ]);
+  expect(needsAttention(releaseDebt)).toBe(true);
+  expect(needsAttention({ ...pressured, archived: true })).toBe(false);
+  expect(releaseDebtText({ ...releaseDebt, archived: true })).toBe(null);
+  expect(attentionReasons({ ...pressured, archived: true })).toStrictEqual([]);
+  expect(attentionReasons(releaseDebt, Date.parse("2026-05-15T00:00:00Z"))).toStrictEqual([
     "201 commits since release",
   ]);
-  assert.equal(
+  expect(
     attentionReasons(
       testProject({ owner: "owner", name: "fresh" }),
       Date.parse("2026-05-15T00:00:00Z"),
     ).length,
-    0,
-  );
-  assert.deepEqual(
+  ).toBe(0);
+  expect(
     attentionReasons(
       testProject({
         owner: "owner",
@@ -61,9 +63,8 @@ test("need attention explains release debt, stale releases, CI, and open work", 
       }),
       Date.parse("2026-05-15T00:00:00Z"),
     ),
-    [],
-  );
-  assert.deepEqual(
+  ).toStrictEqual([]);
+  expect(
     attentionReasons(
       testProject({
         owner: "owner",
@@ -76,9 +77,8 @@ test("need attention explains release debt, stale releases, CI, and open work", 
       }),
       Date.parse("2026-05-15T00:00:00Z"),
     ),
-    [],
-  );
-  assert.deepEqual(
+  ).toStrictEqual([]);
+  expect(
     attentionReasons(
       testProject({
         owner: "owner",
@@ -91,8 +91,7 @@ test("need attention explains release debt, stale releases, CI, and open work", 
       }),
       Date.parse("2026-05-15T00:00:00Z"),
     ),
-    [],
-  );
+  ).toStrictEqual([]);
 });
 
 test("worker builds root hot dashboard from cached dashboards", async () => {
@@ -192,45 +191,29 @@ test("worker builds root hot dashboard from cached dashboards", async () => {
     waitUntil: () => undefined,
   });
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as DashboardPayload;
-  assert.equal(body.title, "ReleaseBar Hot");
-  assert.deepEqual(body.owners, []);
-  assert.equal(body.projects[0]?.fullName, "alpha/hot");
-  assert.equal(body.projects[0]?.openIssues, 99);
-  assert.equal(
-    body.projects.some((project) => project.fullName === "alpha/second"),
+  expect(body.title).toBe("ReleaseBar Hot");
+  expect(body.owners).toStrictEqual([]);
+  expect(body.projects[0]?.fullName).toBe("alpha/hot");
+  expect(body.projects[0]?.openIssues).toBe(99);
+  expect(body.projects.some((project) => project.fullName === "alpha/second")).toBe(false);
+  expect(body.projects.some((project) => project.fullName === "alpha/archived")).toBe(false);
+  expect(body.projects.some((project) => project.fullName === "beta/unreleased")).toBe(false);
+  expect(body.projects.some((project) => project.fullName === "legacy/estimated-counts")).toBe(
     false,
   );
-  assert.equal(
-    body.projects.some((project) => project.fullName === "alpha/archived"),
-    false,
-  );
-  assert.equal(
-    body.projects.some((project) => project.fullName === "beta/unreleased"),
-    false,
-  );
-  assert.equal(
-    body.projects.some((project) => project.fullName === "legacy/estimated-counts"),
-    false,
-  );
-  assert.equal(
-    body.projects.some((project) => project.fullName === "forks/cached-fork"),
-    false,
-  );
-  assert.equal(
-    body.projects.some((project) => project.fullName === "gamma/from-list"),
-    true,
-  );
-  assert.equal(body.projects.filter((project) => project.owner === "alpha").length <= 3, true);
-  assert.match(body.cache?.message ?? "", /cached dashboards/);
+  expect(body.projects.some((project) => project.fullName === "forks/cached-fork")).toBe(false);
+  expect(body.projects.some((project) => project.fullName === "gamma/from-list")).toBe(true);
+  expect(body.projects.filter((project) => project.owner === "alpha").length <= 3).toBe(true);
+  expect(body.cache?.message ?? "").toMatch(/cached dashboards/);
 
   const cachedResponse = await worker.fetch(new Request("https://release.bar/api/_hot"), env, {
     waitUntil: () => undefined,
   });
   const cachedBody = (await cachedResponse.json()) as DashboardPayload;
-  assert.equal(cachedBody.cache?.repoLimit, null);
-  assert.match(cachedBody.cache?.message ?? "", /cached dashboards/);
+  expect(cachedBody.cache?.repoLimit).toBe(null);
+  expect(cachedBody.cache?.message ?? "").toMatch(/cached dashboards/);
 });
 
 test("worker serves stale hot dashboards while one background rebuild refreshes the cache", async () => {
@@ -270,15 +253,15 @@ test("worker serves stale hot dashboards while one background rebuild refreshes 
   );
   const body = (await response.json()) as DashboardPayload;
 
-  assert.equal(response.status, 200);
-  assert.equal(body.cache?.state, "stale");
-  assert.match(body.cache?.message ?? "", /while it refreshes/);
-  assert.equal(body.projects[0]?.fullName, "stale/cached");
+  expect(response.status).toBe(200);
+  expect(body.cache?.state).toBe("stale");
+  expect(body.cache?.message ?? "").toMatch(/while it refreshes/);
+  expect(body.projects[0]?.fullName).toBe("stale/cached");
 
   await Promise.all(waits);
   const refreshed = JSON.parse((await cache.get("hot:v3")) ?? "{}") as DashboardPayload;
-  assert.equal(refreshed.cache?.state, "fresh");
-  assert.equal(refreshed.projects[0]?.fullName, "alpha/fresh");
+  expect(refreshed.cache?.state).toBe("fresh");
+  expect(refreshed.projects[0]?.fullName).toBe("alpha/fresh");
 });
 
 test("worker keeps hot owner route distinct from root hot API", async () => {
@@ -302,9 +285,9 @@ test("worker keeps hot owner route distinct from root hot API", async () => {
     );
     const body = (await response.json()) as DashboardPayload;
     await Promise.all(waits);
-    assert.equal(response.status, 200);
-    assert.equal(body.owners[0]?.login, "hot");
-    assert.notEqual(body.title, "ReleaseBar Hot");
+    expect(response.status).toBe(200);
+    expect(body.owners[0]?.login).toBe("hot");
+    expect(body.title).not.toBe("ReleaseBar Hot");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -317,7 +300,7 @@ test("worker serves escaped dotted repository detail paths as app shell", async 
       ASSETS: {
         fetch: async (request: Request) => {
           const url = new URL(request.url);
-          assert.equal(url.pathname, "/index.html");
+          expect(url.pathname).toBe("/index.html");
           return new Response(
             '<title>ReleaseBar</title><meta property="og:title" content="ReleaseBar" /><meta property="og:url" content="https://release.bar/" /><meta property="og:image" content="https://release.bar/og/ReleaseBar.svg" /><meta name="twitter:title" content="ReleaseBar" /><meta name="twitter:image" content="https://release.bar/og/ReleaseBar.svg" />',
             { headers: { "content-type": "text/html" } },
@@ -328,15 +311,13 @@ test("worker serves escaped dotted repository detail paths as app shell", async 
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const html = await response.text();
-  assert.match(html, /ReleaseBar release freshness dashboard for openclaw\/react\.dev/);
-  assert.match(
-    html,
+  expect(html).toMatch(/ReleaseBar release freshness dashboard for openclaw\/react\.dev/);
+  expect(html).toMatch(
     /property="og:image" content="https:\/\/release\.bar\/og\/openclaw%2Freact\.dev\.png"/,
   );
-  assert.match(
-    html,
+  expect(html).toMatch(
     /name="twitter:image" content="https:\/\/release\.bar\/og\/openclaw%2Freact\.dev\.png"/,
   );
 });
@@ -347,7 +328,7 @@ test("worker reserves owner activity pages while escaped activity repositories r
     {
       ASSETS: {
         fetch: async (request: Request) => {
-          assert.equal(new URL(request.url).pathname, "/index.html");
+          expect(new URL(request.url).pathname).toBe("/index.html");
           return new Response(
             '<title>ReleaseBar</title><meta property="og:title" content="ReleaseBar" /><meta property="og:url" content="https://release.bar/" /><meta property="og:image" content="https://release.bar/og/ReleaseBar.svg" /><meta name="twitter:title" content="ReleaseBar" /><meta name="twitter:image" content="https://release.bar/og/ReleaseBar.svg" /><script type="module" src="/assets/index.js"></script>',
             { headers: { "content-type": "text/html" } },
@@ -359,10 +340,10 @@ test("worker reserves owner activity pages while escaped activity repositories r
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const html = await response.text();
-  assert.match(html, /@acme activity/);
-  assert.doesNotMatch(html, /id="releasebar-initial-data"/);
+  expect(html).toMatch(/@acme activity/);
+  expect(html).not.toMatch(/id="releasebar-initial-data"/);
 
   const escaped = await worker.fetch(
     new Request("https://release.bar/-/acme/activity"),
@@ -378,8 +359,8 @@ test("worker reserves owner activity pages while escaped activity repositories r
     },
     { waitUntil: () => undefined },
   );
-  assert.equal(escaped.status, 200);
-  assert.match(await escaped.text(), /acme\/activity/);
+  expect(escaped.status).toBe(200);
+  expect(await escaped.text()).toMatch(/acme\/activity/);
 
   for (const owner of ["api", "og"]) {
     const reserved = await worker.fetch(
@@ -387,7 +368,7 @@ test("worker reserves owner activity pages while escaped activity repositories r
       {
         ASSETS: {
           fetch: async (request: Request) => {
-            assert.equal(new URL(request.url).pathname, "/index.html");
+            expect(new URL(request.url).pathname).toBe("/index.html");
             return new Response(
               '<title>ReleaseBar</title><meta property="og:title" content="ReleaseBar" /><meta property="og:url" content="https://release.bar/" /><meta property="og:image" content="https://release.bar/og/ReleaseBar.svg" /><meta name="twitter:title" content="ReleaseBar" /><meta name="twitter:image" content="https://release.bar/og/ReleaseBar.svg" />',
               { headers: { "content-type": "text/html" } },
@@ -398,8 +379,8 @@ test("worker reserves owner activity pages while escaped activity repositories r
       },
       { waitUntil: () => undefined },
     );
-    assert.equal(reserved.status, 200);
-    assert.match(await reserved.text(), new RegExp(`@${owner} activity`));
+    expect(reserved.status).toBe(200);
+    expect(await reserved.text()).toMatch(new RegExp(`@${owner} activity`));
   }
 });
 
@@ -429,9 +410,9 @@ test("worker preserves API and social namespaces beside escaped reserved-owner a
     },
     { waitUntil: () => undefined },
   );
-  assert.equal(apiResponse.status, 200);
-  assert.match(apiResponse.headers.get("content-type") ?? "", /^application\/json/);
-  assert.equal(((await apiResponse.json()) as DashboardPayload).owners[0]?.login, "activity");
+  expect(apiResponse.status).toBe(200);
+  expect(apiResponse.headers.get("content-type") ?? "").toMatch(/^application\/json/);
+  expect(((await apiResponse.json()) as DashboardPayload).owners[0]?.login).toBe("activity");
 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(null, { status: 404 });
@@ -441,9 +422,9 @@ test("worker preserves API and social namespaces beside escaped reserved-owner a
       { DASHBOARD_CACHE: kvStore() },
       { waitUntil: () => undefined },
     );
-    assert.equal(socialResponse.status, 200);
-    assert.match(socialResponse.headers.get("content-type") ?? "", /^image\/svg\+xml/);
-    assert.match(await socialResponse.text(), /@activity/);
+    expect(socialResponse.status).toBe(200);
+    expect(socialResponse.headers.get("content-type") ?? "").toMatch(/^image\/svg\+xml/);
+    expect(await socialResponse.text()).toMatch(/@activity/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -456,7 +437,7 @@ test("worker embeds cached public dashboard data in the app shell", async () => 
     {
       ASSETS: {
         fetch: async (request: Request) => {
-          assert.equal(new URL(request.url).pathname, "/index.html");
+          expect(new URL(request.url).pathname).toBe("/index.html");
           return new Response(
             '<title>ReleaseBar</title><meta property="og:title" content="ReleaseBar" /><meta property="og:url" content="https://release.bar/" /><meta property="og:image" content="https://release.bar/og/ReleaseBar.svg" /><meta name="twitter:title" content="ReleaseBar" /><meta name="twitter:image" content="https://release.bar/og/ReleaseBar.svg" /><script type="module" src="/assets/index.js"></script>',
             { headers: { "content-type": "text/html" } },
@@ -471,16 +452,14 @@ test("worker embeds cached public dashboard data in the app shell", async () => 
   );
 
   const html = await response.text();
-  assert.equal(response.status, 200);
-  assert.match(html, /id="releasebar-initial-data"/);
-  assert.match(html, /"route":"dashboard"/);
-  assert.match(html, /acme\\u002freleasebar|acme\/releasebar/);
-  assert.match(
-    html,
+  expect(response.status).toBe(200);
+  expect(html).toMatch(/id="releasebar-initial-data"/);
+  expect(html).toMatch(/"route":"dashboard"/);
+  expect(html).toMatch(/acme\\u002freleasebar|acme\/releasebar/);
+  expect(html).toMatch(
     /property="og:title" content="ReleaseBar release freshness dashboard for ReleaseBar Hot"/,
   );
-  assert.match(
-    html,
+  expect(html).toMatch(
     /property="og:image" content="https:\/\/release\.bar\/og\/ReleaseBar%20Hot\.png"/,
   );
   assert.ok(html.indexOf('id="releasebar-initial-data"') < html.indexOf('<script type="module"'));
@@ -532,7 +511,7 @@ test("worker embeds cached metadata-only owner dashboard data in the app shell",
     {
       ASSETS: {
         fetch: async (request: Request) => {
-          assert.equal(new URL(request.url).pathname, "/index.html");
+          expect(new URL(request.url).pathname).toBe("/index.html");
           return new Response(
             '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
             { headers: { "content-type": "text/html" } },
@@ -550,13 +529,13 @@ test("worker embeds cached metadata-only owner dashboard data in the app shell",
   );
 
   const html = await response.text();
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get("cache-control"), "private, no-store");
-  assert.equal(response.headers.get("vary"), "cookie");
-  assert.match(html, /id="releasebar-initial-data"/);
-  assert.match(html, /owner\\u002frepo|owner\/repo/);
-  assert.match(html, /release scan skipped/);
-  assert.doesNotMatch(html, /hydrated release cache/);
+  expect(response.status).toBe(200);
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  expect(response.headers.get("vary")).toBe("cookie");
+  expect(html).toMatch(/id="releasebar-initial-data"/);
+  expect(html).toMatch(/owner\\u002frepo|owner\/repo/);
+  expect(html).toMatch(/release scan skipped/);
+  expect(html).not.toMatch(/hydrated release cache/);
 });
 
 test("worker does not embed a release-only cache for an unsynced owner dashboard", async () => {
@@ -594,7 +573,7 @@ test("worker does not embed a release-only cache for an unsynced owner dashboard
   );
 
   const html = await response.text();
-  assert.equal(response.status, 200);
-  assert.doesNotMatch(html, /hydrated release cache/);
-  assert.doesNotMatch(html, /id="releasebar-initial-data"/);
+  expect(response.status).toBe(200);
+  expect(html).not.toMatch(/hydrated release cache/);
+  expect(html).not.toMatch(/id="releasebar-initial-data"/);
 });

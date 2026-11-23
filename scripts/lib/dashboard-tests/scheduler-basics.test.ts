@@ -1,6 +1,5 @@
-import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { RefreshJob, RefreshTarget, SchedulerAdminPayload } from "../../../src/types.js";
 import { kvStore, signedJson, testDashboard, worker } from "../dashboard-test-harness.js";
@@ -73,10 +72,10 @@ test("worker queue skips jobs from obsolete dashboard schemas", async () => {
     { waitUntil: () => undefined },
   );
 
-  assert.equal(acked, true);
+  expect(acked).toBe(true);
   const stored = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
-  assert.equal(stored.status, "skipped");
-  assert.equal(stored.error, "obsolete dashboard schema");
+  expect(stored.status).toBe("skipped");
+  expect(stored.error).toBe("obsolete dashboard schema");
 });
 
 test("worker admin installation sync removes stale registry entries", async () => {
@@ -124,7 +123,7 @@ test("worker admin installation sync removes stale registry entries", async () =
     const url = new URL(String(input));
     const authorization = new Headers(init?.headers).get("authorization");
     if (url.pathname === "/app/installations") {
-      assert.match(authorization ?? "", /^Bearer [^.]+\.[^.]+\.[^.]+$/);
+      expect(authorization ?? "").toMatch(/^Bearer [^.]+\.[^.]+\.[^.]+$/);
       return Response.json([
         {
           id: 11,
@@ -151,12 +150,12 @@ test("worker admin installation sync removes stale registry entries", async () =
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as { count?: number };
-    assert.equal(body.count, 1);
-    assert.equal(await cache.get("auth:installation:v1:stale-org"), null);
+    expect(body.count).toBe(1);
+    expect(await cache.get("auth:installation:v1:stale-org")).toBe(null);
     const fresh = JSON.parse((await cache.get("auth:installation:v1:fresh-org")) ?? "{}");
-    assert.equal(fresh.id, 11);
+    expect(fresh.id).toBe(11);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -219,8 +218,8 @@ test("worker admin installation sync keeps registry when GitHub listing fails", 
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 400);
-    assert.notEqual(await cache.get("auth:installation:v1:known-org"), null);
+    expect(response.status).toBe(400);
+    expect(await cache.get("auth:installation:v1:known-org")).not.toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -271,7 +270,7 @@ test("worker admin installation sync keeps selected repos when repository listin
     const url = new URL(String(input));
     const authorization = new Headers(init?.headers).get("authorization");
     if (url.pathname === "/app/installations") {
-      assert.match(authorization ?? "", /^Bearer [^.]+\.[^.]+\.[^.]+$/);
+      expect(authorization ?? "").toMatch(/^Bearer [^.]+\.[^.]+\.[^.]+$/);
       return Response.json([
         {
           id: 7,
@@ -291,7 +290,7 @@ test("worker admin installation sync keeps selected repos when repository listin
       return Response.json({ token: "installation-token" });
     }
     if (url.pathname === "/installation/repositories") {
-      assert.equal(authorization, "Bearer installation-token");
+      expect(authorization).toBe("Bearer installation-token");
       return Response.json({ message: "try later" }, { status: 503 });
     }
     throw new Error(`unexpected fetch ${url.pathname}`);
@@ -305,9 +304,9 @@ test("worker admin installation sync keeps selected repos when repository listin
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 400);
+    expect(response.status).toBe(400);
     const preserved = JSON.parse((await cache.get("auth:installation:v1:known-org")) ?? "{}");
-    assert.deepEqual(preserved.repositories, ["known-org/releasebar"]);
+    expect(preserved.repositories).toStrictEqual(["known-org/releasebar"]);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -360,9 +359,9 @@ test("worker admin scheduler counts missing caches as due even before nextDueAt"
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as SchedulerAdminPayload;
-  assert.equal(body.status.dueTargets, 1);
+  expect(body.status.dueTargets).toBe(1);
 });
 
 test("worker admin scheduler respects transient failure retry delay", async () => {
@@ -413,9 +412,9 @@ test("worker admin scheduler respects transient failure retry delay", async () =
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as SchedulerAdminPayload;
-  assert.equal(body.status.dueTargets, 0);
+  expect(body.status.dueTargets).toBe(0);
 });
 
 test("worker scheduler skips shared cold targets while GraphQL is backed off", async () => {
@@ -481,11 +480,11 @@ test("worker scheduler skips shared cold targets while GraphQL is backed off", a
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as { due: number; enqueued: number };
-  assert.equal(body.due, 0);
-  assert.equal(body.enqueued, 0);
-  assert.deepEqual(sentJobs, []);
+  expect(body.due).toBe(0);
+  expect(body.enqueued).toBe(0);
+  expect(sentJobs).toStrictEqual([]);
 });
 
 test("worker scheduler keeps repo-only targets runnable during RepoDetails backoff", async () => {
@@ -550,12 +549,12 @@ test("worker scheduler keeps repo-only targets runnable during RepoDetails backo
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as { due: number; enqueued: number };
-  assert.equal(body.due, 1);
-  assert.equal(body.enqueued, 1);
-  assert.equal(sentJobs.length, 1);
-  assert.equal(sentJobs[0]?.targetKey, target.key);
+  expect(body.due).toBe(1);
+  expect(body.enqueued).toBe(1);
+  expect(sentJobs.length).toBe(1);
+  expect(sentJobs[0]?.targetKey).toBe(target.key);
 });
 
 test("worker scheduler keeps dormant shared targets on weekly cadence after success", async () => {
@@ -622,11 +621,11 @@ test("worker scheduler keeps dormant shared targets on weekly cadence after succ
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as { due: number; enqueued: number };
-  assert.equal(body.due, 0);
-  assert.equal(body.enqueued, 0);
-  assert.deepEqual(sentJobs, []);
+  expect(body.due).toBe(0);
+  expect(body.enqueued).toBe(0);
+  expect(sentJobs).toStrictEqual([]);
 });
 
 test("worker scheduler still rebuilds missing dormant shared caches", async () => {
@@ -685,9 +684,9 @@ test("worker scheduler still rebuilds missing dormant shared caches", async () =
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as { due: number; enqueued: number };
-  assert.equal(body.due, 1);
-  assert.equal(body.enqueued, 1);
-  assert.equal(sentJobs.length, 1);
+  expect(body.due).toBe(1);
+  expect(body.enqueued).toBe(1);
+  expect(sentJobs.length).toBe(1);
 });

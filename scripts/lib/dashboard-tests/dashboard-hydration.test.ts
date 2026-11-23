@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { buildDashboard } from "../dashboard.js";
 import { testProject } from "../dashboard-test-harness.js";
 
@@ -96,19 +95,16 @@ test("dashboard repo cap applies to visible rows before release hydration", asyn
     },
   });
 
-  assert.deepEqual(
-    payload.projects.map((project) => project.name),
-    ["empty-a", "empty-b"],
-  );
-  assert.deepEqual(
-    payload.projects.map((project) => project.version),
-    ["unreleased", "unreleased"],
-  );
-  assert.equal(payload.projects[0]?.latestCommitSha, "abcdef1");
-  assert.equal(payload.projects[0]?.openIssues, 2);
-  assert.equal(payload.projects[0]?.openPullRequests, 1);
-  assert.equal(payload.projects[0]?.ciState, "success");
-  assert.equal(payload.cache?.capped, true);
+  expect(payload.projects.map((project) => project.name)).toStrictEqual(["empty-a", "empty-b"]);
+  expect(payload.projects.map((project) => project.version)).toStrictEqual([
+    "unreleased",
+    "unreleased",
+  ]);
+  expect(payload.projects[0]?.latestCommitSha).toBe("abcdef1");
+  expect(payload.projects[0]?.openIssues).toBe(2);
+  expect(payload.projects[0]?.openPullRequests).toBe(1);
+  expect(payload.projects[0]?.ciState).toBe("success");
+  expect(payload.cache?.capped).toBe(true);
 });
 
 test("dashboard hydration advances across a metadata-seeded 200-repo cap", async () => {
@@ -191,7 +187,7 @@ test("dashboard hydration advances across a metadata-seeded 200-repo cap", async
     includeReleaseData: false,
     repoScanLimit: 0,
   });
-  assert.equal(metadata.projects.length, 200);
+  expect(metadata.projects.length).toBe(200);
 
   const firstScanned: string[] = [];
   const first = await buildDashboard({
@@ -203,10 +199,10 @@ test("dashboard hydration advances across a metadata-seeded 200-repo cap", async
       if (progress.scannedRepo) firstScanned.push(progress.scannedRepo);
     },
   });
-  assert.equal(firstScanned.length, 12);
-  assert.equal(firstScanned[0], "owner/repo-151");
-  assert.equal(first.cache?.progress?.scanned, 12);
-  assert.equal(first.cache?.progress?.done, false);
+  expect(firstScanned.length).toBe(12);
+  expect(firstScanned[0]).toBe("owner/repo-151");
+  expect(first.cache?.progress?.scanned).toBe(12);
+  expect(first.cache?.progress?.done).toBe(false);
 
   const secondScanned: string[] = [];
   const second = await buildDashboard({
@@ -219,13 +215,10 @@ test("dashboard hydration advances across a metadata-seeded 200-repo cap", async
       if (progress.scannedRepo) secondScanned.push(progress.scannedRepo);
     },
   });
-  assert.equal(secondScanned.length, 12);
-  assert.equal(
-    secondScanned.some((repo) => firstScanned.includes(repo)),
-    false,
-  );
-  assert.equal(second.cache?.progress?.scanned, 24);
-  assert.equal(second.cache?.progress?.done, false);
+  expect(secondScanned.length).toBe(12);
+  expect(secondScanned.some((repo) => firstScanned.includes(repo))).toBe(false);
+  expect(second.cache?.progress?.scanned).toBe(24);
+  expect(second.cache?.progress?.done).toBe(false);
 });
 
 test("dashboard hydration reconciles new repositories into a cached 200-repo set", async () => {
@@ -310,20 +303,14 @@ test("dashboard hydration reconciles new repositories into a cached 200-repo set
     },
   });
 
-  assert.equal(payload.projects.length, 200);
-  assert.equal(
-    payload.projects.some((project) => project.fullName === "owner/repo-new"),
-    true,
-  );
-  assert.equal(
-    payload.projects.some((project) => project.fullName === "owner/repo-200"),
-    false,
-  );
-  assert.deepEqual(scanned, ["owner/repo-new"]);
-  assert.deepEqual(removed, ["owner/repo-200"]);
-  assert.deepEqual(absent, []);
-  assert.equal(payload.cache?.progress?.scanned, 200);
-  assert.equal(payload.cache?.progress?.done, true);
+  expect(payload.projects.length).toBe(200);
+  expect(payload.projects.some((project) => project.fullName === "owner/repo-new")).toBe(true);
+  expect(payload.projects.some((project) => project.fullName === "owner/repo-200")).toBe(false);
+  expect(scanned).toStrictEqual(["owner/repo-new"]);
+  expect(removed).toStrictEqual(["owner/repo-200"]);
+  expect(absent).toStrictEqual([]);
+  expect(payload.cache?.progress?.scanned).toBe(200);
+  expect(payload.cache?.progress?.done).toBe(true);
 });
 
 test("dashboard hydration removes vanished repositories after complete owner enumeration", async () => {
@@ -397,12 +384,12 @@ test("dashboard hydration removes vanished repositories after complete owner enu
     },
   });
 
-  assert.deepEqual(payload.projects.map((project) => project.fullName).sort(), [
+  expect(payload.projects.map((project) => project.fullName).sort()).toStrictEqual([
     "owner/keep",
     "owner/new-name",
   ]);
-  assert.deepEqual(removed, ["owner/old-name"]);
-  assert.deepEqual(absent, ["owner/old-name"]);
-  assert.equal(payload.cache?.progress?.scanned, 2);
-  assert.equal(payload.cache?.progress?.done, true);
+  expect(removed).toStrictEqual(["owner/old-name"]);
+  expect(absent).toStrictEqual(["owner/old-name"]);
+  expect(payload.cache?.progress?.scanned).toBe(2);
+  expect(payload.cache?.progress?.done).toBe(true);
 });

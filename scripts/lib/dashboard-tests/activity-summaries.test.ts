@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import type {
   OwnerActivityPayload,
   RepoDetailActivityPayload,
@@ -86,14 +85,14 @@ test("worker includes lower-ranked repositories in the overall activity summary 
       summaryCalls += 1;
       const body = JSON.parse(String(init?.body ?? "{}"));
       const inputText = JSON.stringify(body.messages);
-      assert.equal(body.max_tokens, 5050);
-      assert.match(inputText, /Repository: acme\/repo-31\\nSummary target: no \(overall only\)/);
-      assert.equal(inputText.match(/Summary target: yes/g)?.length, 30);
-      assert.equal(inputText.match(/Summary target: no \(overall only\)/g)?.length, 1);
+      expect(body.max_tokens).toBe(5050);
+      expect(inputText).toMatch(/Repository: acme\/repo-31\\nSummary target: no \(overall only\)/);
+      expect(inputText.match(/Summary target: yes/g)?.length).toBe(30);
+      expect(inputText.match(/Summary target: no \(overall only\)/g)?.length).toBe(1);
       const targetNames = body.output_config.format.schema.properties.repositories.items.properties
         .fullName.enum as string[];
-      assert.equal(targetNames.length, 30);
-      assert.equal(targetNames.includes("acme/repo-31"), false);
+      expect(targetNames.length).toBe(30);
+      expect(targetNames.includes("acme/repo-31")).toBe(false);
       return Response.json({
         content: claudeJson({
           summary:
@@ -114,16 +113,16 @@ test("worker includes lower-ranked repositories in the overall activity summary 
       { DASHBOARD_CACHE: cache, ANTHROPIC_API_KEY: "claude-key", ...user.env },
       { waitUntil: (promise) => queued.push(promise) },
     );
-    assert.equal(response.status, 202);
+    expect(response.status).toBe(202);
     await Promise.all(queued);
-    assert.equal(summaryCalls, 1);
+    expect(summaryCalls).toBe(1);
     const cached = JSON.parse(
       (await cache.get("owner-activity:v2:acme:week")) ?? "{}",
     ) as OwnerActivityPayload;
-    assert.equal(cached.summary?.state, "ready", cached.summary?.message ?? "");
-    assert.equal(cached.summary?.eventsUsed, 31);
-    assert.equal(cached.summary?.repositories?.length, 30);
-    assert.match(cached.summary?.text ?? "", /repo-31/);
+    expect(cached.summary?.state, cached.summary?.message ?? "").toBe("ready");
+    expect(cached.summary?.eventsUsed).toBe(31);
+    expect(cached.summary?.repositories?.length).toBe(30);
+    expect(cached.summary?.text ?? "").toMatch(/repo-31/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -199,15 +198,15 @@ test("worker trims expired events from cached owner activity", async () => {
     { DASHBOARD_CACHE: cache },
     { waitUntil: () => undefined },
   );
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as OwnerActivityPayload;
-  assert.equal(body.cache.state, "stale");
-  assert.equal(body.totals.events, 0);
-  assert.equal(body.totals.repositories, 0);
-  assert.deepEqual(body.repositories, []);
-  assert.deepEqual(body.events, []);
-  assert.equal(body.summary?.state, "unavailable");
-  assert.equal(body.summary?.text, null);
+  expect(body.cache.state).toBe("stale");
+  expect(body.totals.events).toBe(0);
+  expect(body.totals.repositories).toBe(0);
+  expect(body.repositories).toStrictEqual([]);
+  expect(body.events).toStrictEqual([]);
+  expect(body.summary?.state).toBe("unavailable");
+  expect(body.summary?.text).toBe(null);
 });
 
 test("worker trims expired events from cached repository activity", async () => {
@@ -275,15 +274,15 @@ test("worker trims expired events from cached repository activity", async () => 
     { DASHBOARD_CACHE: cache },
     { waitUntil: () => undefined },
   );
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as RepoDetailActivityPayload;
-  assert.equal(body.cache.state, "stale");
-  assert.equal(body.totals.events, 0);
-  assert.equal(body.totals.repositories, 0);
-  assert.deepEqual(body.repositories, []);
-  assert.deepEqual(body.events, []);
-  assert.equal(body.summary?.state, "unavailable");
-  assert.equal(body.summary?.text, null);
+  expect(body.cache.state).toBe("stale");
+  expect(body.totals.events).toBe(0);
+  expect(body.totals.repositories).toBe(0);
+  expect(body.repositories).toStrictEqual([]);
+  expect(body.events).toStrictEqual([]);
+  expect(body.summary?.state).toBe("unavailable");
+  expect(body.summary?.text).toBe(null);
 });
 
 test("worker skips stale public owner activity summaries when events changed", async () => {
@@ -393,15 +392,15 @@ test("worker skips stale public owner activity summaries when events changed", a
       },
       { waitUntil: (promise) => queued.push(promise) },
     );
-    assert.equal(response.status, 202);
+    expect(response.status).toBe(202);
     await Promise.all(queued);
     const cached = JSON.parse(
       (await cache.get("owner-activity:v2:acme:week")) ?? "{}",
     ) as OwnerActivityPayload;
-    assert.equal(cached.events[0]?.id, "new");
-    assert.equal(cached.summary?.state, "warming");
-    assert.equal(cached.summary?.inputHash, "new-hash");
-    assert.equal(cached.summary?.text, null);
+    expect(cached.events[0]?.id).toBe("new");
+    expect(cached.summary?.state).toBe("warming");
+    expect(cached.summary?.inputHash).toBe("new-hash");
+    expect(cached.summary?.text).toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -499,19 +498,19 @@ test("worker refreshes cached owner activity summaries from older prompt version
       },
       { waitUntil: (promise) => queued.push(promise) },
     );
-    assert.equal(response.status, 202);
+    expect(response.status).toBe(202);
     const responseBody = (await response.json()) as OwnerActivityPayload;
-    assert.equal(responseBody.summary?.state, "warming");
-    assert.equal(responseBody.summary?.text, null);
+    expect(responseBody.summary?.state).toBe("warming");
+    expect(responseBody.summary?.text).toBe(null);
     await Promise.all(queued);
     const cached = JSON.parse(
       (await cache.get("owner-activity:v2:acme:week")) ?? "{}",
     ) as OwnerActivityPayload;
-    assert.equal(cached.summary?.state, "ready");
-    assert.equal(cached.summary?.promptVersion, 4);
-    assert.equal(cached.summary?.model, "claude-haiku-5-5");
-    assert.notEqual(cached.summary?.inputHash, "old-prompt-hash");
-    assert.equal(cached.summary?.text, "@acme's work refined working-on summaries.");
+    expect(cached.summary?.state).toBe("ready");
+    expect(cached.summary?.promptVersion).toBe(4);
+    expect(cached.summary?.model).toBe("claude-haiku-5-5");
+    expect(cached.summary?.inputHash).not.toBe("old-prompt-hash");
+    expect(cached.summary?.text).toBe("@acme's work refined working-on summaries.");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -573,13 +572,13 @@ test("worker does not summarize empty owner activity", async () => {
       },
       { waitUntil: (promise) => queued.push(promise) },
     );
-    assert.equal(response.status, 202);
+    expect(response.status).toBe(202);
     await Promise.all(queued);
     const cached = JSON.parse(
       (await cache.get("owner-activity:v2:acme:week")) ?? "{}",
     ) as OwnerActivityPayload;
-    assert.equal(cached.summary?.state, "unavailable");
-    assert.equal(cached.summary?.message, "Not enough recent work to summarize.");
+    expect(cached.summary?.state).toBe("unavailable");
+    expect(cached.summary?.message).toBe("Not enough recent work to summarize.");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -672,16 +671,16 @@ test("worker rejects incomplete structured owner activity summaries", async () =
       },
       { waitUntil: (promise) => queued.push(promise) },
     );
-    assert.equal(response.status, 202);
+    expect(response.status).toBe(202);
     await Promise.all(queued);
     const cached = JSON.parse(
       (await cache.get("owner-activity:v2:acme:week")) ?? "{}",
     ) as OwnerActivityPayload;
-    assert.equal(cached.summary?.state, "unavailable");
-    assert.equal(cached.summary?.model, "claude-haiku-5-5");
-    assert.equal(cached.summary?.message, "AI summary failed; retrying later.");
-    assert.notEqual(cached.summary?.inputHash, "activity-hash");
-    assert.equal(cached.summary?.promptVersion, 4);
+    expect(cached.summary?.state).toBe("unavailable");
+    expect(cached.summary?.model).toBe("claude-haiku-5-5");
+    expect(cached.summary?.message).toBe("AI summary failed; retrying later.");
+    expect(cached.summary?.inputHash).not.toBe("activity-hash");
+    expect(cached.summary?.promptVersion).toBe(4);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -722,9 +721,9 @@ test("worker keeps repository detail routes for repositories named activity", as
       { DASHBOARD_CACHE: cache },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as RepoDetailPayload;
-    assert.equal(body.fullName, "acme/activity");
+    expect(body.fullName).toBe("acme/activity");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -816,19 +815,18 @@ test("worker skips stale release summaries when repository detail changed", asyn
       },
       { waitUntil: (promise) => queued.push(promise) },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     await Promise.all(queued);
     const cached = JSON.parse(
       (await cache.get("repo-detail:v4:acme/releasebar")) ?? "{}",
     ) as RepoDetailPayload;
-    assert.equal(cached.project.version, "v1.0.1");
-    assert.equal(cached.project.latestCommitSha, "fedcba9");
-    assert.equal(cached.releaseSummary?.releaseTag, "v1.0.1");
-    assert.equal(cached.releaseSummary?.text, null);
-    assert.notEqual(
+    expect(cached.project.version).toBe("v1.0.1");
+    expect(cached.project.latestCommitSha).toBe("fedcba9");
+    expect(cached.releaseSummary?.releaseTag).toBe("v1.0.1");
+    expect(cached.releaseSummary?.text).toBe(null);
+    expect(
       await cache.get("release-summary:v1:acme/releasebar:v1.0.0:abcdef1:claude-haiku-5-5"),
-      null,
-    );
+    ).not.toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }

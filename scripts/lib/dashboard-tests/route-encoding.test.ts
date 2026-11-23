@@ -1,19 +1,18 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { ownerActivityFromPath, ownerFromPath, repoFromPath } from "../../../src/routing.js";
 import { kvStore, worker } from "../dashboard-test-harness.js";
 
 test("page route parsers reject malformed percent encoding", () => {
   for (const invalid of ["%", "%GG", "%C0%AF", "%E0%A4%A"]) {
-    assert.equal(ownerFromPath(`/${invalid}`), null);
-    assert.equal(repoFromPath(`/acme/${invalid}`), null);
-    assert.equal(repoFromPath(`/-/${invalid}/project`), null);
-    assert.equal(ownerActivityFromPath(`/${invalid}/activity`), null);
-    assert.equal(ownerActivityFromPath(`/-/owners/${invalid}/activity`), null);
+    expect(ownerFromPath(`/${invalid}`)).toBe(null);
+    expect(repoFromPath(`/acme/${invalid}`)).toBe(null);
+    expect(repoFromPath(`/-/${invalid}/project`)).toBe(null);
+    expect(ownerActivityFromPath(`/${invalid}/activity`)).toBe(null);
+    expect(ownerActivityFromPath(`/-/owners/${invalid}/activity`)).toBe(null);
   }
-  assert.equal(ownerFromPath("/%40Acme"), "Acme");
-  assert.equal(repoFromPath("/acme/%70roject")?.fullName, "acme/project");
-  assert.equal(ownerActivityFromPath("/%61cme/activity")?.owner, "acme");
+  expect(ownerFromPath("/%40Acme")).toBe("Acme");
+  expect(repoFromPath("/acme/%70roject")?.fullName).toBe("acme/project");
+  expect(ownerActivityFromPath("/%61cme/activity")?.owner).toBe("acme");
 });
 
 test("worker rejects malformed path encoding before storage or background work", async () => {
@@ -21,11 +20,11 @@ test("worker rejects malformed path encoding before storage or background work",
   const env = {
     DASHBOARD_CACHE: {
       ...cache,
-      get: async () => assert.fail("invalid paths must not read storage"),
+      get: async () => expect.unreachable("invalid paths must not read storage"),
     },
-    ASSETS: { fetch: async () => assert.fail("invalid paths must not fetch assets") },
+    ASSETS: { fetch: async () => expect.unreachable("invalid paths must not fetch assets") },
   };
-  const context = { waitUntil: () => assert.fail("invalid paths must not schedule work") };
+  const context = { waitUntil: () => expect.unreachable("invalid paths must not schedule work") };
   const paths = [
     "/%",
     "/acme/%GG",
@@ -47,10 +46,10 @@ test("worker rejects malformed path encoding before storage or background work",
         env,
         context,
       );
-      assert.equal(response.status, 400, `${method} ${path}`);
-      assert.equal(response.headers.get("cache-control"), "no-store");
-      if (method === "HEAD") assert.equal(await response.text(), "");
-      else assert.deepEqual(await response.json(), { error: "invalid path encoding" });
+      expect(response.status, `${method} ${path}`).toBe(400);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      if (method === "HEAD") expect(await response.text()).toBe("");
+      else expect(await response.json()).toStrictEqual({ error: "invalid path encoding" });
     }
   }
 });

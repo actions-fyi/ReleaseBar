@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import type { RepoDetailPayload } from "../../../src/types.js";
 import { kvStore, worker } from "../dashboard-test-harness.js";
 
@@ -35,14 +34,13 @@ test("worker rejects private repository detail payloads", async () => {
       { waitUntil: () => undefined },
     );
     const body = (await response.json()) as { error?: string };
-    assert.equal(response.status, 502);
-    assert.match(body.error ?? "", /private repositories are not visible/);
-    assert.equal(
+    expect(response.status).toBe(502);
+    expect(body.error ?? "").toMatch(/private repositories are not visible/);
+    expect(
       await cache.get(
         `repo-detail:aux:v2:${encodeURIComponent("acme/private")}:repository:${encodeURIComponent("/repos/acme/private")}`,
       ),
-      null,
-    );
+    ).toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -123,7 +121,7 @@ test("worker does not cache repository detail when pull request count fails", as
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(failed.status, 429);
+    expect(failed.status).toBe(429);
 
     failPulls = false;
     await Promise.all([
@@ -135,10 +133,10 @@ test("worker does not cache repository detail when pull request count fails", as
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as RepoDetailPayload;
-    assert.equal(body.project.openPullRequests, 3);
-    assert.equal(body.project.openIssues, 1);
+    expect(body.project.openPullRequests).toBe(3);
+    expect(body.project.openIssues).toBe(1);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -159,8 +157,8 @@ test("worker returns 404 for missing repository detail pages", async () => {
       { DASHBOARD_CACHE: kvStore(), GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 404);
-    assert.match(await response.text(), /GitHub API 404/);
+    expect(response.status).toBe(404);
+    expect(await response.text()).toMatch(/GitHub API 404/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -229,12 +227,12 @@ test("worker ignores optional repository detail permission gaps", async () => {
       { DASHBOARD_CACHE: kvStore(), GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as RepoDetailPayload;
-    assert.equal(body.project.ciState, "unknown");
-    assert.equal(body.cache.state, "fresh");
-    assert.equal(body.stats?.codeFrequency.state, "unavailable");
-    assert.match(body.stats?.codeFrequency.message ?? "", /fewer than 10000 commits/);
+    expect(body.project.ciState).toBe("unknown");
+    expect(body.cache.state).toBe("fresh");
+    expect(body.stats?.codeFrequency.state).toBe("unavailable");
+    expect(body.stats?.codeFrequency.message ?? "").toMatch(/fewer than 10000 commits/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -297,12 +295,12 @@ test("worker backs off repository stats per repo after one warming response", as
       { DASHBOARD_CACHE: kvStore(), GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 202);
+    expect(response.status).toBe(202);
     const body = (await response.json()) as RepoDetailPayload;
-    assert.equal(body.cache.state, "warming");
-    assert.equal(body.stats?.commitActivity.state, "warming");
-    assert.equal(body.stats?.codeFrequency.state, "warming");
-    assert.equal(codeFrequencyCalls, 0);
+    expect(body.cache.state).toBe("warming");
+    expect(body.stats?.commitActivity.state).toBe("warming");
+    expect(body.stats?.codeFrequency.state).toBe("warming");
+    expect(codeFrequencyCalls).toBe(0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -362,7 +360,7 @@ test("worker does not cache repository detail when optional calls are rate limit
       { DASHBOARD_CACHE: kvStore(), GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 429);
+    expect(response.status).toBe(429);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -423,10 +421,10 @@ test("worker keeps repository detail when work trend GraphQL is rate limited", a
       { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as RepoDetailPayload;
-    assert.equal(body.workTrend, null);
-    assert.notEqual(await cache.get("repo-detail:v4:acme/trendbar"), null);
+    expect(body.workTrend).toBe(null);
+    expect(await cache.get("repo-detail:v4:acme/trendbar")).not.toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -514,7 +512,7 @@ test("worker reuses repository detail auxiliary caches across rebuilds", async (
     }
     if (path === "/graphql") {
       const payload = JSON.parse(String(init?.body)) as { query?: string };
-      assert.match(payload.query ?? "", /ReleaseBarRepoWorkTrend/);
+      expect(payload.query ?? "").toMatch(/ReleaseBarRepoWorkTrend/);
       count("work_trend");
       return Response.json({
         data: {
@@ -535,17 +533,17 @@ test("worker reuses repository detail auxiliary caches across rebuilds", async (
       { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
-    assert.equal(first.status, 202);
-    assert.equal(calls.get("releases"), 1);
-    assert.equal(calls.get("latest_commit"), 1);
-    assert.equal(calls.get("open_pulls"), 1);
-    assert.equal(calls.get("compare"), 1);
-    assert.equal(calls.get("check_runs"), 1);
-    assert.equal(calls.get("contributors"), 1);
-    assert.equal(calls.get("languages"), 1);
-    assert.equal(calls.get("commit_activity"), 1);
-    assert.equal(calls.get("code_frequency") ?? 0, 0);
-    assert.equal(calls.get("work_trend"), 1);
+    expect(first.status).toBe(202);
+    expect(calls.get("releases")).toBe(1);
+    expect(calls.get("latest_commit")).toBe(1);
+    expect(calls.get("open_pulls")).toBe(1);
+    expect(calls.get("compare")).toBe(1);
+    expect(calls.get("check_runs")).toBe(1);
+    expect(calls.get("contributors")).toBe(1);
+    expect(calls.get("languages")).toBe(1);
+    expect(calls.get("commit_activity")).toBe(1);
+    expect(calls.get("code_frequency") ?? 0).toBe(0);
+    expect(calls.get("work_trend")).toBe(1);
 
     await cache.delete("repo-detail:v4:acme/cachebar");
 
@@ -554,17 +552,17 @@ test("worker reuses repository detail auxiliary caches across rebuilds", async (
       { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
-    assert.equal(second.status, 202);
-    assert.equal(calls.get("releases"), 1);
-    assert.equal(calls.get("latest_commit"), 1);
-    assert.equal(calls.get("open_pulls"), 1);
-    assert.equal(calls.get("compare"), 1);
-    assert.equal(calls.get("check_runs"), 1);
-    assert.equal(calls.get("contributors"), 1);
-    assert.equal(calls.get("languages"), 1);
-    assert.equal(calls.get("commit_activity"), 1);
-    assert.equal(calls.get("code_frequency") ?? 0, 0);
-    assert.equal(calls.get("work_trend"), 1);
+    expect(second.status).toBe(202);
+    expect(calls.get("releases")).toBe(1);
+    expect(calls.get("latest_commit")).toBe(1);
+    expect(calls.get("open_pulls")).toBe(1);
+    expect(calls.get("compare")).toBe(1);
+    expect(calls.get("check_runs")).toBe(1);
+    expect(calls.get("contributors")).toBe(1);
+    expect(calls.get("languages")).toBe(1);
+    expect(calls.get("commit_activity")).toBe(1);
+    expect(calls.get("code_frequency") ?? 0).toBe(0);
+    expect(calls.get("work_trend")).toBe(1);
   } finally {
     globalThis.fetch = originalFetch;
   }

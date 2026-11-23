@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, Project, RefreshJob, RefreshTarget } from "../../../src/types.js";
 import {
@@ -36,7 +35,7 @@ test("older owner count refreshes cannot replace newer snapshots", async () => {
         body: JSON.stringify({ owner: "owner", mutation }),
       }),
     );
-    assert.equal(response.ok || response.status === 204, true);
+    expect(response.ok || response.status === 204).toBe(true);
   };
 
   await mutate({
@@ -100,16 +99,14 @@ test("older owner count refreshes cannot replace newer snapshots", async () => {
     knownRepos?: string[];
     projects?: Project[];
   };
-  assert.equal(snapshot.countsUpdatedAt, newerAt);
-  assert.deepEqual(snapshot.knownRepos?.sort(), ["owner/repo", "owner/sibling"]);
-  assert.equal(
-    snapshot.projects?.find((project) => project.fullName === repo.fullName)?.openIssues,
+  expect(snapshot.countsUpdatedAt).toBe(newerAt);
+  expect(snapshot.knownRepos?.sort()).toStrictEqual(["owner/repo", "owner/sibling"]);
+  expect(snapshot.projects?.find((project) => project.fullName === repo.fullName)?.openIssues).toBe(
     7,
   );
-  assert.equal(
+  expect(
     snapshot.projects?.find((project) => project.fullName === sibling.fullName)?.openIssues,
-    9,
-  );
+  ).toBe(9);
 });
 
 test("older complete count scans preserve newer repository metadata", async () => {
@@ -134,7 +131,7 @@ test("older complete count scans preserve newer repository metadata", async () =
         body: JSON.stringify({ owner: "owner", mutation }),
       }),
     );
-    assert.equal(response.ok || response.status === 204, true);
+    expect(response.ok || response.status === 204).toBe(true);
   };
 
   await mutate({
@@ -160,9 +157,9 @@ test("older complete count scans preserve newer repository metadata", async () =
     removedRepos?: Record<string, string>;
     projects?: Project[];
   };
-  assert.deepEqual(snapshot.knownRepos, ["owner/repo"]);
-  assert.equal(snapshot.removedRepos?.["owner/repo"], undefined);
-  assert.equal(snapshot.projects?.[0]?.fullName, "owner/repo");
+  expect(snapshot.knownRepos).toStrictEqual(["owner/repo"]);
+  expect(snapshot.removedRepos?.["owner/repo"]).toBe(undefined);
+  expect(snapshot.projects?.[0]?.fullName).toBe("owner/repo");
 });
 
 test("newer metadata merges preserve counts without restoring stale repository state", async () => {
@@ -195,7 +192,7 @@ test("newer metadata merges preserve counts without restoring stale repository s
         body: JSON.stringify({ owner: "owner", mutation }),
       }),
     );
-    assert.equal(response.ok || response.status === 204, true);
+    expect(response.ok || response.status === 204).toBe(true);
   };
 
   await mutate({
@@ -233,11 +230,11 @@ test("newer metadata merges preserve counts without restoring stale repository s
   const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
     projects?: Project[];
   };
-  assert.equal(snapshot.projects?.[0]?.archived, true);
-  assert.equal(snapshot.projects?.[0]?.pushedAt, metadataAt);
-  assert.equal(snapshot.projects?.[0]?.updatedAt, metadataAt);
-  assert.equal(snapshot.projects?.[0]?.openIssues, 7);
-  assert.equal(snapshot.projects?.[0]?.openPullRequests, 3);
+  expect(snapshot.projects?.[0]?.archived).toBe(true);
+  expect(snapshot.projects?.[0]?.pushedAt).toBe(metadataAt);
+  expect(snapshot.projects?.[0]?.updatedAt).toBe(metadataAt);
+  expect(snapshot.projects?.[0]?.openIssues).toBe(7);
+  expect(snapshot.projects?.[0]?.openPullRequests).toBe(3);
 
   const key = dashboardCacheKey({
     owner: "owner",
@@ -266,8 +263,8 @@ test("newer metadata merges preserve counts without restoring stale repository s
   const dashboard = await worker.fetch(new Request("https://release.bar/api/owner"), env, {
     waitUntil: () => undefined,
   });
-  assert.equal(dashboard.status, 200);
-  assert.equal(((await dashboard.json()) as DashboardPayload).projects.length, 0);
+  expect(dashboard.status).toBe(200);
+  expect(((await dashboard.json()) as DashboardPayload).projects.length).toBe(0);
 });
 
 test("older dashboard builds cannot restore repositories removed by newer counts", async () => {
@@ -292,7 +289,7 @@ test("older dashboard builds cannot restore repositories removed by newer counts
         body: JSON.stringify({ owner: "owner", mutation }),
       }),
     );
-    assert.equal(response.ok || response.status === 204, true);
+    expect(response.ok || response.status === 204).toBe(true);
   };
 
   await mutate({
@@ -328,8 +325,8 @@ test("older dashboard builds cannot restore repositories removed by newer counts
     knownRepos?: string[];
     projects?: Project[];
   };
-  assert.deepEqual(snapshot.knownRepos, []);
-  assert.equal(snapshot.projects?.length, 0);
+  expect(snapshot.knownRepos).toStrictEqual([]);
+  expect(snapshot.projects?.length).toBe(0);
 });
 
 test("complete metadata scans tombstone absent repositories across cached variants", async () => {
@@ -389,7 +386,7 @@ test("complete metadata scans tombstone absent repositories across cached varian
         body: JSON.stringify({ owner: "owner", mutation }),
       }),
     );
-    assert.equal(response.ok || response.status === 204, true);
+    expect(response.ok || response.status === 204).toBe(true);
   };
 
   await mutate({
@@ -420,22 +417,16 @@ test("complete metadata scans tombstone absent repositories across cached varian
     removedRepos?: Record<string, string>;
     projects?: Project[];
   };
-  assert.deepEqual(snapshot.knownRepos, ["owner/sibling"]);
-  assert.equal(snapshot.removedRepos?.["owner/repo"], removedAt);
-  assert.equal(
-    snapshot.projects?.some((project) => project.fullName === "owner/repo"),
-    false,
-  );
+  expect(snapshot.knownRepos).toStrictEqual(["owner/sibling"]);
+  expect(snapshot.removedRepos?.["owner/repo"]).toBe(removedAt);
+  expect(snapshot.projects?.some((project) => project.fullName === "owner/repo")).toBe(false);
 
   const response = await worker.fetch(new Request("https://release.bar/api/owner"), env, {
     waitUntil: () => undefined,
   });
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as DashboardPayload;
-  assert.deepEqual(
-    body.projects.map((project) => project.fullName),
-    ["owner/sibling"],
-  );
+  expect(body.projects.map((project) => project.fullName)).toStrictEqual(["owner/sibling"]);
 });
 
 test("stale repository removals cannot hide newer public metadata", async () => {
@@ -464,7 +455,7 @@ test("stale repository removals cannot hide newer public metadata", async () => 
         body: JSON.stringify({ owner: "owner", mutation }),
       }),
     );
-    assert.equal(response.ok || response.status === 204, true);
+    expect(response.ok || response.status === 204).toBe(true);
   };
 
   await mutate({
@@ -484,9 +475,8 @@ test("stale repository removals cannot hide newer public metadata", async () => 
     removedRepos?: Record<string, string>;
     projects?: Project[];
   };
-  assert.equal(snapshot.removedRepos?.[project.fullName.toLowerCase()], undefined);
-  assert.equal(
-    snapshot.projects?.some((candidate) => candidate.fullName === project.fullName),
+  expect(snapshot.removedRepos?.[project.fullName.toLowerCase()]).toBe(undefined);
+  expect(snapshot.projects?.some((candidate) => candidate.fullName === project.fullName)).toBe(
     true,
   );
 });
@@ -513,7 +503,7 @@ test("newer owner metadata merges cannot clear privacy tombstones", async () => 
         body: JSON.stringify({ owner: "owner", mutation }),
       }),
     );
-    assert.equal(response.ok || response.status === 204, true);
+    expect(response.ok || response.status === 204).toBe(true);
   };
 
   await mutate({ kind: "remove", fullName: "owner/repo", observedAt: removedAt });
@@ -533,11 +523,8 @@ test("newer owner metadata merges cannot clear privacy tombstones", async () => 
     removedRepos?: Record<string, string>;
     projects?: Project[];
   };
-  assert.equal(snapshot.removedRepos?.["owner/repo"], removedAt);
-  assert.equal(
-    snapshot.projects?.some((candidate) => candidate.fullName === "owner/repo"),
-    false,
-  );
+  expect(snapshot.removedRepos?.["owner/repo"]).toBe(removedAt);
+  expect(snapshot.projects?.some((candidate) => candidate.fullName === "owner/repo")).toBe(false);
 });
 
 test("worker persists archived observations without showing archived repositories", async () => {
@@ -640,15 +627,15 @@ test("worker persists archived observations without showing archived repositorie
       { DASHBOARD_CACHE: cache },
       { waitUntil: () => undefined },
     );
-    assert.equal(acknowledged, true);
+    expect(acknowledged).toBe(true);
     const dashboard = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
-    assert.equal(dashboard.projects.length, 0);
+    expect(dashboard.projects.length).toBe(0);
     const snapshot = JSON.parse((await cache.get(`owner-metadata:v1:${owner}`)) ?? "{}") as {
       projects?: Project[];
       removedRepos?: Record<string, string>;
     };
-    assert.equal(snapshot.projects?.[0]?.archived, true);
-    assert.equal(snapshot.removedRepos?.[`${owner}/repo`], undefined);
+    expect(snapshot.projects?.[0]?.archived).toBe(true);
+    expect(snapshot.removedRepos?.[`${owner}/repo`]).toBe(undefined);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -735,13 +722,13 @@ test("worker preserves field freshness when resuming an older progress checkpoin
     const response = await worker.fetch(new Request(`https://release.bar/api/${owner}`), env, {
       waitUntil: (promise) => waits.push(promise),
     });
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const resumed = (await response.json()) as DashboardPayload;
-    assert.equal(resumed.cache?.countsUpdatedAt, generatedAt);
-    assert.equal(resumed.cache?.releasesUpdatedAt, releasesUpdatedAt);
-    assert.equal(resumed.cache?.ciUpdatedAt, ciUpdatedAt);
+    expect(resumed.cache?.countsUpdatedAt).toBe(generatedAt);
+    expect(resumed.cache?.releasesUpdatedAt).toBe(releasesUpdatedAt);
+    expect(resumed.cache?.ciUpdatedAt).toBe(ciUpdatedAt);
     await Promise.all(waits);
-    assert.equal(sentJobs.length, 1);
+    expect(sentJobs.length).toBe(1);
     assert.ok(sentJobs[0]);
 
     let acknowledged = false;
@@ -761,11 +748,11 @@ test("worker preserves field freshness when resuming an older progress checkpoin
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(acknowledged, true);
+    expect(acknowledged).toBe(true);
     const completed = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
-    assert.equal(completed.projects.length, 0);
-    assert.equal(completed.cache?.releasesUpdatedAt, releasesUpdatedAt);
-    assert.equal(completed.cache?.ciUpdatedAt, ciUpdatedAt);
+    expect(completed.projects.length).toBe(0);
+    expect(completed.cache?.releasesUpdatedAt).toBe(releasesUpdatedAt);
+    expect(completed.cache?.ciUpdatedAt).toBe(ciUpdatedAt);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -793,8 +780,8 @@ test("signed repository-less GitHub App webhooks are acknowledged", async () => 
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 202);
-  assert.deepEqual(await response.json(), { ok: true, ignored: true });
+  expect(response.status).toBe(202);
+  expect(await response.json()).toStrictEqual({ ok: true, ignored: true });
 });
 
 test("signed private repository webhooks are ignored before durable admission", async () => {
@@ -823,6 +810,6 @@ test("signed private repository webhooks are ignored before durable admission", 
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 202);
-  assert.deepEqual(await response.json(), { ok: true, ignored: true });
+  expect(response.status).toBe(202);
+  expect(await response.json()).toStrictEqual({ ok: true, ignored: true });
 });

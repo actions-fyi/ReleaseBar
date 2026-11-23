@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, Project, RefreshTarget } from "../../../src/types.js";
 import {
@@ -77,18 +76,18 @@ test("worker serves fresh dashboard cache before GitHub App token discovery", as
       },
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as DashboardPayload;
-    assert.equal(body.projects.length, 1);
-    assert.equal(body.projects[0]?.openIssues, 9);
-    assert.equal(body.projects[0]?.description, project.description);
+    expect(body.projects.length).toBe(1);
+    expect(body.projects[0]?.openIssues).toBe(9);
+    expect(body.projects[0]?.description).toBe(project.description);
     await Promise.all(waits);
     const metadataTarget = JSON.parse(
       (await cache.get(`refresh:target:v1:${metadataKey}`)) ?? "{}",
     ) as RefreshTarget;
-    assert.equal(metadataTarget.key, metadataKey);
-    assert.equal(metadataTarget.includeReleaseData, false);
-    assert.equal(await cache.get(`refresh:target:v1:${releaseKey}`), null);
+    expect(metadataTarget.key).toBe(metadataKey);
+    expect(metadataTarget.includeReleaseData).toBe(false);
+    expect(await cache.get(`refresh:target:v1:${releaseKey}`)).toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -135,11 +134,11 @@ test("owner metadata does not overwrite newer dashboard counts", async () => {
     { DASHBOARD_CACHE: cache },
     { waitUntil: () => undefined },
   );
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as DashboardPayload;
-  assert.equal(body.projects[0]?.description, "new metadata");
-  assert.equal(body.projects[0]?.openIssues, 1);
-  assert.equal(body.cache?.countsUpdatedAt, now);
+  expect(body.projects[0]?.description).toBe("new metadata");
+  expect(body.projects[0]?.openIssues).toBe(1);
+  expect(body.cache?.countsUpdatedAt).toBe(now);
 });
 
 test("owner metadata compares count snapshots against count freshness", async () => {
@@ -185,11 +184,11 @@ test("owner metadata compares count snapshots against count freshness", async ()
     { DASHBOARD_CACHE: cache },
     { waitUntil: () => undefined },
   );
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as DashboardPayload;
-  assert.equal(body.projects[0]?.openIssues, 9);
-  assert.equal(body.cache?.countsUpdatedAt, snapshotAt);
-  assert.equal(body.cache?.projectCountsUpdatedAt?.["owner/repo"], snapshotAt);
+  expect(body.projects[0]?.openIssues).toBe(9);
+  expect(body.cache?.countsUpdatedAt).toBe(snapshotAt);
+  expect(body.cache?.projectCountsUpdatedAt?.["owner/repo"]).toBe(snapshotAt);
 });
 
 test("owner count overlays update repositories absent from a narrow metadata snapshot", async () => {
@@ -275,18 +274,18 @@ test("owner count overlays update repositories absent from a narrow metadata sna
       }),
     }),
   );
-  assert.equal(response.ok, true);
+  expect(response.ok).toBe(true);
 
   const dashboard = await worker.fetch(new Request("https://release.bar/api/owner"), env, {
     waitUntil: () => undefined,
   });
-  assert.equal(dashboard.status, 200);
-  assert.equal(((await dashboard.json()) as DashboardPayload).projects.length, 0);
+  expect(dashboard.status).toBe(200);
+  expect(((await dashboard.json()) as DashboardPayload).projects.length).toBe(0);
   const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
     countOverlays?: Record<string, { archived?: boolean; openIssues?: number }>;
   };
-  assert.equal(snapshot.countOverlays?.["owner/outside-filter"]?.archived, true);
-  assert.equal(snapshot.countOverlays?.["owner/outside-filter"]?.openIssues, 9);
+  expect(snapshot.countOverlays?.["owner/outside-filter"]?.archived).toBe(true);
+  expect(snapshot.countOverlays?.["owner/outside-filter"]?.openIssues).toBe(9);
 });
 
 test("owner snapshots only advance count freshness when they cover every displayed repository", async () => {
@@ -331,11 +330,11 @@ test("owner snapshots only advance count freshness when they cover every display
     { DASHBOARD_CACHE: cache },
     { waitUntil: () => undefined },
   );
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as DashboardPayload;
-  assert.equal(body.projects.find((project) => project.name === "repo")?.openIssues, 9);
-  assert.equal(body.projects.find((project) => project.name === "sibling")?.openIssues, 2);
-  assert.equal(body.cache?.countsUpdatedAt, cachedAt);
+  expect(body.projects.find((project) => project.name === "repo")?.openIssues).toBe(9);
+  expect(body.projects.find((project) => project.name === "sibling")?.openIssues).toBe(2);
+  expect(body.cache?.countsUpdatedAt).toBe(cachedAt);
 });
 
 test("partial owner count scans expose matched repository counts without advancing global freshness", async () => {
@@ -417,24 +416,24 @@ test("partial owner count scans expose matched repository counts without advanci
       }),
     }),
   );
-  assert.equal(mutation.ok, true);
+  expect(mutation.ok).toBe(true);
 
   const snapshot = (await mutation.json()) as {
     countsUpdatedAt?: string;
     projectCountsUpdatedAt?: Record<string, string>;
   };
-  assert.equal(snapshot.countsUpdatedAt, initialAt);
-  assert.equal(snapshot.projectCountsUpdatedAt?.["owner/repo"], partialAt);
-  assert.equal(snapshot.projectCountsUpdatedAt?.["owner/sibling"], initialAt);
+  expect(snapshot.countsUpdatedAt).toBe(initialAt);
+  expect(snapshot.projectCountsUpdatedAt?.["owner/repo"]).toBe(partialAt);
+  expect(snapshot.projectCountsUpdatedAt?.["owner/sibling"]).toBe(initialAt);
 
   const response = await worker.fetch(new Request("https://release.bar/api/owner"), env, {
     waitUntil: () => undefined,
   });
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as DashboardPayload;
-  assert.equal(body.projects.find((project) => project.name === "repo")?.openIssues, 9);
-  assert.equal(body.projects.find((project) => project.name === "sibling")?.openIssues, 2);
-  assert.equal(body.cache?.countsUpdatedAt, initialAt);
+  expect(body.projects.find((project) => project.name === "repo")?.openIssues).toBe(9);
+  expect(body.projects.find((project) => project.name === "sibling")?.openIssues).toBe(2);
+  expect(body.cache?.countsUpdatedAt).toBe(initialAt);
 });
 
 test("stale archive observations do not override newer count observations", async () => {
@@ -477,9 +476,9 @@ test("stale archive observations do not override newer count observations", asyn
       }),
     }),
   );
-  assert.equal(response.ok, true);
+  expect(response.ok).toBe(true);
   const snapshot = (await response.json()) as { projects?: Project[] };
-  assert.equal(snapshot.projects?.[0]?.archived, false);
+  expect(snapshot.projects?.[0]?.archived).toBe(false);
 });
 
 test("partial owner count scans cannot make an incomplete repository set authoritative", async () => {
@@ -540,15 +539,15 @@ test("partial owner count scans cannot make an incomplete repository set authori
       }),
     }),
   );
-  assert.equal(response.ok, true);
+  expect(response.ok).toBe(true);
   const snapshot = (await response.json()) as {
     countsUpdatedAt?: string;
     countsAttemptedAt?: string;
     knownRepos?: string[];
   };
-  assert.equal(snapshot.countsUpdatedAt, initialAt);
-  assert.equal(snapshot.countsAttemptedAt, partialAt);
-  assert.deepEqual(snapshot.knownRepos, ["owner/repo"]);
+  expect(snapshot.countsUpdatedAt).toBe(initialAt);
+  expect(snapshot.countsAttemptedAt).toBe(partialAt);
+  expect(snapshot.knownRepos).toStrictEqual(["owner/repo"]);
 });
 
 test("combined dashboards do not merge counts using another owner's oldest timestamp", async () => {
@@ -601,10 +600,10 @@ test("combined dashboards do not merge counts using another owner's oldest times
     { DASHBOARD_CACHE: cache },
     { waitUntil: () => undefined },
   );
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as DashboardPayload;
-  assert.equal(body.projects.find((project) => project.fullName === "owner/repo")?.openIssues, 10);
-  assert.equal(body.cache?.countsUpdatedAt, oldestOwnerCountAt);
+  expect(body.projects.find((project) => project.fullName === "owner/repo")?.openIssues).toBe(10);
+  expect(body.cache?.countsUpdatedAt).toBe(oldestOwnerCountAt);
 });
 
 test("older owner snapshots do not overwrite newer dashboard fields", async () => {
@@ -653,12 +652,12 @@ test("older owner snapshots do not overwrite newer dashboard fields", async () =
     { DASHBOARD_CACHE: cache },
     { waitUntil: () => undefined },
   );
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as DashboardPayload;
-  assert.equal(body.projects.length, 1);
-  assert.equal(body.projects[0]?.description, project.description);
-  assert.equal(body.projects[0]?.archived, false);
-  assert.equal(body.projects[0]?.openIssues, 1);
+  expect(body.projects.length).toBe(1);
+  expect(body.projects[0]?.description).toBe(project.description);
+  expect(body.projects[0]?.archived).toBe(false);
+  expect(body.projects[0]?.openIssues).toBe(1);
 });
 
 test("targeted owner metadata updates do not refresh sibling repositories", async () => {
@@ -707,14 +706,10 @@ test("targeted owner metadata updates do not refresh sibling repositories", asyn
     { DASHBOARD_CACHE: cache },
     { waitUntil: () => undefined },
   );
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as DashboardPayload;
-  assert.equal(
-    body.projects.some((project) => project.fullName === "owner/repo"),
-    false,
-  );
-  assert.equal(
-    body.projects.find((project) => project.fullName === "owner/sibling")?.description,
+  expect(body.projects.some((project) => project.fullName === "owner/repo")).toBe(false);
+  expect(body.projects.find((project) => project.fullName === "owner/sibling")?.description).toBe(
     "fresh sibling",
   );
 });
@@ -741,7 +736,7 @@ test("owner removal tombstones survive older refresh observations", async () => 
         body: JSON.stringify({ owner: "owner", mutation }),
       }),
     );
-    assert.equal(response.ok || response.status === 204, true);
+    expect(response.ok || response.status === 204).toBe(true);
   };
 
   await mutate({ kind: "remove", fullName: "owner/repo", observedAt: removedAt });
@@ -766,13 +761,13 @@ test("owner removal tombstones survive older refresh observations", async () => 
   let snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
     removedRepos?: Record<string, string>;
   };
-  assert.equal(snapshot.removedRepos?.["owner/repo"], removedAt);
+  expect(snapshot.removedRepos?.["owner/repo"]).toBe(removedAt);
 
   await mutate({ kind: "restore", fullName: "owner/repo", observedAt: newerAt });
   snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
     removedRepos?: Record<string, string>;
   };
-  assert.equal(snapshot.removedRepos?.["owner/repo"], undefined);
+  expect(snapshot.removedRepos?.["owner/repo"]).toBe(undefined);
 });
 
 test("owner mutations reconcile newer KV fallback state before updating durable storage", async () => {
@@ -798,7 +793,7 @@ test("owner mutations reconcile newer KV fallback state before updating durable 
         body: JSON.stringify({ owner: "owner", mutation }),
       }),
     );
-    assert.equal(response.ok || response.status === 204, true);
+    expect(response.ok || response.status === 204).toBe(true);
     return response;
   };
 
@@ -839,9 +834,8 @@ test("owner mutations reconcile newer KV fallback state before updating durable 
     removedRepos?: Record<string, string>;
     projects?: Project[];
   };
-  assert.equal(snapshot.removedRepos?.["owner/repo"], removedAt);
-  assert.equal(
-    snapshot.projects?.some((candidate) => candidate.fullName === project.fullName),
+  expect(snapshot.removedRepos?.["owner/repo"]).toBe(removedAt);
+  expect(snapshot.projects?.some((candidate) => candidate.fullName === project.fullName)).toBe(
     false,
   );
 });

@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../dashboard.js";
 import type {
   DashboardPayload,
@@ -398,7 +397,7 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     const response = await worker.fetch(new Request(url), env, {
       waitUntil: () => undefined,
     });
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     return (await response.json()) as DashboardPayload;
   };
   try {
@@ -413,52 +412,48 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(oversized.status, 413);
+    expect(oversized.status).toBe(413);
 
-    assert.equal(
-      (await send("ping", "delivery-ping", { zen: "Approachable is better" })).status,
+    expect((await send("ping", "delivery-ping", { zen: "Approachable is better" })).status).toBe(
       200,
     );
 
     exactIssues = 3;
-    assert.equal(
+    expect(
       (
         await send("issues", "delivery-1", {
           action: "opened",
           repository,
         })
       ).status,
-      202,
-    );
+    ).toBe(202);
     const counted = await readDashboard();
-    assert.equal(counted.projects[0]?.openIssues, 3);
+    expect(counted.projects[0]?.openIssues).toBe(3);
     const combinedCounted = await readDashboard("https://release.bar/api/owner?owners=other");
-    assert.equal(combinedCounted.projects[0]?.openIssues, 3);
-    assert.equal(combinedCounted.cache?.countsUpdatedAt, combinedCountsUpdatedAt);
+    expect(combinedCounted.projects[0]?.openIssues).toBe(3);
+    expect(combinedCounted.cache?.countsUpdatedAt).toBe(combinedCountsUpdatedAt);
     const countedSnapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
       countsUpdatedAt?: string;
       projects?: Project[];
     };
     assert.ok(Date.parse(countedSnapshot.countsUpdatedAt ?? "") >= Date.parse(now));
-    assert.equal(
+    expect(
       countedSnapshot.projects?.find((candidate) => candidate.name === "repo")?.openIssues,
-      3,
-    );
-    assert.equal(
+    ).toBe(3);
+    expect(
       countedSnapshot.projects?.find((candidate) => candidate.name === "old-repo")?.openIssues,
-      undefined,
-    );
+    ).toBe(undefined);
 
     exactIssues = 4;
     await send("issues", "delivery-transferred", {
       action: "transferred",
       repository,
     });
-    assert.equal((await readDashboard()).projects[0]?.openIssues, 4);
+    expect((await readDashboard()).projects[0]?.openIssues).toBe(4);
 
     await send("issues", "delivery-1", { action: "opened", repository });
     const deduplicated = await readDashboard();
-    assert.equal(deduplicated.projects[0]?.openIssues, 4);
+    expect(deduplicated.projects[0]?.openIssues).toBe(4);
 
     exactIssues = 5;
     const refreshesBeforeBurst = countRefreshes;
@@ -466,14 +461,14 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       send("issues", "delivery-2", { action: "opened", repository }),
       send("issues", "delivery-3", { action: "opened", repository }),
     ]);
-    assert.equal(countRefreshes - refreshesBeforeBurst, 1);
+    expect(countRefreshes - refreshesBeforeBurst).toBe(1);
     const serialized = await readDashboard();
-    assert.equal(serialized.projects[0]?.openIssues, 5);
+    expect(serialized.projects[0]?.openIssues).toBe(5);
 
     failCounts = true;
     await send("issues", "delivery-redelivery", { action: "opened", repository });
-    assert.equal(queuedWebhookDelays.at(-1), 5 * 60);
-    assert.equal(
+    expect(queuedWebhookDelays.at(-1)).toBe(5 * 60);
+    expect(
       (
         queued.find(
           (message) =>
@@ -482,17 +477,16 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
             (message as { delivery?: unknown }).delivery === "delivery-redelivery",
         ) as { attempts?: number } | undefined
       )?.attempts,
-      1,
-    );
+    ).toBe(1);
     const redeliveryJobs = queuedWebhooks.filter(
       (message) => message.delivery === "delivery-redelivery",
     );
-    assert.equal(redeliveryJobs.at(-1)?.id, redeliveryJobs[0]?.id);
+    expect(redeliveryJobs.at(-1)?.id).toBe(redeliveryJobs[0]?.id);
     failCounts = false;
     exactIssues = 6;
     await send("issues", "delivery-redelivery", { action: "opened", repository });
     const redelivered = await readDashboard();
-    assert.equal(redelivered.projects[0]?.openIssues, 6);
+    expect(redelivered.projects[0]?.openIssues).toBe(6);
 
     failCounts = true;
     await send("repository", "delivery-archive-fallback", {
@@ -503,12 +497,11 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     const fallbackSnapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
       projects?: Project[];
     };
-    assert.equal(
+    expect(
       fallbackSnapshot.projects?.find((candidate) => candidate.fullName === "owner/repo")?.archived,
-      true,
-    );
-    assert.notEqual(await cache.get(key), null);
-    assert.equal((await readDashboard()).projects.length, 0);
+    ).toBe(true);
+    expect(await cache.get(key)).not.toBe(null);
+    expect((await readDashboard()).projects.length).toBe(0);
 
     exactArchived = false;
     await send("repository", "delivery-archive-fallback-restore", {
@@ -521,14 +514,14 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       action: "archived",
       repository: observedRepository({ archived: true }),
     });
-    assert.equal((await readDashboard()).projects.length, 0);
+    expect((await readDashboard()).projects.length).toBe(0);
 
     exactArchived = false;
     await send("repository", "delivery-5", {
       action: "unarchived",
       repository: observedRepository(),
     });
-    assert.equal((await readDashboard()).projects[0]?.archived, false);
+    expect((await readDashboard()).projects[0]?.archived).toBe(false);
 
     await send("push", "delivery-6", {
       ref: "refs/heads/feature",
@@ -541,7 +534,7 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       repository,
     });
     const featurePush = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
-    assert.equal(featurePush.projects[0]?.latestCommitSha, "abcdef1");
+    expect(featurePush.projects[0]?.latestCommitSha).toBe("abcdef1");
 
     queuedDashboardTargets.length = 0;
     await cache.delete("refresh:target-index:v1:ready");
@@ -551,26 +544,24 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       head_commit: { timestamp: "2026-06-11T03:00:00Z" },
       repository,
     });
-    assert.equal(
+    expect(
       repoMatchedLegacyTargets.every(({ key: matchedKey }) =>
         queuedDashboardTargets.includes(matchedKey),
       ),
-      true,
-    );
-    assert.equal(delivery7ImmediateTargets?.includes(key), true);
-    assert.equal(delivery7ImmediateTargets.length <= 25, true);
+    ).toBe(true);
+    expect(delivery7ImmediateTargets?.includes(key)).toBe(true);
+    expect(delivery7ImmediateTargets.length <= 25).toBe(true);
     const newestLegacyPriorityTarget = ownerLegacyPriorityTargets.at(-1);
     assert.ok(newestLegacyPriorityTarget);
-    assert.equal(delivery7ImmediateTargets.includes(newestLegacyPriorityTarget.key), true);
-    assert.equal(delivery7ImmediateTargets.includes(ownerLegacyPriorityTargets[0].key), false);
-    assert.equal(
+    expect(delivery7ImmediateTargets.includes(newestLegacyPriorityTarget.key)).toBe(true);
+    expect(delivery7ImmediateTargets.includes(ownerLegacyPriorityTargets[0].key)).toBe(false);
+    expect(
       ownerLegacyPriorityTargets.every(({ key: priorityKey }) =>
         queuedDashboardTargets.includes(priorityKey),
       ),
-      true,
-    );
-    assert.equal(await cache.get(key), null);
-    assert.equal(await cache.get(secondaryKey), null);
+    ).toBe(true);
+    expect(await cache.get(key)).toBe(null);
+    expect(await cache.get(secondaryKey)).toBe(null);
     const activeLocks = env.DASHBOARD_LOCKS;
     env.DASHBOARD_LOCKS = {
       idFromName: (name) => name,
@@ -580,10 +571,10 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     };
     const pushFallback = await readDashboard();
     env.DASHBOARD_LOCKS = activeLocks;
-    assert.equal(pushFallback.projects[0]?.version, "repo search");
-    assert.equal(pushFallback.projects[0]?.releaseDate, null);
-    assert.equal(pushFallback.projects[0]?.latestCommitSha, null);
-    assert.equal(pushFallback.projects[0]?.ciState, "unknown");
+    expect(pushFallback.projects[0]?.version).toBe("repo search");
+    expect(pushFallback.projects[0]?.releaseDate).toBe(null);
+    expect(pushFallback.projects[0]?.latestCommitSha).toBe(null);
+    expect(pushFallback.projects[0]?.ciState).toBe("unknown");
 
     await cache.put(key, JSON.stringify(dashboard));
     await send("release", "delivery-8", {
@@ -597,7 +588,7 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       },
       repository,
     });
-    assert.equal(await cache.get(key), null);
+    expect(await cache.get(key)).toBe(null);
 
     await cache.put(key, JSON.stringify(dashboard));
     await send("release", "delivery-9", {
@@ -611,7 +602,7 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       },
       repository,
     });
-    assert.equal(await cache.get(key), null);
+    expect(await cache.get(key)).toBe(null);
 
     const releaseFragmentKey = "repo:v2:owner/repo:unreleased:release";
     await cache.put(key, JSON.stringify(dashboard));
@@ -627,8 +618,8 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       },
       repository,
     });
-    assert.equal(await cache.get(releaseFragmentKey), null);
-    assert.equal(await cache.get(key), null);
+    expect(await cache.get(releaseFragmentKey)).toBe(null);
+    expect(await cache.get(key)).toBe(null);
 
     await cache.put(key, JSON.stringify(dashboard));
     await cache.put(releaseFragmentKey, "cached");
@@ -643,8 +634,8 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       },
       repository,
     });
-    assert.equal(await cache.get(releaseFragmentKey), null);
-    assert.equal(await cache.get(key), null);
+    expect(await cache.get(releaseFragmentKey)).toBe(null);
+    expect(await cache.get(key)).toBe(null);
 
     await cache.put(key, JSON.stringify(dashboard));
     await cache.put("hot:v3", JSON.stringify(testDashboard("hot", [project])));
@@ -670,20 +661,20 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       action: "privatized",
       repository: observedRepository(),
     });
-    assert.equal(await cache.get(key), null);
+    expect(await cache.get(key)).toBe(null);
     await cache.put(key, JSON.stringify(dashboard));
-    assert.equal((await readDashboard()).projects.length, 0);
+    expect((await readDashboard()).projects.length).toBe(0);
     const privateSnapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
       privateRepos?: Record<string, string>;
       removedRepos?: Record<string, string>;
       projects?: Project[];
     };
-    assert.equal(privateSnapshot.projects?.length, 0);
-    assert.equal(typeof privateSnapshot.privateRepos?.["owner/repo"], "string");
-    assert.equal(typeof privateSnapshot.removedRepos?.["owner/repo"], "string");
-    assert.equal(await cache.get("hot:v3"), null);
+    expect(privateSnapshot.projects?.length).toBe(0);
+    expect(typeof privateSnapshot.privateRepos?.["owner/repo"]).toBe("string");
+    expect(typeof privateSnapshot.removedRepos?.["owner/repo"]).toBe("string");
+    expect(await cache.get("hot:v3")).toBe(null);
     for (const cacheKey of privateCacheKeys) {
-      assert.equal(await cache.get(cacheKey), null);
+      expect(await cache.get(cacheKey)).toBe(null);
     }
     await cache.put(
       "discover:v4:week:all",
@@ -698,8 +689,8 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(privateDiscover.status, 200);
-    assert.equal(((await privateDiscover.json()) as DashboardPayload).projects.length, 0);
+    expect(privateDiscover.status).toBe(200);
+    expect(((await privateDiscover.json()) as DashboardPayload).projects.length).toBe(0);
 
     const leakedAt = new Date(Date.parse(now) + 10_000).toISOString();
     await cache.put(
@@ -758,11 +749,11 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(privateActivity.status, 200);
+    expect(privateActivity.status).toBe(200);
     const privateActivityBody = (await privateActivity.json()) as OwnerActivityPayload;
-    assert.equal(privateActivityBody.events.length, 0);
-    assert.equal(privateActivityBody.repositories.length, 0);
-    assert.doesNotMatch(JSON.stringify(privateActivityBody), /owner\/repo|private repository work/);
+    expect(privateActivityBody.events.length).toBe(0);
+    expect(privateActivityBody.repositories.length).toBe(0);
+    expect(JSON.stringify(privateActivityBody)).not.toMatch(/owner\/repo|private repository work/);
 
     await Promise.all([
       cache.put(key, JSON.stringify(dashboard)),
@@ -803,13 +794,13 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
         } satisfies RepoDetailPayload),
       ),
     ]);
-    assert.equal((await readDashboard()).projects.length, 0);
+    expect((await readDashboard()).projects.length).toBe(0);
     const stalePrivateDetail = await worker.fetch(
       new Request("https://release.bar/api/repos/owner/repo"),
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(stalePrivateDetail.status, 404);
+    expect(stalePrivateDetail.status).toBe(404);
 
     await cache.put(key, JSON.stringify(dashboard));
     await send("repository", "delivery-publicized-old", {
@@ -819,23 +810,23 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
         updated_at: new Date(Date.parse(now) - 1_000).toISOString(),
       },
     });
-    assert.equal((await readDashboard()).projects.length, 0);
+    expect((await readDashboard()).projects.length).toBe(0);
 
     await send("repository", "delivery-publicized-new", {
       action: "publicized",
       repository: observedRepository(),
     });
-    assert.equal((await readDashboard()).projects.length, 1);
+    expect((await readDashboard()).projects.length).toBe(1);
 
     const compactPush = queuedWebhooks.find((message) => message.delivery === "delivery-6")
       ?.payload as Record<string, unknown> | undefined;
-    assert.equal("commits" in (compactPush ?? {}), false);
-    assert.equal(JSON.stringify(compactPush).length < 2_000, true);
+    expect("commits" in (compactPush ?? {})).toBe(false);
+    expect(JSON.stringify(compactPush).length < 2_000).toBe(true);
     const indexes = await cache.list({ prefix: "refresh:target-index:v1:owner:owner:" });
-    assert.equal(indexes.keys.length > 0, true);
-    assert.equal(durableObjectNames.includes("github-webhook-admission"), true);
-    assert.equal(durableObjectNames.includes("github-webhook-process:owner"), true);
-    assert.equal(durableObjectNames.includes("github-webhooks"), false);
+    expect(indexes.keys.length > 0).toBe(true);
+    expect(durableObjectNames.includes("github-webhook-admission")).toBe(true);
+    expect(durableObjectNames.includes("github-webhook-process:owner")).toBe(true);
+    expect(durableObjectNames.includes("github-webhooks")).toBe(false);
   } finally {
     globalThis.fetch = originalFetch;
   }

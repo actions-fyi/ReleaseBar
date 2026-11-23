@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { buildDashboard } from "../dashboard.js";
 import { kvStore } from "../dashboard-test-harness.js";
 
@@ -74,8 +73,8 @@ test("dashboard cached hydration keeps fresh owner issue and PR totals", async (
   openPullRequests = 5;
   const payload = await buildDashboard(options);
 
-  assert.equal(payload.projects[0]?.openIssues, 8);
-  assert.equal(payload.projects[0]?.openPullRequests, 5);
+  expect(payload.projects[0]?.openIssues).toBe(8);
+  expect(payload.projects[0]?.openPullRequests).toBe(5);
 });
 
 test("dashboard build reuses cached repo fragments when metadata is unchanged", async () => {
@@ -167,13 +166,10 @@ test("dashboard build reuses cached repo fragments when metadata is unchanged", 
       },
     });
 
-  assert.equal((await build()).totals.repos, 1);
-  assert.equal((await build()).totals.repos, 1);
-  assert.equal(fanoutCalls, 3);
-  assert.equal(
-    writtenKeys.some((key) => key.startsWith("repo:v2:owner/repo:")),
-    true,
-  );
+  expect((await build()).totals.repos).toBe(1);
+  expect((await build()).totals.repos).toBe(1);
+  expect(fanoutCalls).toBe(3);
+  expect(writtenKeys.some((key) => key.startsWith("repo:v2:owner/repo:"))).toBe(true);
 });
 
 test("dashboard build ignores explicit private repositories", async () => {
@@ -215,8 +211,8 @@ test("dashboard build ignores explicit private repositories", async () => {
     },
   });
 
-  assert.equal(payload.totals.repos, 0);
-  assert.equal(releaseFetched, false);
+  expect(payload.totals.repos).toBe(0);
+  expect(releaseFetched).toBe(false);
 });
 
 test("dashboard cache cap only marks omitted repos as capped", async () => {
@@ -285,8 +281,8 @@ test("dashboard cache cap only marks omitted repos as capped", async () => {
       },
     });
 
-  assert.equal((await build([repo("one"), repo("two")])).cache?.capped, false);
-  assert.equal((await build([repo("one"), repo("two"), repo("three")])).cache?.capped, true);
+  expect((await build([repo("one"), repo("two")])).cache?.capped).toBe(false);
+  expect((await build([repo("one"), repo("two"), repo("three")])).cache?.capped).toBe(true);
 });
 
 test("explicit repositories survive capped owner scan trimming", async () => {
@@ -358,11 +354,8 @@ test("explicit repositories survive capped owner scan trimming", async () => {
     },
   });
 
-  assert.equal(
-    payload.projects.some((project) => project.fullName === "owner/three"),
-    true,
-  );
-  assert.equal(payload.cache?.capped, true);
+  expect(payload.projects.some((project) => project.fullName === "owner/three")).toBe(true);
+  expect(payload.cache?.capped).toBe(true);
 });
 
 test("dashboard repo cap applies after visibility filters", async () => {
@@ -439,11 +432,8 @@ test("dashboard repo cap applies after visibility filters", async () => {
     },
   });
 
-  assert.deepEqual(
-    payload.projects.map((project) => project.name),
-    ["one", "two"],
-  );
-  assert.equal(payload.cache?.capped, true);
+  expect(payload.projects.map((project) => project.name)).toStrictEqual(["one", "two"]);
+  expect(payload.cache?.capped).toBe(true);
 });
 
 test("dashboard repo cap applies per owner for custom dashboards", async () => {
@@ -522,12 +512,12 @@ test("dashboard repo cap applies per owner for custom dashboards", async () => {
   });
 
   const fullNames = payload.projects.map((project) => project.fullName);
-  assert.equal(payload.totals.repos, 4);
-  assert.equal(fullNames.includes("owner/one"), true);
-  assert.equal(fullNames.includes("owner/two"), true);
-  assert.equal(fullNames.includes("owner/three"), false);
-  assert.equal(fullNames.includes("other/alpha"), true);
-  assert.equal(fullNames.includes("other/beta"), true);
-  assert.equal(fullNames.includes("other/gamma"), false);
-  assert.equal(payload.cache?.capped, true);
+  expect(payload.totals.repos).toBe(4);
+  expect(fullNames.includes("owner/one")).toBe(true);
+  expect(fullNames.includes("owner/two")).toBe(true);
+  expect(fullNames.includes("owner/three")).toBe(false);
+  expect(fullNames.includes("other/alpha")).toBe(true);
+  expect(fullNames.includes("other/beta")).toBe(true);
+  expect(fullNames.includes("other/gamma")).toBe(false);
+  expect(payload.cache?.capped).toBe(true);
 });

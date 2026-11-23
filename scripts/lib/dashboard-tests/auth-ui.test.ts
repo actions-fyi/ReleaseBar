@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import {
   primaryAuthActionFor,
   primaryAuthLabelFor,
@@ -25,16 +24,16 @@ function authPayload(overrides: Partial<AuthPayload> = {}): AuthPayload {
 
 test("anonymous GitHub action logs in before offering App installation", () => {
   const auth = authPayload();
-  assert.equal(primaryAuthActionFor(auth, false), "login");
-  assert.equal(primaryAuthLabelFor(auth, false), "Log in with GitHub");
-  assert.equal(primaryAuthLabelFor(auth, false, true), "Log in");
-  assert.equal(primaryAuthTitleFor(auth, false), "Log in with GitHub");
+  expect(primaryAuthActionFor(auth, false)).toBe("login");
+  expect(primaryAuthLabelFor(auth, false)).toBe("Log in with GitHub");
+  expect(primaryAuthLabelFor(auth, false, true)).toBe("Log in");
+  expect(primaryAuthTitleFor(auth, false)).toBe("Log in with GitHub");
 });
 
 test("App-only deployments keep installation as the available anonymous action", () => {
   const auth = authPayload({ configured: false });
-  assert.equal(primaryAuthActionFor(auth, false), "install");
-  assert.equal(primaryAuthLabelFor(auth, false), "Install GitHub App");
+  expect(primaryAuthActionFor(auth, false)).toBe("install");
+  expect(primaryAuthLabelFor(auth, false)).toBe("Install GitHub App");
 });
 
 test("signed-in GitHub action only offers installation when coverage is missing", () => {
@@ -46,10 +45,10 @@ test("signed-in GitHub action only offers installation when coverage is missing"
     url: "https://github.com/octocat",
   };
   const covered = authPayload({ user });
-  assert.equal(primaryAuthActionFor(covered, false), null);
-  assert.equal(primaryAuthLabelFor(covered, false), "GitHub Connected");
+  expect(primaryAuthActionFor(covered, false)).toBe(null);
+  expect(primaryAuthLabelFor(covered, false)).toBe("GitHub Connected");
 
   const uncovered = authPayload({ user, installNeeded: true });
-  assert.equal(primaryAuthActionFor(uncovered, false), "install");
-  assert.equal(primaryAuthLabelFor(uncovered, false), "Install GitHub App");
+  expect(primaryAuthActionFor(uncovered, false)).toBe("install");
+  expect(primaryAuthLabelFor(uncovered, false)).toBe("Install GitHub App");
 });

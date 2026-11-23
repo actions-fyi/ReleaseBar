@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import type { RepoDetailPayload } from "../../../src/types.js";
 import { githubAccessRouteRecords, kvStore, worker } from "../dashboard-test-harness.js";
 
@@ -41,7 +40,7 @@ test("worker builds cached repository detail with releases and stats", async () 
       );
     }
     if (path === "/repos/acme/releasebar/releases") {
-      assert.equal(url.searchParams.get("per_page"), "100");
+      expect(url.searchParams.get("per_page")).toBe("100");
       return Response.json([
         {
           tag_name: "v1.2.3",
@@ -124,8 +123,8 @@ test("worker builds cached repository detail with releases and stats", async () 
         query?: string;
         variables?: Record<string, string>;
       };
-      assert.match(payload.query ?? "", /ReleaseBarRepoWorkTrend/);
-      assert.match(payload.variables?.issuesOpened30d ?? "", /is:issue created:>=/);
+      expect(payload.query ?? "").toMatch(/ReleaseBarRepoWorkTrend/);
+      expect(payload.variables?.issuesOpened30d ?? "").toMatch(/is:issue created:>=/);
       return Response.json({
         data: {
           issuesOpened30d: { issueCount: 5 },
@@ -156,30 +155,27 @@ test("worker builds cached repository detail with releases and stats", async () 
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as RepoDetailPayload;
-    assert.equal(body.fullName, "acme/releasebar");
-    assert.equal(body.project.version, "v1.2.3");
-    assert.equal(body.project.commitsSinceRelease, 6);
-    assert.equal(body.project.openIssues, 7);
-    assert.equal(body.project.openPullRequests, 2);
-    assert.equal(body.project.ciState, "failure");
-    assert.equal(body.project.ciWorkflow, "Lint");
-    assert.equal(body.releases.length, 2);
-    assert.equal(body.contributors[0]?.login, "octo");
-    assert.equal(body.contributors[0]?.trustScore, 73);
-    assert.equal(body.contributors[0]?.trustTier, "high");
-    assert.equal(body.commitActivity[0]?.total, 7);
-    assert.equal(body.codeFrequency[0]?.additions, 120);
-    assert.equal(body.codeFrequency[0]?.deletions, 20);
-    assert.equal(body.stats?.commitActivity.state, "ready");
-    assert.equal(body.stats?.codeFrequency.state, "ready");
-    assert.equal(body.workTrend?.issuesOpened30d, 5);
-    assert.equal(body.workTrend?.pullRequestsClosed30d, 2);
-    assert.deepEqual(
-      body.languages.map((language) => language.name),
-      ["TypeScript", "CSS"],
-    );
+    expect(body.fullName).toBe("acme/releasebar");
+    expect(body.project.version).toBe("v1.2.3");
+    expect(body.project.commitsSinceRelease).toBe(6);
+    expect(body.project.openIssues).toBe(7);
+    expect(body.project.openPullRequests).toBe(2);
+    expect(body.project.ciState).toBe("failure");
+    expect(body.project.ciWorkflow).toBe("Lint");
+    expect(body.releases.length).toBe(2);
+    expect(body.contributors[0]?.login).toBe("octo");
+    expect(body.contributors[0]?.trustScore).toBe(73);
+    expect(body.contributors[0]?.trustTier).toBe("high");
+    expect(body.commitActivity[0]?.total).toBe(7);
+    expect(body.codeFrequency[0]?.additions).toBe(120);
+    expect(body.codeFrequency[0]?.deletions).toBe(20);
+    expect(body.stats?.commitActivity.state).toBe("ready");
+    expect(body.stats?.codeFrequency.state).toBe("ready");
+    expect(body.workTrend?.issuesOpened30d).toBe(5);
+    expect(body.workTrend?.pullRequestsClosed30d).toBe(2);
+    expect(body.languages.map((language) => language.name)).toStrictEqual(["TypeScript", "CSS"]);
     const accessRecords = await githubAccessRouteRecords(env.DASHBOARD_CACHE);
     assert.ok(
       accessRecords.some(
@@ -190,7 +186,7 @@ test("worker builds cached repository detail with releases and stats", async () 
           record.status === 200,
       ),
     );
-    assert.equal(await env.DASHBOARD_CACHE.get("github:budget:v1:shared:core"), null);
+    expect(await env.DASHBOARD_CACHE.get("github:budget:v1:shared:core")).toBe(null);
 
     await env.DASHBOARD_CACHE.put(
       "trust-profile:v4:octo",
@@ -208,11 +204,11 @@ test("worker builds cached repository detail with releases and stats", async () 
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(cached.status, 200);
+    expect(cached.status).toBe(200);
     const cachedBody = (await cached.json()) as RepoDetailPayload;
-    assert.equal(cachedBody.contributors[0]?.trustScore, 62);
-    assert.equal(cachedBody.contributors[0]?.trustTier, "medium");
-    assert.equal(calls, 11);
+    expect(cachedBody.contributors[0]?.trustScore).toBe(62);
+    expect(cachedBody.contributors[0]?.trustTier).toBe("medium");
+    expect(calls).toBe(11);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -256,7 +252,7 @@ test("worker revalidates stale repository metadata with ETags", async () => {
     const path = url.pathname;
     if (path === repoPath) {
       repositoryCalls += 1;
-      assert.equal(new Headers(init?.headers).get("if-none-match"), '"repo-etag"');
+      expect(new Headers(init?.headers).get("if-none-match")).toBe('"repo-etag"');
       return new Response(null, { status: 304, headers: { etag: '"repo-etag"' } });
     }
     if (path === `${repoPath}/releases`) return Response.json([]);
@@ -286,15 +282,15 @@ test("worker revalidates stale repository metadata with ETags", async () => {
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as RepoDetailPayload;
-    assert.equal(body.project.description, "ETag repository");
-    assert.equal(repositoryCalls, 1);
+    expect(body.project.description).toBe("ETag repository");
+    expect(repositoryCalls).toBe(1);
     const refreshed = JSON.parse((await env.DASHBOARD_CACHE.get(auxKey)) ?? "{}") as {
       generatedAt?: string;
       etag?: string;
     };
-    assert.equal(refreshed.etag, '"repo-etag"');
+    expect(refreshed.etag).toBe('"repo-etag"');
     assert.ok(Date.parse(refreshed.generatedAt ?? "") > Date.now() - 60_000);
   } finally {
     globalThis.fetch = originalFetch;
@@ -325,7 +321,7 @@ test("worker bundles App-backed repository core data through GraphQL", async () 
   globalThis.fetch = async (input, init) => {
     const url = new URL(String(input));
     const authorization = new Headers(init?.headers).get("authorization");
-    assert.equal(authorization, "Bearer installation-token");
+    expect(authorization).toBe("Bearer installation-token");
     if (url.pathname === "/graphql") {
       const body = JSON.parse(String(init?.body ?? "{}")) as {
         query?: string;
@@ -418,25 +414,25 @@ test("worker bundles App-backed repository core data through GraphQL", async () 
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as RepoDetailPayload;
-    assert.equal(coreCalls, 1);
-    assert.equal(body.project.openIssues, 2);
-    assert.equal(body.project.openPullRequests, 1);
-    assert.equal(body.project.latestCommitSha, "abcdef1");
-    assert.equal(body.project.ciState, "failure");
-    assert.equal(body.cache.quota?.source, "app");
-    assert.equal(body.cache.quota?.account, account);
+    expect(coreCalls).toBe(1);
+    expect(body.project.openIssues).toBe(2);
+    expect(body.project.openPullRequests).toBe(1);
+    expect(body.project.latestCommitSha).toBe("abcdef1");
+    expect(body.project.ciState).toBe("failure");
+    expect(body.cache.quota?.source).toBe("app");
+    expect(body.cache.quota?.account).toBe(account);
 
     const pendingResponse = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/pending"),
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(pendingResponse.status, 200);
+    expect(pendingResponse.status).toBe(200);
     const pending = (await pendingResponse.json()) as RepoDetailPayload;
-    assert.equal(coreCalls, 2);
-    assert.equal(pending.project.ciState, "running");
+    expect(coreCalls).toBe(2);
+    expect(pending.project.ciState).toBe("running");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -460,7 +456,7 @@ test("worker does not cache private App-backed repository core data", async () =
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
-    assert.equal(url.pathname, "/graphql");
+    expect(url.pathname).toBe("/graphql");
     return Response.json({
       data: {
         repository: {
@@ -499,13 +495,12 @@ test("worker does not cache private App-backed repository core data", async () =
       },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 502);
-    assert.equal(
+    expect(response.status).toBe(502);
+    expect(
       await cache.get(
         `repo-detail:aux:v2:${encodeURIComponent("acme/private")}:core-graphql:${encodeURIComponent("acme/private")}`,
       ),
-      null,
-    );
+    ).toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -578,11 +573,8 @@ test("worker coalesces concurrent cold repository detail builds", async () => {
     const second = request();
     releaseRepository?.();
     const responses = await Promise.all([first, second]);
-    assert.deepEqual(
-      responses.map((response) => response.status),
-      [200, 200],
-    );
-    assert.equal(repositoryCalls, 1);
+    expect(responses.map((response) => response.status)).toStrictEqual([200, 200]);
+    expect(repositoryCalls).toBe(1);
   } finally {
     globalThis.fetch = originalFetch;
   }
