@@ -16,6 +16,10 @@ export default defineConfig({
   test: {
     // Print what a test logs only when it fails: the Worker logs every audit event.
     silent: "passed-only",
+    // node:test, which ran these tests before, had no timeout, and the slowest test waits out
+    // about five seconds of the Worker's own retry delays: Vitest's default of 5 seconds is too
+    // close to that.
+    testTimeout: 30_000,
     coverage: {
       // The Workers runtime has no V8 coverage: the code is instrumented instead.
       provider: "istanbul",
