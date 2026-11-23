@@ -1,7 +1,10 @@
+import { env as runtimeEnv } from "cloudflare:workers";
 import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.ts";
 import { refreshTargetSourceLimit } from "../worker/config.ts";
+import { refreshTargetSources } from "../worker/refresh-targets.ts";
+import { writeRefreshTargets } from "../worker/store/refresh-targets.ts";
 import {
   deleteStoredRefreshTarget,
   fillTargetSource,
@@ -410,6 +413,39 @@ test("a target is stored under all of its sources or under none", async () => {
 
   expect(await indexedTargets("owner", "owner")).toStrictEqual([]);
   expect(await storedRefreshTarget(target.key)).toBe(null);
+});
+
+test("targets past their lifetime take no place in a source's limit", async () => {
+  const target = (name: string): RefreshTarget => ({
+    key: `dashboard:v6:expired-fillers-${name}`,
+    kind: "dashboard",
+    owner: "owner",
+    owners: ["owner"],
+    repos: ["other/repo"],
+    includeReleaseData: true,
+    path: "/owner?repos=other/repo",
+    priority: 100,
+    lastSeenAt: new Date().toISOString(),
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+    nextDueAt: "2999-01-01T00:00:00Z",
+    failureCount: 0,
+  });
+  // The repository lists as many targets as a source may, all last seen 91 days ago and not
+  // deleted yet.
+  await fillTargetSource("repo", "other/repo", Date.now() - 91 * 24 * 60 * 60 * 1000);
+  const first = target("first");
+  const second = target("second");
+
+  expect(await storeRefreshTarget(first)).toBe("created");
+  expect(
+    await writeRefreshTargets(runtimeEnv, [
+      { target: second, sources: refreshTargetSources(second) },
+    ]),
+  ).toStrictEqual(["created"]);
+
+  const listed = (await indexedTargets("repo", "other/repo")).map((stored) => stored.key);
+  expect(listed.sort()).toStrictEqual([first.key, second.key]);
 });
 
 test("rejected target admission does not persist or queue the target", async () => {

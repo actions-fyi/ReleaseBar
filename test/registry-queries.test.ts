@@ -15,6 +15,8 @@ import {
   warmInstallationCaches,
   writeInstallationRegistry,
 } from "../worker/installation-registry.ts";
+import { syncGithubAppInstallations } from "../worker/auth-oauth.ts";
+import { writeStoredInstallations } from "../worker/store/installations.ts";
 import {
   kvStore,
   observedDatabase,
@@ -475,17 +477,17 @@ test("the installations of many accounts are stored with a bounded number of que
     accounts.map(() => "installation-warm"),
   );
   // Before, writing the registry alone sent 240 queries, eight for each account.
-  // - The registry: the stored installations, two batches of 25 writes, the profiles, the
-  //   installations again, and the targets (read, limits, two batches of 25).
-  // - The warm-up: profiles, installations, the targets (read, limits, two batches), two
+  // - The registry: the stored installations, their writes in one batch, the profiles, the
+  //   installations again, and the targets (read, limits, one batch).
+  // - The warm-up: profiles, installations, the targets (read, limits, one batch), two
   //   batches of 25 jobs.
   // - The audit event of each job is written by itself here, because no handler collects them:
   //   in an invocation of the Worker they are one batch.
   const audited = counts.sql.filter((sql) => sql.startsWith("INSERT INTO refresh_audit_events"));
   expect(audited.length).toBe(accounts.length);
   const queries = counts.queries - audited.length + 1;
-  expect(written).toBe(1 + 2 + 2 + 4);
-  expect(queries - written).toBe(2 + 4 + 2 + 1);
+  expect(written).toBe(1 + 1 + 2 + 3);
+  expect(queries - written).toBe(2 + 3 + 2 + 1);
   expect(queries).toBeLessThanOrEqual(queryCeiling);
   // A cached dashboard read and a queue send for each account.
   expect(bindings.used).toStrictEqual({
@@ -498,4 +500,125 @@ test("the installations of many accounts are stored with a bounded number of que
   counts.queries = 0;
   await writeInstallationRegistry(env, installations);
   expect(counts.queries).toBe(1);
+});
+
+test("the installation sync of as many installations as GitHub lists stays within the free plan's D1 queries", async () => {
+  // GitHub's listing is read to 10 pages of 100, and a full tenth page fails the sync: 999
+  // installations are the most one sync stores. Here every one of them is new, installed for all
+  // repositories, so each also becomes a refresh target; and 999 others are stored that GitHub no
+  // longer lists, so each is deleted and recorded as removed.
+  const fresh = Array.from({ length: 999 }, (_, index) => `fresh${index}`);
+  const gone = Array.from({ length: 999 }, (_, index) =>
+    appInstallation(5000 + index, `gone${index}`),
+  );
+  await writeStoredInstallations(testEnv({}), gone);
+  const { database, counts } = observedDatabase();
+  const bindings = countedBindings();
+  const env = testEnv({
+    ...appVars,
+    DASHBOARD_CACHE: bindings.DASHBOARD_CACHE,
+    DB: database,
+    REFRESH_QUEUE: bindings.REFRESH_QUEUE,
+  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname !== "/app/installations") throw new Error(`unexpected fetch ${url.pathname}`);
+    const page = Number(url.searchParams.get("page"));
+    return Response.json(
+      fresh.slice((page - 1) * 100, page * 100).map((login, index) => ({
+        id: (page - 1) * 100 + index + 1,
+        account: {
+          login,
+          type: "Organization",
+          avatar_url: `https://avatars.githubusercontent.com/u/${index}`,
+          html_url: `https://github.com/${login}`,
+        },
+        html_url: `https://github.com/organizations/${login}/settings/installations/${index}`,
+        repository_selection: "all",
+        target_type: "Organization",
+      })),
+    );
+  };
+  try {
+    const stored = await syncGithubAppInstallations(env);
+
+    expect(stored.length).toBe(999);
+    expect(new Set(stored.map((installation) => installation.accountLogin))).toStrictEqual(
+      new Set(fresh),
+    );
+    // - The stored installations, listed before and after: 4 pages of 250 each time.
+    // - The removed ones: 1 deletion, and their funnel events in 4 batches of 250.
+    // - The registry: the stored installations, 10 batches of 100 writes, the profiles, the
+    //   installations again, and the targets (read, limits, 10 batches of 100).
+    // - The funnel event of the sync.
+    expect(counts.queries).toBe(8 + 5 + 14 + 11 + 1);
+    expect(counts.queries).toBeLessThan(50);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("a dashboard request sends D1 a bounded number of queries", async () => {
+  const owner = "visited";
+  const key = dashboardCacheKey({
+    owner,
+    includeUnreleased: true,
+    includeReleaseData: true,
+    schemaVersion: 6,
+  });
+  const request = async (cached: Record<string, string>) => {
+    const { database, counts } = observedDatabase();
+    const bindings = countedBindings({
+      [`owner:v1:${owner}`]: JSON.stringify({ type: "user", login: owner }),
+      ...cached,
+    });
+    const waits: Promise<unknown>[] = [];
+    const response = await worker.fetch(
+      new Request(`https://release.bar/api/${owner}`),
+      {
+        DASHBOARD_CACHE: bindings.DASHBOARD_CACHE,
+        DB: database,
+        REFRESH_QUEUE: bindings.REFRESH_QUEUE,
+      },
+      { waitUntil: (promise) => void waits.push(promise) },
+    );
+    await Promise.all(waits);
+    expect(response.status).toBe(200);
+    return { counts, used: bindings.used, sent: bindings.sent };
+  };
+  const dashboard = (generatedAt: string, state: "fresh" | "stale") =>
+    JSON.stringify({
+      ...testDashboard(owner, [testProject({ owner, name: "repo" })]),
+      generatedAt,
+      cache: {
+        state,
+        stale: state === "stale",
+        capped: false,
+        repoLimit: 200,
+        generatedAt,
+        countsUpdatedAt: generatedAt,
+        projectCountsUpdatedAt: { [`${owner}/repo`]: generatedAt },
+        releasesUpdatedAt: generatedAt,
+        ciUpdatedAt: generatedAt,
+      },
+    });
+
+  // A dashboard in the cache that is a day old: it is served, its target is stored and a job
+  // is enqueued to refresh it.
+  const stale = await request({
+    [key]: dashboard(new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), "stale"),
+  });
+  // The profile, the owner's metadata, the target (read, whether it is stored, the limits of
+  // its sources, the write), the job, and one batch of audit events.
+  expect(stale.counts.queries).toBe(2 + 4 + 1 + 1);
+  expect(stale.sent.length).toBe(1);
+  expect(stale.used).toStrictEqual({ kvReads: 2, kvWrites: 0, queueSends: 1 });
+
+  // The same dashboard, fresh, a moment later: it is served, and its target is seen again.
+  const fresh = await request({ [key]: dashboard(new Date().toISOString(), "fresh") });
+  // The same without the limits, which only a new target is checked against, and the job.
+  expect(fresh.counts.queries).toBe(2 + 3 + 1);
+  expect(fresh.sent.length).toBe(0);
+  expect(fresh.used).toStrictEqual({ kvReads: 2, kvWrites: 0, queueSends: 0 });
 });

@@ -32,7 +32,6 @@ import {
   manualRefreshCooldownActive,
   markManualRefreshCooldown,
   optionsFromUrl,
-  readProfile,
   retryAfterHeaders,
   withCacheState,
   writeCached,
@@ -44,6 +43,7 @@ import {
   refreshDashboardMetadataFirst,
   scheduleProgressiveBuild,
   sleep,
+  dashboardRequest,
 } from "./dashboard-rebuild.ts";
 import {
   allowRequestRefresh,
@@ -57,8 +57,8 @@ import {
   dashboardSyncDetail,
   rememberRefreshTarget,
 } from "./refresh-targets.ts";
-import { dashboardRequest } from "./request-lock.ts";
 import type { BackgroundContext } from "./runtime.ts";
+import { readProfile } from "./store/profiles.ts";
 
 export async function ownerResponse(
   request: Request,

@@ -318,6 +318,7 @@ test("worker refresh jobs defer shared work while shared quota is paused", async
   const job: RefreshJob = {
     id: "job-shared-paused",
     targetKey: key,
+    target,
     kind: "dashboard",
     status: "queued",
     reason: "scheduled",
@@ -413,6 +414,7 @@ test("worker refresh jobs defer shared work while GraphQL is backed off", async 
   const job: RefreshJob = {
     id: "job-shared-graphql-paused",
     targetKey: key,
+    target,
     kind: "dashboard",
     status: "queued",
     reason: "scheduled",

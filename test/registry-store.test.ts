@@ -545,8 +545,8 @@ test("installations and profiles of many accounts are read with one query, by ex
     installation(2, "open"),
     installation(3, "gone"),
   ]);
-  // 233 installations, 25 to a batch.
-  expect(counts.queries).toBe(10);
+  // 233 installations, 100 to a batch.
+  expect(counts.queries).toBe(3);
   await runtimeEnv.DB.prepare("UPDATE installations SET expires_at = ?1 WHERE id = 3")
     .bind(Date.now() - 1000)
     .run();
@@ -576,7 +576,8 @@ test("installations and profiles of many accounts are read with one query, by ex
 
   counts.queries = 0;
   await deleteStoredInstallations(env, ["OpenClaw", "open%", ...many.slice(0, 100)]);
-  expect(counts.queries).toBe(2);
+  // More accounts than one statement binds: two statements, one batch.
+  expect(counts.queries).toBe(1);
   expect(await readStoredInstallation(env, "openclaw")).toBe(null);
   expect((await readStoredInstallation(env, "open"))?.id).toBe(8);
   expect((await listStoredInstallations(env)).length).toBe(many.length - 100 + 1);
@@ -696,4 +697,53 @@ test("a profile is stored and read whole, by its owner's exact slug", async () =
 
   await deleteProfile(env, "openclaw");
   expect(await readProfile(env, "openclaw")).toBe(null);
+});
+
+test("the database refuses a JSON column of the wrong shape", async () => {
+  const database = runtimeEnv.DB;
+  const profile = (lists: [string, string, string, string]) =>
+    database
+      .prepare(
+        `INSERT INTO profiles
+           (owner, include_owners, include_repos, hidden_owners, hidden_repos, updated_at, updated_by)
+         VALUES ('shape', ?1, ?2, ?3, ?4, '2026-06-13T12:00:00Z', 'shape')`,
+      )
+      .bind(...lists)
+      .run();
+  const installation = (repositories: string) =>
+    database
+      .prepare(
+        `INSERT INTO installations
+           (id, account_login, account_type, account_url, avatar_url, repository_selection,
+            repositories, updated_at, expires_at)
+         VALUES (7, 'shape', 'org', 'https://github.com/shape', 'https://avatars/7', 'selected',
+            ?1, '2026-06-13T12:00:00Z', 9999999999999)`,
+      )
+      .bind(repositories)
+      .run();
+  const snapshot = (value: string) =>
+    database
+      .prepare(
+        "INSERT INTO owner_metadata (owner, revision, snapshot, expires_at) VALUES ('shape', 'r', ?1, 9999999999999)",
+      )
+      .bind(value)
+      .run();
+
+  // Each list of a profile, in turn, as an object, a string, a number and text that is not JSON.
+  for (const wrong of ['{"a":1}', '"owner"', "5", "not json"]) {
+    for (let column = 0; column < 4; column += 1) {
+      const lists: [string, string, string, string] = ["[]", "[]", "[]", "[]"];
+      lists[column] = wrong;
+      await expect(profile(lists)).rejects.toThrow(/CHECK constraint failed/);
+    }
+    await expect(installation(wrong)).rejects.toThrow(/CHECK constraint failed/);
+  }
+  for (const wrong of ["[]", '"owner"', "5", "not json"]) {
+    await expect(snapshot(wrong)).rejects.toThrow(/CHECK constraint failed/);
+  }
+
+  await profile(['["a"]', "[]", "[]", '["a/b"]']);
+  await installation('["shape/a"]');
+  await snapshot('{"owner":"shape"}');
+  expect((await readProfile(testEnv({}), "shape"))?.hiddenRepos).toStrictEqual(["a/b"]);
 });

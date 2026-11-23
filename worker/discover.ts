@@ -43,7 +43,6 @@ import {
   isGitHubRateLimit,
   optionsFromUrl,
   readCached,
-  readProfile,
   retryAfterHeaders,
   withCacheState,
   writeCached,
@@ -60,6 +59,7 @@ import {
   discoverPeriodLabel,
   discoverSearchQuery,
 } from "./repo-github.ts";
+import { readProfile } from "./store/profiles.ts";
 
 export function discoverFreshness(repo: GitHubSearchRepository): Project["freshness"] {
   const stars = repo.stargazers_count ?? 0;

@@ -16,16 +16,11 @@ import {
   type OwnerMetadataSnapshot,
   repoLimit,
 } from "./config.ts";
-import { safeIso } from "./owner-metadata-write.ts";
 
 import { readCacheEntry, readCacheText, writeCacheEntry, writeCacheText } from "./store/cache.ts";
-import {
-  ensureProfileSnapshot,
-  profileSnapshotStorageKey,
-  readProfileSnapshot,
-  writeProfileSnapshot,
-} from "./store/profile-snapshots.ts";
-import { deleteProfile, readProfile, writeStoredProfile } from "./store/profiles.ts";
+import { writeProfileSnapshot } from "./store/profile-snapshots.ts";
+import { writeStoredProfile } from "./store/profiles.ts";
+import { safeIso } from "./time.ts";
 
 export function withCacheState(
   payload: DashboardPayload,
@@ -126,9 +121,6 @@ export function errorStatus(error: unknown): number {
   if (githubStatus === "404") return 404;
   return isGitHubRateLimit(error) ? 429 : 502;
 }
-
-export { deleteProfile, readProfile };
-export { ensureProfileSnapshot, profileSnapshotStorageKey, readProfileSnapshot };
 
 export function dashboardWithVisibleProjects(payload: DashboardPayload): DashboardPayload {
   if (payload.options?.includeArchived) return payload;

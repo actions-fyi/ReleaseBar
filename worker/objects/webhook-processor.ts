@@ -9,7 +9,6 @@ import {
 import { collectAudit } from "../audit-collector.ts";
 import { randomNonce } from "../crypto.ts";
 import { sleep } from "../dashboard-rebuild.ts";
-import { safeIso } from "../owner-metadata-write.ts";
 import type { GitHubWebhookJob, StoredWebhookPending } from "../runtime.ts";
 import { withLockJurisdiction } from "../store/bindings.ts";
 import { sendQueueMessage } from "../store/queue.ts";
@@ -20,6 +19,7 @@ import {
   pendingWebhookFits,
 } from "../webhook-targets.ts";
 import { firstRow, parseStored } from "./sql.ts";
+import { safeIso } from "../time.ts";
 
 // How a call to `process` ended.
 // - "processed": the job led a batch; `coalesced` entries were processed and `remaining` tells

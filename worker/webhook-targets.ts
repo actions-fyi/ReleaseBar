@@ -28,14 +28,17 @@ import {
   webhookTargetBatchSize,
   webhookTargetConcurrency,
 } from "./config.ts";
-import { safeIso } from "./owner-metadata-write.ts";
 import { isRefreshTarget } from "./refresh-targets.ts";
 import { repoDetailCacheKey } from "./release-summary.ts";
 import { ownerActivityCacheKey, repoDetailAuxCachePrefix } from "./repo-github.ts";
-import { webhookHex } from "./request-lock.ts";
 import { socialRepoCacheKey } from "./social-card.ts";
 import { deleteCacheEntries, deleteCacheEntry } from "./store/cache.ts";
 import { indexedRefreshTargetPage, indexedRefreshTargets } from "./store/refresh-targets.ts";
+import { safeIso } from "./time.ts";
+
+function webhookHex(bytes: ArrayBuffer): string {
+  return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 
 export async function validWebhookSignature(
   secret: string,
@@ -388,12 +391,8 @@ export async function invalidateRepoDetailCaches(env: Env, fullName: string): Pr
   if (!owner || !repo) return;
   await Promise.all([
     deleteCacheEntry(env, repoDetailCacheKey(owner, repo)),
-    deleteCachePrefix(env, repoDetailAuxCachePrefix(fullName)),
+    deleteCacheEntries(env, repoDetailAuxCachePrefix(fullName)),
   ]);
-}
-
-export function deleteCachePrefix(env: Env, prefix: string): Promise<void> {
-  return deleteCacheEntries(env, prefix);
 }
 
 export async function invalidatePublicRepoCaches(env: Env, fullName: string): Promise<void> {
@@ -414,22 +413,22 @@ export async function invalidatePublicRepoCaches(env: Env, fullName: string): Pr
     ...(["day", "week", "month"] as ActivityRange[]).map((range) =>
       deleteCacheEntry(env, ownerActivityCacheKey(owner, range)),
     ),
-    deleteCachePrefix(env, "repo-audience:v5:"),
-    deleteCachePrefix(env, "owner-activity:v"),
-    deleteCachePrefix(env, "owner-activity-summary:"),
-    deleteCachePrefix(
+    deleteCacheEntries(env, "repo-audience:v5:"),
+    deleteCacheEntries(env, "owner-activity:v"),
+    deleteCacheEntries(env, "owner-activity-summary:"),
+    deleteCacheEntries(
       env,
       `owner-activity-summary:v${activitySummaryPromptVersion}:${slugOwner(owner)}:`,
     ),
-    deleteCachePrefix(
+    deleteCacheEntries(
       env,
       `repo-activity-summary:v${activitySummaryPromptVersion}:${fullName.toLowerCase()}:`,
     ),
-    deleteCachePrefix(
+    deleteCacheEntries(
       env,
       `release-summary:v${releaseSummaryPromptVersion}:${fullName.toLowerCase()}:`,
     ),
-    deleteCachePrefix(env, `discover:v${discoverCacheSchemaVersion}:`),
+    deleteCacheEntries(env, `discover:v${discoverCacheSchemaVersion}:`),
   ]);
 }
 

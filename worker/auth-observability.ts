@@ -6,12 +6,7 @@ import {
   authFunnelCountInventory,
   listAuthFunnelEvents,
 } from "./store/auth-funnel.ts";
-import {
-  listStoredInstallations,
-  storedInstallationInventory,
-  type StoredInstallationRecord,
-  storedInstallationSchema,
-} from "./store/installations.ts";
+import { storedInstallationInventory } from "./store/installations.ts";
 
 const authFunnelListLimit = 80;
 const adminInstallationListLimit = 80;
@@ -20,8 +15,6 @@ const adminAuthCounterListLimit = 80;
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
-
-export { listStoredInstallations, type StoredInstallationRecord, storedInstallationSchema };
 
 function authEventDetail(value: string | null | undefined): string | null {
   if (!value) return null;

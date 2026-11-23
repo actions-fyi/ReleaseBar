@@ -2,8 +2,8 @@ import { deleteExpiredAuthFunnelRows } from "./store/auth-funnel.ts";
 import { deleteExpiredGitHubAccessCounts } from "./store/github-access.ts";
 import { deleteExpiredRefreshAuditEvents } from "./store/refresh-audit.ts";
 
-// Deletes the audit rows that are past their retention, a bounded number per table: KV expired
-// such entries by itself, D1 does not. Run by the scheduled handler; what one run leaves, the
+// Deletes the audit rows that are past their retention, a bounded number per table: D1
+// expires nothing by itself. Run by the scheduled handler; what one run leaves, the
 // next takes. A table that fails is logged and does not stop the others.
 export async function deleteExpiredAuditRows(env: Env, now = Date.now()): Promise<void> {
   const tables: Array<[string, (env: Env, now: number) => Promise<number>]> = [

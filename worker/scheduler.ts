@@ -1,4 +1,5 @@
 import type { RefreshJob, SchedulerAdminPayload } from "../src/types.ts";
+import { listRefreshAuditEvents } from "./store/refresh-audit.ts";
 import { mapConcurrent } from "./concurrency.ts";
 import {
   githubGraphqlBackoffDeferUntil,
@@ -10,10 +11,13 @@ import { canonicalDomain } from "./runtime.ts";
 import { resolveOwners } from "./app-shell.ts";
 import { appTokenConfigured } from "./auth-oauth.ts";
 import { installationRegistryFor, sourceInstallationToken } from "./auth-tokens.ts";
-import { adminTargetListLimit, queuedProgressiveBuildBudgetMs } from "./config.ts";
+import {
+  adminTargetListLimit,
+  queuedProgressiveBuildBudgetMs,
+  refreshAuditListLimit,
+} from "./config.ts";
 import { errorMessage, isAbortError, readCached } from "./dashboard-cache.ts";
-import { continueProgressiveBuild } from "./dashboard-rebuild.ts";
-import { safeIso } from "./owner-metadata-write.ts";
+import { continueProgressiveBuild, dashboardRequest } from "./dashboard-rebuild.ts";
 import {
   refreshTargetGraphqlOperations,
   reserveRefreshJob,
@@ -23,7 +27,6 @@ import {
 import {
   auditSyncEvent,
   currentDashboardCacheKey,
-  listAuditEvents,
   listRefreshJobs,
   mergeRefreshTargetState,
   mutateRefreshTargetState,
@@ -33,11 +36,10 @@ import {
   refreshJobActive,
   refreshTargetInventory,
   refreshTargetProfile,
-  writeRefreshJob,
-  writeRefreshJobDelivery,
 } from "./refresh-targets.ts";
-import { dashboardRequest } from "./request-lock.ts";
 import { readSchedulerState } from "./store/scheduler-state.ts";
+import { safeIso } from "./time.ts";
+import { writeRefreshJob, writeRefreshJobDelivery } from "./store/refresh-jobs.ts";
 
 export async function processRefreshJob(
   input: RefreshJob,
@@ -55,7 +57,7 @@ export async function processRefreshJob(
   let job: RefreshJob = {
     ...(snapshotJob ?? input),
     ...storedJob,
-    target: storedJob?.target ?? snapshotJob?.target ?? input.target,
+    target: storedJob?.target ?? snapshotJob?.target,
     targetSnapshotKey:
       storedJob?.targetSnapshotKey ?? snapshotJob?.targetSnapshotKey ?? input.targetSnapshotKey,
   };
@@ -74,7 +76,9 @@ export async function processRefreshJob(
     await writeRefreshJob(env, skipped);
     return skipped;
   }
-  if (input.targetSnapshotKey && !snapshotJob?.target && !storedJob?.target && !input.target) {
+  // A queue message carries no target: the job's snapshot does, and so does its stored state.
+  const targetSnapshot = job.target;
+  if (!targetSnapshot) {
     const now = new Date().toISOString();
     const retrying = {
       ...job,
@@ -129,30 +133,10 @@ export async function processRefreshJob(
     reason: job.reason,
   });
 
-  const targetSnapshot = job.target ?? input.target;
-  const storedTarget = await readRefreshTarget(env, job.targetKey);
-  const target = targetSnapshot
-    ? mergeRefreshTargetState(targetSnapshot, storedTarget)
-    : storedTarget;
-  if (!target) {
-    const skipped = {
-      ...job,
-      status: "skipped" as const,
-      finishedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      durationMs: Date.now() - startedAt,
-      error: "target missing",
-    };
-    await writeRefreshJob(env, skipped);
-    await auditSyncEvent(env, {
-      event: "job_skipped",
-      targetKey: job.targetKey,
-      jobId: job.id,
-      status: "skipped",
-      reason: "target missing",
-    });
-    return skipped;
-  }
+  const target = mergeRefreshTargetState(
+    targetSnapshot,
+    await readRefreshTarget(env, job.targetKey),
+  );
 
   const deadlineController = new AbortController();
   const deadlineTimer = globalThis.setTimeout(
@@ -443,7 +427,7 @@ export async function schedulerAdminPayload(env: Env): Promise<SchedulerAdminPay
   const [inventory, jobs, events, state, dueOptions] = await Promise.all([
     refreshTargetInventory(env),
     listRefreshJobs(env),
-    listAuditEvents(env),
+    listRefreshAuditEvents(env, refreshAuditListLimit),
     readSchedulerState(env),
     schedulerDueOptions(env),
   ]);

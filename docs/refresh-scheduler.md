@@ -5,7 +5,7 @@ ReleaseBar keeps public dashboard data warm with a small scheduler on the Cloudf
 ## Runtime Pieces
 
 - Cloudflare cron runs every 15 minutes from `wrangler.jsonc`.
-- The D1 database `DB` stores the refresh targets with the index of the owners and repositories each one shows, the refresh jobs with their immutable snapshots and delivery records, the immutable profile snapshots, and the scheduler state (`migrations/0001_refresh.sql`, `docs/data-model.md`).
+- The D1 database `DB` stores the refresh targets with the index of the owners and repositories each one shows, the refresh jobs with their immutable snapshots and delivery records, the immutable profile snapshots, and the scheduler state (`migrations/0001_refresh.sql`, [the data model](data-model.md)).
 - It also stores the shared owner metadata/count snapshots, one row per owner, including repositories that turned private or were removed (`migrations/0003_registry.sql`); a change is written only if the row is still the one that was read.
 - `DASHBOARD_CACHE` stores visible dashboard snapshots. Audit events are rows of the D1 table `refresh_audit_events`.
 - Durable Objects hold what must be checked and changed in one step. Each is a class with typed RPC methods and SQLite storage, under `worker/objects/`:
@@ -45,7 +45,7 @@ The same tick schedules deep dashboard work:
 6. Enqueues up to 20 jobs per tick.
 7. Deletes up to 500 rows of each kind that are past their lifetime: targets nobody has seen for 90 days, jobs and delivery records not updated for 14 days, profile snapshots older than 90 days. D1 keeps a row until it is deleted.
 
-A tick over a full page that enqueues its 20 jobs sends D1 11 queries, however many targets are due: five reads (the last tick's state, the newest jobs, the newest delivery records, the page of targets, the owner-count cursor), one batch with the jobs it enqueues, the write of its state, three for the five deletions of expired rows, and one batch with its audit events. The deletion of expired audit and registry rows in the same invocation adds five, and the refresh of repository counts adds the registry queries of each owner it handles. D1 allows an invocation 50 queries on the Workers free plan and counts a batch as one; [the data model](data-model.md) lists the other invocations.
+A tick over a full page that enqueues its 20 jobs sends D1 17 queries, however many targets are due: five reads (the last tick's state, the newest jobs, the newest delivery records, the page of targets, the owner-count cursor), the write of that cursor, one batch with the jobs it enqueues, the write of its state, three for the deletions of expired refresh rows, three for expired audit rows, two for expired registry rows, and one batch with its audit events. The refresh of repository counts adds four, however many owners are due: their installations, their count times, and the read and the batch of their snapshots. D1 allows an invocation 50 queries on the Workers free plan and counts a batch as one; the tick's KV reads, queue sends and Durable Object calls, about 200, count toward the 1,000 subrequests to Cloudflare's services that plan allows. [The data model](data-model.md) lists the other invocations.
 
 Successful targets get their next refresh time based on recent use:
 
@@ -68,7 +68,7 @@ A refresh job rebuilds the same dashboard cache entry the user-facing route woul
 7. Update target success/failure state and write at most one job-state update per Queue delivery.
 8. Write an audit event.
 
-The build lock is still the hydration concurrency guard. The dashboard's Durable Object also reserves one active refresh job, serializes request observations with Queue success/failure updates, and keeps its scan checkpoint. Concurrent requests therefore cannot enqueue duplicate scans or erase a terminal failure backoff, and rapid Queue retries do not depend on eventually consistent KV reads. Checkpoints that cannot be stored in the Durable Object fall back to explicitly marked KV records; timestamped tombstones prevent completed or stale fallback records from being resumed. Lock collisions and non-advancing checkpoints retry the reserved Queue message after 60 seconds instead of spinning or dropping the refresh. Queue delivery starts after a two-second KV settling delay, advancing incomplete scans retry after two seconds, each batch processes one target, and up to five targets can run concurrently. Job reservations last two hours so a full 20-target scheduler wave remains deduplicated while waiting behind long-running consumers.
+The build lock is still the hydration concurrency guard. The dashboard's Durable Object also reserves one active refresh job, serializes request observations with Queue success/failure updates, and keeps its scan checkpoint. Concurrent requests therefore cannot enqueue duplicate scans or erase a terminal failure backoff, and rapid Queue retries do not depend on eventually consistent KV reads. Checkpoints that cannot be stored in the Durable Object fall back to KV records, which exist only while the object can't be reached; timestamped tombstones prevent completed or stale fallback records from being resumed. Lock collisions and non-advancing checkpoints retry the reserved Queue message after 60 seconds instead of spinning or dropping the refresh. Queue delivery starts after a two-second KV settling delay, advancing incomplete scans retry after two seconds, each batch processes one target, and up to five targets can run concurrently. Job reservations last two hours so a full 20-target scheduler wave remains deduplicated while waiting behind long-running consumers.
 
 ## Quota Behavior
 
@@ -87,10 +87,10 @@ This means popular or installed accounts can refresh without burning the shared 
 - target count and due target count
 - queued, running, and failed job counts
 - last scheduler tick and next due target
-- sharded GitHub token-use counters from the last 24 hours, also available at `/api/admin/github-access`
+- GitHub token-use counters from the last 24 hours, one per hour and route, also available at `/api/admin/github-access`
 - recent targets, jobs, and audit events
 
-Scheduler state, GitHub access, and installation/auth summaries load through separate admin requests so a slow optional section cannot take down the console. The target total is a count query and the listed targets are the ones due soonest; installation totals come from lightweight key listings, and their detail rows and auth counters are bounded samples. Due counts describe the most recent bounded scheduler scan rather than forcing the admin request to read every target and dashboard cache.
+Scheduler state, GitHub access, and installation/auth summaries load through separate admin requests so a slow optional section cannot take down the console. The target total is a count query and the listed targets are the ones due soonest; the installation total is a count query too, and the listed installations and auth counters are bounded samples. Due counts describe the most recent bounded scheduler scan rather than forcing the admin request to read every target and dashboard cache.
 
 Audit events are stored in D1 and logged to Worker logs with `area: "scheduler"`. Keep audit detail short and structured so production logs remain searchable.
 
@@ -113,7 +113,7 @@ Push and release deliveries eagerly invalidate and refresh release-enabled dashb
 - Shared quota conservation defers nonessential repository enrichment below 2,000 remaining core or GraphQL requests. Critical cooldowns make cold shared-token repository detail cache-only below 1,000 remaining requests or after rate-limit responses, while App-token refreshes continue.
 - Queue delivery failures mark the job failed.
 - Request-triggered jobs are deduplicated against queued and running work for the same dashboard.
-- Queue messages carry a small immutable-target reference instead of profile settings, keeping messages below the Queue size limit even when filter lists are large.
+- Queue messages carry a reference to the job's snapshot, which holds its target, instead of the target or profile settings, keeping messages below the Queue size limit even when filter lists are large. A job whose snapshot can't be read is retried.
 - Job listings merge immutable running-delivery records with the latest mutable result; mutable job state is written once per delivery.
 - Cold requests and each Queue delivery use absolute abort deadlines that include GitHub App discovery and token minting; interrupted GitHub work is retried from the Durable Object checkpoint.
 - Cloudflare's Queue delivery-attempt counter controls exhaustion. With `max_retries = 10`, delivery 11 is terminal: the initial delivery plus ten retries. Exhausted retries are recorded as failed before dead-lettering and put the target on scheduler backoff, so requests and cron ticks do not immediately restart the same failed scan. Ordinary transient failures retain scheduler retry timing but remain eligible for request-triggered recovery. Stale queued records stop blocking scheduling after the Durable Object reservation expires.

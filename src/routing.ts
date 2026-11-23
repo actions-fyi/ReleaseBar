@@ -55,7 +55,6 @@ export const workerApiOrigin = "";
 export const workersDevApiOrigin = configuredSiteDomain()
   ? `https://${configuredSiteDomain()}`
   : ((globalThis as SiteGlobals).location?.origin ?? "");
-const localWorkerApiPort = "8787";
 const ownerListKey = "owners";
 const repoListKey = "repos";
 const discoverLanguageKey = "hotLang";
@@ -70,24 +69,10 @@ const discoverPeriodValues = new Set<DiscoverPeriod>([
   "releasebar",
 ]);
 
-type RouteLocation = {
-  protocol: string;
-  hostname: string;
-  port: string;
-};
-
-function currentRouteLocation(): RouteLocation | null {
-  return (globalThis as { location?: RouteLocation }).location ?? null;
-}
-
-export function fallbackApiOrigin(currentLocation = currentRouteLocation()): string {
-  if (
-    currentLocation &&
-    (currentLocation.hostname === "127.0.0.1" || currentLocation.hostname === "localhost") &&
-    currentLocation.port !== localWorkerApiPort
-  ) {
-    return `${currentLocation.protocol}//${currentLocation.hostname}:${localWorkerApiPort}`;
-  }
+// Where the app asks again when a request to its own origin failed: the canonical domain, when
+// the page is served from another one. `npm run dev` and `npm run dev:worker:real` each serve
+// the app and the API from one origin, so there is no other local port to try.
+export function fallbackApiOrigin(): string {
   return workersDevApiOrigin;
 }
 

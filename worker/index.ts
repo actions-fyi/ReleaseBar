@@ -41,7 +41,6 @@ import {
 import { errorMessage } from "./dashboard-cache.ts";
 import { ownerEventsResponse } from "./dashboard-rebuild.ts";
 import { discoverResponse } from "./discover.ts";
-import { safeIso } from "./owner-metadata-write.ts";
 import { ownerResponse } from "./owner-response.ts";
 import { finishRefreshJobReservation, schedulerTick } from "./refresh-queue.ts";
 import {
@@ -65,6 +64,7 @@ import {
   processGitHubWebhookFanout,
 } from "./webhook.ts";
 import { webhookRepo } from "./webhook-targets.ts";
+import { safeIso } from "./time.ts";
 
 export { BuildCoordinator } from "./objects/build-coordinator.ts";
 export { RateLimiter } from "./objects/rate-limiter.ts";

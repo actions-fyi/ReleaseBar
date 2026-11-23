@@ -11,7 +11,6 @@ import type {
   RefreshTarget,
 } from "../src/types.ts";
 import {
-  installationMissKey,
   readStoredInstallation,
   readStoredInstallationsOf,
   type StoredInstallationRecord,
@@ -24,11 +23,11 @@ import { appTokenConfigured } from "./auth-oauth.ts";
 import { installationRegistryCovers, installationRegistryFor } from "./auth-tokens.ts";
 import { dashboardSchemaVersion, fullTtlMs, maxCustomSources } from "./config.ts";
 import { cacheAgeMs, canDisplayCached, errorMessage, readCached } from "./dashboard-cache.ts";
-import { safeIso } from "./owner-metadata-write.ts";
 import { mapConcurrent } from "./concurrency.ts";
 import { enqueueRefreshJobs, refreshTargetBackoffActive } from "./refresh-queue.ts";
 import { auditSyncEvent, rememberRefreshTargets } from "./refresh-targets.ts";
 import type { BackgroundContext } from "./runtime.ts";
+import { safeIso } from "./time.ts";
 
 export function isPublicInstallationRepository(repo: GitHubInstallationRepository): boolean {
   if (repo.private === true) {
@@ -36,8 +35,6 @@ export function isPublicInstallationRepository(repo: GitHubInstallationRepositor
   }
   return repo.private === false || repo.visibility === "public";
 }
-
-export { installationMissKey };
 
 export function normalizedInstallation(installation: AuthInstallation): StoredInstallationRecord {
   return {
@@ -113,19 +110,11 @@ export async function installationRefreshTargetInputs(
   return inputs;
 }
 
-export async function installationRefreshTargetInput(
-  env: Env,
-  accountLogin: string,
-): Promise<InstallationRefreshTargetInput | null> {
-  return (
-    (await installationRefreshTargetInputs(env, [accountLogin])).get(slugOwner(accountLogin)) ??
-    null
-  );
-}
-
-// Skip rewrites of registry entries that already hold the same content and were
-// refreshed recently, so bursts of /api/me calls (multiple tabs, browser restart)
-// do not each write the same row again.
+// An installation that is stored with the same content and was written within this time is not
+// written again. Every /api/me call checks the session's installations, several at once when a
+// browser reopens its tabs; without the skip each would send D1 the batch of writes (about five
+// rows written per installation, with its indexes) and the four queries that remember the
+// accounts' dashboards as refresh targets. With it, such a call is one read.
 const installationRegistryRewriteMinAgeMs = 5 * 60 * 1000;
 
 function installationRegistryEntryFresh(

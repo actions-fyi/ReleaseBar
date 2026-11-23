@@ -1,10 +1,12 @@
 # Self-hosting and Operations
 
-ReleaseBar is a Svelte frontend and Cloudflare Worker service. The Worker serves the static app shell and public GitHub API routes, while Cloudflare KV, Queues, and Durable Objects coordinate cached dashboard hydration.
+ReleaseBar is a Svelte frontend and a Cloudflare Worker. The Worker serves the static app shell and the public API routes. Cloudflare KV holds cached payloads and sessions, a D1 database what is queried, listed or counted, Durable Objects what must be checked and changed in one step, and a queue carries the background work; [the data model](data-model.md) says what is where.
+
+To deploy your own, follow [First deploy](#first-deploy): it is complete by itself. The sections after it explain each part.
 
 ## Requirements
 
-- Node.js 22.12 or newer; CI and `.nvmrc` use Node.js 24.
+- Node.js 22.18 or newer; `.nvmrc` names Node.js 26.
 - npm, using the committed `package-lock.json`.
 - A Cloudflare account and Wrangler authentication for remote development or deployment.
 - A GitHub token for higher API limits when building real dashboard data locally.
@@ -43,20 +45,62 @@ npm run dev
 
 This is `vite dev` with the Cloudflare Vite plugin: the Worker runs in the Workers runtime with local bindings, on `http://127.0.0.1:5173`. It does not receive production secrets unless they are provided through local Wrangler configuration, such as a `.dev.vars` file.
 
-For local code running on Cloudflare with real secrets and preview KV:
+For local code running on Cloudflare with real secrets and remote resources:
 
 ```sh
 npm run dev:worker:real
 ```
 
-Open `http://localhost:8787/steipete` or another owner route.
+This is `wrangler dev --remote` on `http://localhost:8787`, which serves the app and the API from that one origin too. It reads `wrangler.jsonc`, not the config of a build, so the resource IDs of the deployment are not in it.
+
+## First deploy
+
+A deployment needs a Cloudflare account, Wrangler signed in to it (`npx wrangler login`), and this repository. `eu` below is the jurisdiction the data stays in; use another, or leave `--jurisdiction` and `RELEASEBAR_DO_JURISDICTION` out for none. Decide before creating anything: a jurisdiction can't be added to a resource later.
+
+1. Create the resources. Each command prints what it created:
+
+   ```sh
+   npx wrangler queues create releasebar-refresh --jurisdiction eu
+   npx wrangler queues create releasebar-refresh-dlq --jurisdiction eu
+   npx wrangler kv namespace create releasebar-dashboard-cache --jurisdiction eu
+   npx wrangler d1 create releasebar --jurisdiction eu
+   ```
+
+   Note the `id` of the KV namespace (32 hex digits) and the `database_id` of the D1 database, which is a UUID such as `1b2c3d4e-5f60-4a7b-8c9d-0e1f2a3b4c5d`. The database's **name** (`releasebar`) is not its ID. `npx wrangler d1 list` shows both.
+
+2. Set the deployment's variables: in the shell for a deploy from your machine, or as **build variables** of Workers Builds (the Worker's Settings → Build → Variables and secrets):
+
+   | Variable                     | Value                                                                                                                                              |
+   | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | `RELEASEBAR_D1_DATABASE_ID`  | The database's UUID from step 1. Not its name: with `releasebar` here, `npm run deploy` stops before it builds and says what it expects. Required. |
+   | `RELEASEBAR_KV_NAMESPACE_ID` | The namespace's ID from step 1.                                                                                                                    |
+   | `RELEASEBAR_DO_JURISDICTION` | `eu`, so that the Durable Objects are created there too.                                                                                           |
+   | `RELEASEBAR_DOMAIN`          | Your domain, such as `releasebar.example.com`. Its zone must be in the account.                                                                    |
+   | `RELEASEBAR_ADMIN_LOGINS`    | The GitHub logins that may open `/_admin`, comma-separated.                                                                                        |
+
+   [Cloudflare resources](#cloudflare-resources) lists every variable.
+
+3. Give the deploy a token that may change the database. `npm run deploy` applies the D1 migrations, which needs **D1 Edit** on the account, besides what a deploy of a Worker with KV, queues and Durable Objects needs. The token Workers Builds creates by itself has no D1 permission: create an API token with it and select it under Settings → Build → API token. A deploy from your machine uses your Wrangler login, which has it.
+
+4. Deploy:
+
+   ```sh
+   npm ci
+   npm run deploy
+   ```
+
+   With Workers Builds, set the deploy command to `npm run deploy` and leave the build command empty; every push to the production branch then deploys. The command checks the variables, builds, applies the migrations and deploys the Worker with its Durable Objects. In the log, between the Vite build and the Worker upload, the migrations are listed as applied: `0001_refresh.sql` to `0004_checks.sql` on a new database, `✅ No migrations to apply!` on later deploys.
+
+5. Set the secrets on the Worker (Settings → Variables and Secrets, or `npx wrangler secret put <NAME>`); deploys keep them. `AUTH_COOKIE_SECRET` and the GitHub App secrets enable sign-in ([GitHub App](#github-app)), `GITHUB_TOKEN` gives the shared GitHub quota, `ANTHROPIC_API_KEY` the AI summaries ([AI summaries](#ai-summaries)). Without any of them the Worker serves public dashboards with GitHub's anonymous quota.
+
+6. Open `https://<your-domain>/<a GitHub user>`. The first request answers with repository metadata and enqueues the build of the rest. Nothing needs seeding: the database's tables fill from requests, sign-ins and webhooks.
 
 ## Cloudflare resources
 
 `wrangler.jsonc` binds:
 
 - `dist/client` as Worker static assets
-- `DASHBOARD_CACHE` as KV storage for dashboard, repository, and session records, and for the cached GitHub App installation tokens
+- `DASHBOARD_CACHE` as KV storage for cached dashboard and repository payloads, sessions, and the cached GitHub App installation tokens
 - five Durable Object classes, which `wrangler.jsonc` creates with SQLite storage: `BUILD_COORDINATOR` for single-flight builds, checkpoints, job reservations, and failure state; `WEBHOOK_ADMISSION` and `WEBHOOK_PROCESSOR` for GitHub deliveries; `SUMMARY_QUOTA` for the AI summary limits; `RATE_LIMITER` for the per-minute request limits of the client timing endpoint and the install callback. All five are required
 - `REFRESH_QUEUE` for bounded background hydration and webhook work. It is required: the Worker has no path without it
 - `DB` as the D1 database. It holds the GitHub App installation registry, the owner metadata and the dashboard profiles, next to the refresh, audit and counter tables; [the data model](data-model.md) lists them. The registry needs no seeding: it fills from GitHub on sign-in, on the first request that needs an account's installation, and from the installation sync in the admin console
@@ -69,7 +113,7 @@ The Worker runs before static assets so `/api/*` stays dynamic and owner routes 
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RELEASEBAR_DOMAIN`                     | Custom domain (bare host, such as `releasebar.example.com`); also sets the Worker var `RELEASEDECK_CANONICAL_DOMAIN`. Its zone must be in the deploying account. Unset: no custom domain. |
 | `RELEASEBAR_KV_NAMESPACE_ID`            | ID of a pre-created `DASHBOARD_CACHE` namespace. Unset: Wrangler creates one on the first deploy, without a jurisdiction.                                                                 |
-| `RELEASEBAR_D1_DATABASE_ID`             | ID of the pre-created D1 database behind `DB`. Required: Wrangler would otherwise create a database itself on deploy, without a jurisdiction.                                             |
+| `RELEASEBAR_D1_DATABASE_ID`             | UUID of the pre-created D1 database behind `DB` (its `database_id`, not its name). Required: Wrangler would otherwise create a database itself on deploy, without a jurisdiction.         |
 | `RELEASEBAR_DO_JURISDICTION`            | Jurisdiction for every Durable Object of every class, such as `eu`. Requires `RELEASEBAR_KV_NAMESPACE_ID`, so KV is never created outside it.                                             |
 | `RELEASEBAR_ADMIN_LOGINS`               | Comma-separated GitHub logins for `/_admin` (Worker var `ADMIN_LOGINS`).                                                                                                                  |
 | `RELEASEBAR_WORKERS_DEV`                | `true` or `false`: whether the Worker is also served on `workers.dev`. Unset: as in `wrangler.jsonc`.                                                                                     |
@@ -81,16 +125,11 @@ The Worker runs before static assets so `/api/*` stays dynamic and owner routes 
 
 `npm run deploy` fails without `RELEASEBAR_D1_DATABASE_ID`. Wrangler creates a D1 database for a binding that has no ID, and a database it creates has no jurisdiction, which can't be added later. Because every deployment sets this variable, a build that lost its variables also stops there, before it drops the deployment's domain and admins. A deployment with only this variable set is the generic `wrangler.jsonc` with that database.
 
-The deploy applies the SQL files of `migrations/` to the database before it deploys the Worker (`wrangler d1 migrations apply DB --remote`), so a failing migration leaves the live Worker as it is. The build's API token therefore needs **D1 Edit** on the account; the token Workers Builds creates by itself does not have it. In the deploy log, between the Vite build and the Worker upload, expect `Resource location: remote` and either `✅ No migrations to apply!` or the table of applied files. `npm run deploy:preview` applies no migration.
+The deploy applies the SQL files of `migrations/` to the database before it deploys the Worker (`wrangler d1 migrations apply DB --remote`), so a failing migration leaves the live Worker as it is. The build's API token therefore needs **D1 Edit** on the account; the token Workers Builds creates by itself does not have it. In the deploy log, between the Vite build and the Worker upload, expect `Resource location: remote` and either `✅ No migrations to apply!` or the table of applied files. A migration that changes existing tables, such as `0004_checks.sql`, keeps their names, columns and indexes, so the Worker that is live while it is applied keeps working. `npm run deploy:preview` applies no migration.
 
-The queues `releasebar-refresh` and `releasebar-refresh-dlq` and the D1 database must exist before the first deploy. To keep all data in one jurisdiction, create the queues, the KV namespace and the database in it, and set the same jurisdiction for Durable Objects; a jurisdiction can't be changed once a resource exists:
+The queues `releasebar-refresh` and `releasebar-refresh-dlq` and the D1 database must exist before the first deploy ([First deploy](#first-deploy), step 1). To keep all data in one jurisdiction, create the queues, the KV namespace and the database in it, and set the same jurisdiction for Durable Objects; a jurisdiction can't be changed once a resource exists.
 
-```sh
-npx wrangler queues create releasebar-refresh --jurisdiction eu
-npx wrangler queues create releasebar-refresh-dlq --jurisdiction eu
-npx wrangler kv namespace create releasebar-dashboard-cache --jurisdiction eu
-npx wrangler d1 create releasebar --jurisdiction eu
-```
+`wrangler.jsonc` also sets what Cloudflare records of the Worker: its own logs, without invocation logs, which would carry each request's headers and client IP; Issues; and traces of one invocation in twenty (`observability.traces.head_sampling_rate`). Query strings are removed from URLs in logs and traces.
 
 Secrets (`GITHUB_TOKEN`, `AUTH_COOKIE_SECRET`, the GitHub App keys, `ANTHROPIC_API_KEY`) are Worker secrets, not build variables: set them under the Worker's Settings → Variables and Secrets or with `wrangler secret put`. Deploys keep them.
 
@@ -151,4 +190,6 @@ Pull requests are gated by the org's Test TypeScript check, which runs the `type
 
 ## Admin
 
-`ADMIN_LOGINS` in `wrangler.jsonc` is a comma-separated list of GitHub logins that may open `/_admin`. Without it, nobody can.
+The Worker var `ADMIN_LOGINS`, which a deploy sets from `RELEASEBAR_ADMIN_LOGINS`, is a comma-separated list of GitHub logins that may open `/_admin`. Without it, nobody can.
+
+The console's installation sync reads every installation of the GitHub App and stores them. It is one invocation: on the Workers free plan, which allows 50 subrequests to hosts outside Cloudflare, it fails beyond about 20 installations limited to selected repositories, because it asks GitHub for the token and the repository list of each. The registry does not depend on it: it fills from sign-ins and requests.

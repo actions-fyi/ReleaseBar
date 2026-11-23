@@ -17,17 +17,16 @@ import {
   schedulerBatchLimit,
 } from "./config.ts";
 import {
-  deleteProfile,
   errorMessage,
   optionsFromUrl,
   quotaForDashboard,
-  readProfile,
   writeProfile,
 } from "./dashboard-cache.ts";
 import { schedulerTick } from "./refresh-queue.ts";
-import { dashboardRequest } from "./request-lock.ts";
 import { schedulerAdminPayload } from "./scheduler.ts";
 import { deleteCacheEntry } from "./store/cache.ts";
+import { deleteProfile, readProfile } from "./store/profiles.ts";
+import { dashboardRequest } from "./dashboard-rebuild.ts";
 
 export function unresolvedDashboardRequest(
   ownerSlugs: string[],

@@ -278,8 +278,8 @@ export async function changeOwnerMetadata(
   return result.value;
 }
 
-// Deletes up to `limit` snapshots whose time ran out, and returns how many. KV expired them by
-// itself; the scheduled handler calls this instead.
+// Deletes up to `limit` snapshots whose time ran out, and returns how many. D1 expires nothing
+// by itself: the scheduled handler calls this.
 export async function deleteExpiredOwnerMetadata(env: Env, limit: number): Promise<number> {
   const result = await env.DB.prepare(
     `DELETE FROM owner_metadata

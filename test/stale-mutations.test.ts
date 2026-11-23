@@ -11,6 +11,7 @@ import {
   worker,
   seedOwnerMetadata,
   storedOwnerMetadataJson,
+  storeRefreshJob,
 } from "./dashboard-test-harness.ts";
 
 test("older owner count refreshes cannot replace newer snapshots", async () => {
@@ -448,7 +449,6 @@ test("worker persists archived observations without showing archived repositorie
       scannedRepos: [],
       projects: [project],
       updatedAt: generatedAt,
-      durableFallback: true,
     }),
   });
   const target: RefreshTarget = {
@@ -480,6 +480,7 @@ test("worker persists archived observations without showing archived repositorie
     attempts: 0,
     durationMs: null,
   };
+  await storeRefreshJob(job);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const path = new URL(String(input)).pathname;
@@ -583,7 +584,6 @@ test("worker preserves field freshness when resuming an older progress checkpoin
       releasesUpdatedAt,
       ciUpdatedAt,
       updatedAt: generatedAt,
-      durableFallback: true,
     }),
   });
   const waits: Promise<unknown>[] = [];

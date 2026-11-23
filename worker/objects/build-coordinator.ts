@@ -8,17 +8,17 @@ import {
   type StoredBuildProgress,
   type StoredRefreshDirty,
 } from "../config.ts";
-import { safeIso } from "../owner-metadata-write.ts";
 import { applyRefreshTargetMutation, isRefreshTarget } from "../refresh-targets.ts";
 import { firstRow, parseStored } from "./sql.ts";
+import { safeIso } from "../time.ts";
 
 type LockRow = { token: string; expires_at: number };
 type JobRow = { job_id: string; expires_at: number };
 type DirtyRow = { observed_at: string; reason: string };
 type JsonRow = { value: string };
 
-// What the target was before the object first saw it, read from the cache by the caller: the
-// object itself reads no binding. Null when the cache has no target either.
+// What the target was before the object first saw it, read from the database by the caller: the
+// object itself reads no binding. Null when no target is stored either.
 export type RefreshTargetSeed = { current: RefreshTarget | null };
 
 // Coordinates the work on one dashboard. An instance is named by the dashboard's cache key, which
@@ -155,7 +155,7 @@ export class BuildCoordinator extends DurableObject<Env> {
 
   // Applies `mutation` to the target's stored state and returns the result. Returns null, and
   // changes nothing, when the object has no state for the target yet and the caller gave no
-  // `seed`: the caller then reads the target from the cache and calls again with it.
+  // `seed`: the caller then reads the stored target and calls again with it.
   mutateTarget(
     snapshot: RefreshTarget | null,
     mutation: RefreshTargetMutation,

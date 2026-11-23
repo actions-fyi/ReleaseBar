@@ -99,12 +99,7 @@ test("owner route parsing keeps root hot board and owners API-backed", () => {
   expect(dashboardRoute("/", "?owners=openclaw").fallbackApiPath).toBe(
     `${workersDevApiOrigin}/api/dashboard?owners=openclaw`,
   );
-  expect(fallbackApiOrigin({ protocol: "http:", hostname: "127.0.0.1", port: "5174" })).toBe(
-    "http://127.0.0.1:8787",
-  );
-  expect(fallbackApiOrigin({ protocol: "http:", hostname: "localhost", port: "8787" })).toBe(
-    workersDevApiOrigin,
-  );
+  expect(fallbackApiOrigin()).toBe(workersDevApiOrigin);
   expect(
     dashboardRoute(
       "/openclaw",

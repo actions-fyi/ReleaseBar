@@ -315,14 +315,14 @@ export async function repoDetailCoreGraphql(
     : null;
   const checkRuns = (target?.statusCheckRollup?.contexts?.nodes ?? []).flatMap((context) => {
     if (!context) return [];
-    const legacy =
+    const commitStatus =
       context.__typename === "StatusContext" ? statusContextState(context.state) : null;
     return [
       {
         name: context.name ?? context.context ?? null,
         html_url: context.detailsUrl ?? context.targetUrl ?? "",
-        status: legacy?.status ?? lowerNullable(context.status),
-        conclusion: legacy?.conclusion ?? lowerNullable(context.conclusion),
+        status: commitStatus?.status ?? lowerNullable(context.status),
+        conclusion: commitStatus?.conclusion ?? lowerNullable(context.conclusion),
         completed_at: context.completedAt ?? context.createdAt ?? null,
         started_at: context.startedAt ?? context.createdAt ?? null,
       },

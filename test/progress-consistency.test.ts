@@ -9,110 +9,6 @@ import {
   worker,
 } from "./dashboard-test-harness.ts";
 
-test("worker does not restore stale KV progress after an authoritative Durable Object miss", async () => {
-  const key = dashboardCacheKey({
-    owner: "authoritative",
-    includeUnreleased: true,
-    includeReleaseData: true,
-    schemaVersion: 6,
-  });
-  const target: RefreshTarget = {
-    key,
-    kind: "dashboard",
-    owner: "authoritative",
-    owners: ["authoritative"],
-    repos: [],
-    includeReleaseData: true,
-    path: "/authoritative",
-    priority: 100,
-    lastSeenAt: "2026-06-11T07:00:00Z",
-    lastAttemptAt: null,
-    lastSuccessAt: null,
-    nextDueAt: "2026-06-11T07:00:00Z",
-    failureCount: 0,
-  };
-  const job: RefreshJob = {
-    id: "job-authoritative-progress",
-    targetKey: key,
-    target,
-    kind: "dashboard",
-    status: "queued",
-    reason: "partial-cache",
-    createdAt: "2026-06-11T07:00:00Z",
-    updatedAt: "2026-06-11T07:00:00Z",
-    startedAt: null,
-    finishedAt: null,
-    attempts: 0,
-    durationMs: null,
-  };
-  const staleProject = testProject({ owner: "authoritative", name: "deleted" });
-  const cache = kvStore({
-    [`progress:v1:${key}`]: JSON.stringify({
-      scannedRepos: [staleProject.fullName.toLowerCase()],
-      projects: [staleProject],
-      updatedAt: "2026-06-11T07:00:00Z",
-    }),
-  });
-  await storeRefreshJob(job);
-  const originalFetch = globalThis.fetch;
-  let acked = false;
-  try {
-    globalThis.fetch = async (input) => {
-      const path = new URL(String(input)).pathname;
-      if (path === "/users/authoritative") {
-        return Response.json({ login: "authoritative", type: "User" });
-      }
-      if (path === "/users/authoritative/repos") {
-        return Response.json([]);
-      }
-      throw new Error(`unexpected fetch ${path}`);
-    };
-    await (
-      worker as unknown as {
-        queue(
-          batch: {
-            messages: Array<{
-              body: RefreshJob;
-              attempts?: number;
-              ack(): void;
-              retry(options?: { delaySeconds?: number }): void;
-            }>;
-          },
-          env: unknown,
-          context: unknown,
-        ): Promise<void>;
-      }
-    ).queue(
-      {
-        messages: [
-          {
-            body: job,
-            attempts: 1,
-            ack() {
-              acked = true;
-            },
-            retry() {
-              throw new Error("authoritative progress job should not retry");
-            },
-          },
-        ],
-      },
-      { DASHBOARD_CACHE: cache },
-      { waitUntil: () => undefined },
-    );
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-
-  expect(acked).toBe(true);
-  const dashboard = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
-  expect(dashboard.projects).toStrictEqual([]);
-  const tombstone = JSON.parse((await cache.get(`progress:tombstone:v1:${key}`)) ?? "{}") as {
-    clearedAt?: string;
-  };
-  expect(typeof tombstone.clearedAt).toBe("string");
-});
-
 test("worker does not persist delayed progress older than its tombstone", async () => {
   const key = dashboardCacheKey({
     owner: "delayed-progress",
@@ -385,6 +281,7 @@ test("worker tombstones failed Durable Object progress deletion before publishin
       attempts: 0,
       durationMs: null,
     };
+    await storeRefreshJob(job);
     let acked = false;
     await (
       worker as unknown as {

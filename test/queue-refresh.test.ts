@@ -315,6 +315,7 @@ test("worker retries refresh jobs when the dashboard build lock is busy", async 
   const job: RefreshJob = {
     id: "job-locked",
     targetKey: key,
+    target,
     kind: "dashboard",
     status: "queued",
     reason: "partial-cache",
