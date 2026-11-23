@@ -1,5 +1,5 @@
-import type { Freshness, Project, ReleaseBarConfig } from "../../src/types.js";
-import type { DashboardBuildOptions, GitHubRepo } from "./dashboard-contracts.js";
+import type { Freshness, Project, ReleaseBarConfig } from "../src/types.ts";
+import type { DashboardBuildOptions, GitHubRepo } from "./dashboard-contracts.ts";
 
 export function normalizeBuildOptions(
   config: ReleaseBarConfig,

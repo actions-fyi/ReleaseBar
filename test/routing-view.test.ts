@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { assert, expect, test } from "vitest";
-import { calculateAudienceScore, isLikelyBot } from "../audience.js";
+import { calculateAudienceScore, isLikelyBot } from "../shared/audience.ts";
 import {
   dashboardRoute,
   ownerActivityFromPath,
@@ -12,7 +12,7 @@ import {
   repoFromPath,
   workerApiOrigin,
   workersDevApiOrigin,
-} from "../../../src/routing.js";
+} from "../src/routing.ts";
 import {
   matchesProjectSearch,
   parseViewState,
@@ -20,10 +20,10 @@ import {
   sortProjects,
   viewStateSearch,
   type DashboardViewState,
-} from "../../../src/dashboard-view.js";
-import type { DashboardPayload, RepoDetailPayload } from "../../../src/types.js";
-import { dashboardStreamSignature, dashboardStreamState } from "../../../worker/index.js";
-import { testDashboard, testProject } from "../dashboard-test-harness.js";
+} from "../src/dashboard-view.ts";
+import type { DashboardPayload, RepoDetailPayload } from "../src/types.ts";
+import { dashboardStreamSignature, dashboardStreamState } from "../worker/index.ts";
+import { testDashboard, testProject } from "./dashboard-test-harness.ts";
 
 test("owner route parsing keeps root hot board and owners API-backed", () => {
   expect(ownerFromPath("/")).toBe(null);

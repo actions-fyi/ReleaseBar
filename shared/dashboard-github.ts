@@ -1,4 +1,4 @@
-import type { ApiQuota, CiState, Owner, Project } from "../../src/types.js";
+import type { ApiQuota, CiState, Owner, Project } from "../src/types.ts";
 import {
   type CiDetails,
   type GitHubCheckRun,
@@ -17,8 +17,8 @@ import {
   type OwnerReposPage,
   rateLimitFromResponse,
   recordRateLimit,
-} from "./dashboard-contracts.js";
-import { slugOwner } from "./dashboard-projects.js";
+} from "./dashboard-contracts.ts";
+import { slugOwner } from "./dashboard-projects.ts";
 
 export function githubClient(
   token = "",

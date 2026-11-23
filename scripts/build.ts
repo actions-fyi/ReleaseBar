@@ -1,8 +1,8 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { buildDashboard, normalizeBuildOptions } from "./lib/dashboard.js";
-import type { ReleaseBarConfig } from "../src/types.js";
+import { buildDashboard, normalizeBuildOptions } from "../shared/dashboard.ts";
+import type { ReleaseBarConfig } from "../src/types.ts";
 
 const root = process.cwd();
 const distDir = path.join(root, "dist");

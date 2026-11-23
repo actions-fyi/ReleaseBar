@@ -1,10 +1,10 @@
-import { dashboardCacheKey, slugOwner, validOwnerSlug } from "../scripts/lib/dashboard.js";
-import type { DashboardPayload, DashboardProfile, Project } from "../src/types.js";
-import { mapConcurrent } from "./concurrency.js";
-import { jsonResponse } from "./http.js";
-import { type BackgroundContext, canonicalDomain } from "./runtime.js";
-import { hotIndexSchema, safeJsonParse, tryJsonParse } from "./schemas.js";
-import type { InitialPageData } from "./app-shell.js";
+import { dashboardCacheKey, slugOwner, validOwnerSlug } from "../shared/dashboard.ts";
+import type { DashboardPayload, DashboardProfile, Project } from "../src/types.ts";
+import { mapConcurrent } from "./concurrency.ts";
+import { jsonResponse } from "./http.ts";
+import { type BackgroundContext, canonicalDomain } from "./runtime.ts";
+import { hotIndexSchema, safeJsonParse, tryJsonParse } from "./schemas.ts";
+import type { InitialPageData } from "./app-shell.ts";
 import {
   dashboardCachePrefixes,
   type DashboardRequest,
@@ -24,7 +24,7 @@ import {
   repoLimit,
   type StoredBuildProgress,
   type StoredBuildProgressTombstone,
-} from "./config.js";
+} from "./config.ts";
 import {
   cacheAgeMs,
   canDisplayCached,
@@ -34,20 +34,20 @@ import {
   optionsFromUrl,
   withCacheState,
   writeCached,
-} from "./dashboard-cache.js";
-import { acquireBuildLock } from "./dashboard-rebuild.js";
+} from "./dashboard-cache.ts";
+import { acquireBuildLock } from "./dashboard-rebuild.ts";
 import {
   mergeProjectCountFields,
   mergeProjectIssuePullCounts,
   mergeProjectMetadata,
   projectWithoutReleaseData,
   readDurableOwnerMetadata,
-} from "./owner-metadata-read.js";
+} from "./owner-metadata-read.ts";
 import {
   mergeOwnerMetadata,
   readCachedWithOwnerMetadata,
   safeIso,
-} from "./owner-metadata-write.js";
+} from "./owner-metadata-write.ts";
 
 export function progressKey(key: string): string {
   return `progress:v1:${key}`;

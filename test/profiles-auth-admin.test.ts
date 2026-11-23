@@ -7,8 +7,8 @@ import type {
   RefreshJob,
   RefreshTarget,
   SchedulerAdminPayload,
-} from "../../../src/types.js";
-import { kvStore, signedJson, testDashboard, worker } from "../dashboard-test-harness.js";
+} from "../src/types.ts";
+import { kvStore, signedJson, testDashboard, worker } from "./dashboard-test-harness.ts";
 
 test("worker discovers and stores source-owned app installs for anonymous dashboards", async () => {
   const { privateKey } = generateKeyPairSync("rsa", {

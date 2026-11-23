@@ -1,13 +1,13 @@
 import { expect, test } from "vitest";
-import { dashboardCacheKey } from "../dashboard.js";
-import type { DashboardPayload, RefreshJob, RefreshTarget } from "../../../src/types.js";
+import { dashboardCacheKey } from "../shared/dashboard.ts";
+import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
   DashboardBuildLock,
   kvStore,
   testDashboard,
   testProject,
   worker,
-} from "../dashboard-test-harness.js";
+} from "./dashboard-test-harness.ts";
 
 test("worker Queue messages stay bounded when profile filters are large", async () => {
   const key = dashboardCacheKey({

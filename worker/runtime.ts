@@ -1,4 +1,4 @@
-import type { RefreshJob } from "../src/types.js";
+import type { RefreshJob } from "../src/types.ts";
 
 export type GitHubWebhookJob = {
   kind: "github-webhook";

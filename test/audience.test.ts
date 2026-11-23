@@ -1,7 +1,7 @@
 import { generateKeyPairSync } from "node:crypto";
 import { assert, expect, test } from "vitest";
-import type { AudienceRange, RepoAudiencePayload } from "../../../src/types.js";
-import { crawlerRequest, kvStore, signedJson, worker } from "../dashboard-test-harness.js";
+import type { AudienceRange, RepoAudiencePayload } from "../src/types.ts";
+import { crawlerRequest, kvStore, signedJson, worker } from "./dashboard-test-harness.ts";
 
 test("worker builds cached repository audience from public stargazers", async () => {
   const originalFetch = globalThis.fetch;

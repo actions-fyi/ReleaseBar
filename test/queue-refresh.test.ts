@@ -1,14 +1,14 @@
 import { generateKeyPairSync } from "node:crypto";
 import { expect, test } from "vitest";
-import { dashboardCacheKey } from "../dashboard.js";
-import type { DashboardPayload, RefreshJob, RefreshTarget } from "../../../src/types.js";
+import { dashboardCacheKey } from "../shared/dashboard.ts";
+import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
   kvStore,
   refreshAuditEvents,
   testDashboard,
   testProject,
   worker,
-} from "../dashboard-test-harness.js";
+} from "./dashboard-test-harness.ts";
 
 test("worker refresh jobs can use shared quota when no source app token exists", async () => {
   const key = dashboardCacheKey({

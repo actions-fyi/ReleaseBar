@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { buildDashboard } from "../dashboard.js";
-import { testProject } from "../dashboard-test-harness.js";
+import { buildDashboard } from "../shared/dashboard.ts";
+import { testProject } from "./dashboard-test-harness.ts";
 
 test("dashboard repo cap applies to visible rows before release hydration", async () => {
   const repo = (name: string) => ({

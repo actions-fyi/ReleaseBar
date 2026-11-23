@@ -1,11 +1,11 @@
 import { assert, expect, test } from "vitest";
-import { isGitHubRateLimit } from "../../../src/rate-limit.js";
+import { isGitHubRateLimit } from "../src/rate-limit.ts";
 import {
   githubAccessRouteRecords,
   kvStore,
   refreshAuditEvents,
   worker,
-} from "../dashboard-test-harness.js";
+} from "./dashboard-test-harness.ts";
 
 test("browser rate-limit detection covers HTTP and cached GitHub quota failures", () => {
   expect(isGitHubRateLimit(429)).toBe(true);

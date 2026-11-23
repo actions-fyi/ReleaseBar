@@ -1,6 +1,6 @@
 import { assert, expect, test } from "vitest";
-import type { TrustProfilePayload } from "../../../src/types.js";
-import { kvStore, worker } from "../dashboard-test-harness.js";
+import type { TrustProfilePayload } from "../src/types.ts";
+import { kvStore, worker } from "./dashboard-test-harness.ts";
 
 test("worker builds bounded trust profiles for people pages", async () => {
   const originalFetch = globalThis.fetch;

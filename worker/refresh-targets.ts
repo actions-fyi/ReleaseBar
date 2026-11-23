@@ -1,16 +1,16 @@
-import { slugOwner } from "../scripts/lib/dashboard.js";
+import { slugOwner } from "../shared/dashboard.ts";
 import type {
   DashboardPayload,
   DashboardProfile,
   RefreshJob,
   RefreshTarget,
   SchedulerAuditEvent,
-} from "../src/types.js";
-import { mapConcurrent } from "./concurrency.js";
-import { randomNonce, sha256Base64Url } from "./crypto.js";
-import { jsonResponse } from "./http.js";
-import type { BackgroundContext, GitHubWebhookFanoutJob, GitHubWebhookJob } from "./runtime.js";
-import { tryJsonParse } from "./schemas.js";
+} from "../src/types.ts";
+import { mapConcurrent } from "./concurrency.ts";
+import { randomNonce, sha256Base64Url } from "./crypto.ts";
+import { jsonResponse } from "./http.ts";
+import type { BackgroundContext, GitHubWebhookFanoutJob, GitHubWebhookJob } from "./runtime.ts";
+import { tryJsonParse } from "./schemas.ts";
 import {
   adminTargetListLimit,
   dashboardCachePrefix,
@@ -41,14 +41,14 @@ import {
   type StoredRefreshDirty,
   type StoredRefreshJobReservation,
   webhookPriorityTargetLimit,
-} from "./config.js";
+} from "./config.ts";
 import {
   ensureProfileSnapshot,
   profileSnapshotStorageKey,
   readProfile,
   readProfileSnapshot,
-} from "./dashboard-cache.js";
-import { safeIso } from "./owner-metadata-write.js";
+} from "./dashboard-cache.ts";
+import { safeIso } from "./owner-metadata-write.ts";
 
 export function refreshTargetStorageKey(key: string): string {
   return `${refreshTargetPrefix}${key}`;

@@ -1,10 +1,6 @@
 import { expect, test } from "vitest";
-import {
-  primaryAuthActionFor,
-  primaryAuthLabelFor,
-  primaryAuthTitleFor,
-} from "../../../src/auth-ui.js";
-import type { AuthPayload } from "../../../src/types.js";
+import { primaryAuthActionFor, primaryAuthLabelFor, primaryAuthTitleFor } from "../src/auth-ui.ts";
+import type { AuthPayload } from "../src/types.ts";
 
 function authPayload(overrides: Partial<AuthPayload> = {}): AuthPayload {
   return {

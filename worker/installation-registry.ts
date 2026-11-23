@@ -3,35 +3,35 @@ import {
   slugOwner,
   validOwnerSlug,
   validRepoSlug,
-} from "../scripts/lib/dashboard.js";
+} from "../shared/dashboard.ts";
 import type {
   AuthInstallation,
   DashboardPayload,
   DashboardProfile,
   RefreshTarget,
-} from "../src/types.js";
-import { type StoredInstallationRecord, storedInstallationSchema } from "./auth-observability.js";
-import { type GitHubInstallationRepository, safeJsonParse } from "./schemas.js";
-import { uniqueSorted } from "./app-shell.js";
-import { appTokenConfigured } from "./auth-oauth.js";
-import { sourceInstallationRegistryCovers } from "./auth-tokens.js";
+} from "../src/types.ts";
+import { type StoredInstallationRecord, storedInstallationSchema } from "./auth-observability.ts";
+import { type GitHubInstallationRepository, safeJsonParse } from "./schemas.ts";
+import { uniqueSorted } from "./app-shell.ts";
+import { appTokenConfigured } from "./auth-oauth.ts";
+import { sourceInstallationRegistryCovers } from "./auth-tokens.ts";
 import {
   dashboardSchemaVersion,
   dashboardStorageTtlSeconds,
   fullTtlMs,
   maxCustomSources,
-} from "./config.js";
+} from "./config.ts";
 import {
   cacheAgeMs,
   canDisplayCached,
   errorMessage,
   readCached,
   readProfile,
-} from "./dashboard-cache.js";
-import { safeIso } from "./owner-metadata-write.js";
-import { enqueueRefreshJob, refreshTargetBackoffActive } from "./refresh-queue.js";
-import { auditSyncEvent, rememberRefreshTarget } from "./refresh-targets.js";
-import type { BackgroundContext } from "./runtime.js";
+} from "./dashboard-cache.ts";
+import { safeIso } from "./owner-metadata-write.ts";
+import { enqueueRefreshJob, refreshTargetBackoffActive } from "./refresh-queue.ts";
+import { auditSyncEvent, rememberRefreshTarget } from "./refresh-targets.ts";
+import type { BackgroundContext } from "./runtime.ts";
 
 export function isPublicInstallationRepository(repo: GitHubInstallationRepository): boolean {
   if (repo.private === true) {

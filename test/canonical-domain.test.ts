@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
-import { assetResponse } from "../../../worker/app-shell.js";
-import { canonicalDomain } from "../../../worker/runtime.js";
-import { socialSvg } from "../../../worker/social-card.js";
+import { assetResponse } from "../worker/app-shell.ts";
+import { canonicalDomain } from "../worker/runtime.ts";
+import { socialSvg } from "../worker/social-card.ts";
 
 const shell =
   '<title>ReleaseBar</title><link rel="canonical" href="https://releasebar.invalid/" /><meta name="releasebar:canonical-domain" content="" /><script type="module" src="/assets/index.js"></script>';

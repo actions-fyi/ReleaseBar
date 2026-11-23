@@ -2,9 +2,9 @@ export {
   GitHubRateLimitError,
   type DashboardBuildOptions,
   type OwnerRepoCount,
-} from "./dashboard-contracts.js";
-export { fetchOwnerRepoCounts } from "./dashboard-github.js";
-export { resolveOwnerType } from "./dashboard-project-cache.js";
+} from "./dashboard-contracts.ts";
+export { fetchOwnerRepoCounts } from "./dashboard-github.ts";
+export { resolveOwnerType } from "./dashboard-project-cache.ts";
 export {
   dashboardCacheKey,
   filterRepo,
@@ -13,10 +13,10 @@ export {
   slugOwner,
   validOwnerSlug,
   validRepoSlug,
-} from "./dashboard-projects.js";
+} from "./dashboard-projects.ts";
 
-import type { DashboardPayload, Project } from "../../src/types.js";
-import type { DashboardBuildOptions, GitHubClient, GitHubRepo } from "./dashboard-contracts.js";
+import type { DashboardPayload, Project } from "../src/types.ts";
+import type { DashboardBuildOptions, GitHubClient, GitHubRepo } from "./dashboard-contracts.ts";
 import {
   githubClient,
   hydrateRepoDetailsOrEmpty,
@@ -26,12 +26,12 @@ import {
   repoSummary,
   repoWithGraphqlDetails,
   repoWithSplitIssueCounts,
-} from "./dashboard-github.js";
+} from "./dashboard-github.ts";
 import {
   prioritizedHydrationQueue,
   readProjectCache,
   writeProjectCache,
-} from "./dashboard-project-cache.js";
+} from "./dashboard-project-cache.ts";
 import {
   filterRepo,
   freshness,
@@ -39,7 +39,7 @@ import {
   mergeRepoMetadata,
   repoSearchProject,
   slugOwner,
-} from "./dashboard-projects.js";
+} from "./dashboard-projects.ts";
 
 export async function buildDashboard(options: DashboardBuildOptions): Promise<DashboardPayload> {
   const includeReleaseData = options.includeReleaseData ?? true;

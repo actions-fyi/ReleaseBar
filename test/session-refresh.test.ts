@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { kvStore, signedJson, worker } from "../dashboard-test-harness.js";
+import { kvStore, signedJson, worker } from "./dashboard-test-harness.ts";
 
 const context = { waitUntil: () => undefined };
 

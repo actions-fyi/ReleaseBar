@@ -1,23 +1,18 @@
-import {
-  resolveOwnerType,
-  slugOwner,
-  validOwnerSlug,
-  validRepoSlug,
-} from "../scripts/lib/dashboard.js";
-import { ownerActivityFromPath, repoFromPath } from "../src/routing.js";
+import { resolveOwnerType, slugOwner, validOwnerSlug, validRepoSlug } from "../shared/dashboard.ts";
+import { ownerActivityFromPath, repoFromPath } from "../src/routing.ts";
 import type {
   ApiQuota,
   AuthPayload,
   DashboardPayload,
   Owner,
   RepoDetailPayload,
-} from "../src/types.js";
-import { hmac, verifySignedJson } from "./crypto.js";
-import { auditGitHubFetch } from "./github-audit.js";
-import { type BackgroundContext, canonicalDomain } from "./runtime.js";
-import { safeJsonParse, storedAuthSessionSchema, tryJsonParse } from "./schemas.js";
-import { authDependentAppShellHeaders } from "./auth-oauth.js";
-import { cachedHotInitialData } from "./build-progress.js";
+} from "../src/types.ts";
+import { hmac, verifySignedJson } from "./crypto.ts";
+import { auditGitHubFetch } from "./github-audit.ts";
+import { type BackgroundContext, canonicalDomain } from "./runtime.ts";
+import { safeJsonParse, storedAuthSessionSchema, tryJsonParse } from "./schemas.ts";
+import { authDependentAppShellHeaders } from "./auth-oauth.ts";
+import { cachedHotInitialData } from "./build-progress.ts";
 import {
   type AuthSession,
   installReturnCookie,
@@ -28,10 +23,10 @@ import {
   sessionMaxAgeSeconds,
   stateMaxAgeSeconds,
   type StoredAuthSession,
-} from "./config.js";
-import { cachedDashboardInitialData, cachedDiscoverInitialData } from "./discover.js";
-import { cachedRepoInitialData } from "./repo-detail-response.js";
-import { socialLabel, socialPreviewTitle } from "./social-card.js";
+} from "./config.ts";
+import { cachedDashboardInitialData, cachedDiscoverInitialData } from "./discover.ts";
+import { cachedRepoInitialData } from "./repo-detail-response.ts";
+import { socialLabel, socialPreviewTitle } from "./social-card.ts";
 
 export type TokenSources = {
   owners: string[];

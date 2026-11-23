@@ -1,8 +1,8 @@
-import { numberFormat } from "./app-format.js";
-import { primaryAuthActionFor, primaryAuthLabelFor, primaryAuthTitleFor } from "./auth-ui.js";
-import { ownerDashboardPath, validRepoSlug } from "./routing.js";
-import type { DashboardRoute } from "./routing.js";
-import type { AuthPayload, DashboardPayload } from "./types.js";
+import { numberFormat } from "./app-format.ts";
+import { primaryAuthActionFor, primaryAuthLabelFor, primaryAuthTitleFor } from "./auth-ui.ts";
+import { ownerDashboardPath, validRepoSlug } from "./routing.ts";
+import type { DashboardRoute } from "./routing.ts";
+import type { AuthPayload, DashboardPayload } from "./types.ts";
 
 export type SettingsState = {
   auth: AuthPayload | null;

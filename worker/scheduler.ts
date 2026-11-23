@@ -1,30 +1,30 @@
-import type { RefreshJob, SchedulerAdminPayload } from "../src/types.js";
-import { mapConcurrent } from "./concurrency.js";
+import type { RefreshJob, SchedulerAdminPayload } from "../src/types.ts";
+import { mapConcurrent } from "./concurrency.ts";
 import {
   githubGraphqlBackoffDeferUntil,
   graphqlBackoffActive,
   sharedQuotaCooldown,
   sharedQuotaDeferUntil,
-} from "./github-audit.js";
-import { canonicalDomain } from "./runtime.js";
-import { tryJsonParse } from "./schemas.js";
-import { resolveOwners } from "./app-shell.js";
-import { sourceInstallationToken } from "./auth-tokens.js";
+} from "./github-audit.ts";
+import { canonicalDomain } from "./runtime.ts";
+import { tryJsonParse } from "./schemas.ts";
+import { resolveOwners } from "./app-shell.ts";
+import { sourceInstallationToken } from "./auth-tokens.ts";
 import {
   adminTargetListLimit,
   progressiveBuildBudgetMs,
   queuedProgressiveBuildBudgetMs,
   refreshStateKey,
-} from "./config.js";
-import { errorMessage, isAbortError, readCached } from "./dashboard-cache.js";
-import { continueProgressiveBuild } from "./dashboard-rebuild.js";
-import { safeIso } from "./owner-metadata-write.js";
+} from "./config.ts";
+import { errorMessage, isAbortError, readCached } from "./dashboard-cache.ts";
+import { continueProgressiveBuild } from "./dashboard-rebuild.ts";
+import { safeIso } from "./owner-metadata-write.ts";
 import {
   refreshTargetGraphqlOperations,
   reserveRefreshJob,
   schedulerDueOptions,
   schedulerTargetDue,
-} from "./refresh-queue.js";
+} from "./refresh-queue.ts";
 import {
   auditSyncEvent,
   currentDashboardCacheKey,
@@ -40,8 +40,8 @@ import {
   refreshTargetProfile,
   writeRefreshJob,
   writeRefreshJobDelivery,
-} from "./refresh-targets.js";
-import { dashboardRequest } from "./request-lock.js";
+} from "./refresh-targets.ts";
+import { dashboardRequest } from "./request-lock.ts";
 
 export async function processRefreshJob(
   input: RefreshJob,

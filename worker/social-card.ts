@@ -1,13 +1,13 @@
-import { slugOwner, validOwnerSlug, validRepoSlug } from "../scripts/lib/dashboard.js";
-import type { ApiQuota, Project } from "../src/types.js";
-import { workerFetch } from "./http.js";
-import { type BackgroundContext, canonicalDomain } from "./runtime.js";
+import { slugOwner, validOwnerSlug, validRepoSlug } from "../shared/dashboard.ts";
+import type { ApiQuota, Project } from "../src/types.ts";
+import { workerFetch } from "./http.ts";
+import { type BackgroundContext, canonicalDomain } from "./runtime.ts";
 import {
   gitHubCompareSchema,
   gitHubReleaseSchema,
   gitHubRepositorySchema,
   tryJsonParse,
-} from "./schemas.js";
+} from "./schemas.ts";
 import { initWasm, Resvg } from "@resvg/resvg-wasm";
 import * as v from "valibot";
 import {
@@ -16,26 +16,26 @@ import {
   ownerListFromUrl,
   repoFullNameFromPath,
   repoListFromUrl,
-} from "./app-shell.js";
-import { releaseProject } from "./audience-data.js";
-import { bestInstallationToken } from "./auth-tokens.js";
+} from "./app-shell.ts";
+import { releaseProject } from "./audience-data.ts";
+import { bestInstallationToken } from "./auth-tokens.ts";
 import {
   dashboardStorageTtlSeconds,
   maxDisplayStaleMs,
   repoDetailCacheTtlMs,
   socialRepoCachePrefix,
   type StoredSocialRepo,
-} from "./config.js";
-import { repositoryPublicCacheBarrier } from "./owner-metadata-read.js";
-import { allowRequestRefresh } from "./owner-metadata-write.js";
+} from "./config.ts";
+import { repositoryPublicCacheBarrier } from "./owner-metadata-read.ts";
+import { allowRequestRefresh } from "./owner-metadata-write.ts";
 import {
   optionalRepoDetail,
   readRepoDetail,
   repoDetailAgeMs,
   repoDetailCacheKey,
-} from "./release-summary.js";
-import { freshnessForDetail, refreshRepoDetail } from "./repo-detail.js";
-import { detailGitHubJson } from "./repo-github.js";
+} from "./release-summary.ts";
+import { freshnessForDetail, refreshRepoDetail } from "./repo-detail.ts";
+import { detailGitHubJson } from "./repo-github.ts";
 
 export function socialLabel(url: URL): string {
   if (url.pathname === "/_admin") return "ReleaseBar Admin";

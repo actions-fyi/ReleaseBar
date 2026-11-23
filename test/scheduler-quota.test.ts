@@ -1,13 +1,13 @@
 import { expect, test } from "vitest";
-import { dashboardCacheKey } from "../dashboard.js";
-import type { RefreshJob, RefreshTarget } from "../../../src/types.js";
+import { dashboardCacheKey } from "../shared/dashboard.ts";
+import type { RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
   kvStore,
   signedJson,
   testDashboard,
   testProject,
   worker,
-} from "../dashboard-test-harness.js";
+} from "./dashboard-test-harness.ts";
 
 test("worker scheduler preserves queued backlog jobs until reservation expiry", async () => {
   const sessionId = "session-admin-stale-queued";

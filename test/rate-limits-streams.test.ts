@@ -1,13 +1,13 @@
 import { expect, test } from "vitest";
-import { buildDashboard, dashboardCacheKey } from "../dashboard.js";
-import type { DashboardPayload } from "../../../src/types.js";
+import { buildDashboard, dashboardCacheKey } from "../shared/dashboard.ts";
+import type { DashboardPayload } from "../src/types.ts";
 import {
   kvStore,
   refreshAuditEvents,
   testDashboard,
   testProject,
   worker,
-} from "../dashboard-test-harness.js";
+} from "./dashboard-test-harness.ts";
 
 test("worker rejects POST to reserved read-only owner-like APIs", async () => {
   for (const path of ["/api/me", "/api/_hot", "/api/_discover"]) {

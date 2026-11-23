@@ -9,8 +9,8 @@ import {
   resolveOwnerType,
   validOwnerSlug,
   validRepoSlug,
-} from "../dashboard.js";
-import { optionsFromSearch } from "../../../src/routing.js";
+} from "../shared/dashboard.ts";
+import { optionsFromSearch } from "../src/routing.ts";
 
 test("query options are explicit booleans", () => {
   expect(optionsFromSearch("?forks=true&archived=false&unreleased=true")).toStrictEqual({

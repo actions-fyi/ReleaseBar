@@ -1,13 +1,13 @@
-import { slugOwner, validOwnerSlug } from "../scripts/lib/dashboard.js";
+import { slugOwner, validOwnerSlug } from "../shared/dashboard.ts";
 import type {
   AuthInstallation,
   AuthInstallationRecord,
   AuthPayload,
   AuthUser,
-} from "../src/types.js";
-import { listStoredInstallations, recordAuthFunnelEvent } from "./auth-observability.js";
-import { randomNonce, signedJson } from "./crypto.js";
-import { jsonResponse, redirectResponse, workerFetch } from "./http.js";
+} from "../src/types.ts";
+import { listStoredInstallations, recordAuthFunnelEvent } from "./auth-observability.ts";
+import { randomNonce, signedJson } from "./crypto.ts";
+import { jsonResponse, redirectResponse, workerFetch } from "./http.ts";
 import {
   gitHubInstallationListSchema,
   gitHubInstallationRepositoryListSchema,
@@ -17,7 +17,7 @@ import {
   parseGitHubResponse,
   safeJsonParse,
   storedAuthSessionSchema,
-} from "./schemas.js";
+} from "./schemas.ts";
 import * as v from "valibot";
 import type { GenericSchema, InferOutput } from "valibot";
 import {
@@ -30,7 +30,7 @@ import {
   parseCookies,
   safeReturnTo,
   type TokenSources,
-} from "./app-shell.js";
+} from "./app-shell.ts";
 import {
   cachedInstallationToken,
   githubAppJwt,
@@ -38,7 +38,7 @@ import {
   returnToSources,
   sourceAccounts,
   sourceCoverage,
-} from "./auth-tokens.js";
+} from "./auth-tokens.ts";
 import {
   accessTokenRefreshLeewaySeconds,
   installationAcknowledgementGraceMs,
@@ -46,13 +46,13 @@ import {
   type RequestToken,
   sessionCookie,
   type StoredAuthSession,
-} from "./config.js";
+} from "./config.ts";
 import {
   installationMissKey,
   installationRegistryKey,
   isPublicInstallationRepository,
   writeInstallationRegistry,
-} from "./installation-registry.js";
+} from "./installation-registry.ts";
 
 export async function meResponse(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);

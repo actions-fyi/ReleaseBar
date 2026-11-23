@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { buildDashboard, fetchOwnerRepoCounts } from "../dashboard.js";
-import { testProject } from "../dashboard-test-harness.js";
+import { buildDashboard, fetchOwnerRepoCounts } from "../shared/dashboard.ts";
+import { testProject } from "./dashboard-test-harness.ts";
 
 test("dashboard filtering does not report archived repositories as absent", async () => {
   const previousReleasesUpdatedAt = "2026-06-10T05:00:00Z";

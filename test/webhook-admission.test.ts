@@ -1,6 +1,6 @@
 import { assert, expect, test } from "vitest";
-import { dashboardCacheKey } from "../dashboard.js";
-import type { DashboardPayload, RefreshJob, RefreshTarget } from "../../../src/types.js";
+import { dashboardCacheKey } from "../shared/dashboard.ts";
+import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
   DashboardBuildLock,
   durableLocks,
@@ -9,7 +9,7 @@ import {
   testProject,
   webhookSignature,
   worker,
-} from "../dashboard-test-harness.js";
+} from "./dashboard-test-harness.ts";
 
 test("GitHub push webhooks prioritize recent targets beyond the durable hot-cache limit", async () => {
   type QueuedWebhook = {

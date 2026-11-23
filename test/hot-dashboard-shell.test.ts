@@ -1,8 +1,8 @@
 import { assert, expect, test } from "vitest";
-import { dashboardCacheKey } from "../dashboard.js";
-import { attentionReasons, needsAttention, releaseDebtText } from "../../../src/dashboard-view.js";
-import type { DashboardPayload } from "../../../src/types.js";
-import { kvStore, testDashboard, testProject, worker } from "../dashboard-test-harness.js";
+import { dashboardCacheKey } from "../shared/dashboard.ts";
+import { attentionReasons, needsAttention, releaseDebtText } from "../src/dashboard-view.ts";
+import type { DashboardPayload } from "../src/types.ts";
+import { kvStore, testDashboard, testProject, worker } from "./dashboard-test-harness.ts";
 
 test("need attention explains release debt, stale releases, CI, and open work", () => {
   const stale = testProject({

@@ -1,5 +1,5 @@
-import { ownerDashboardPath } from "./routing.js";
-import type { AuthInstallation, AuthPayload } from "./types.js";
+import { ownerDashboardPath } from "./routing.ts";
+import type { AuthInstallation, AuthPayload } from "./types.ts";
 
 export type UserDashboard = {
   login: string;

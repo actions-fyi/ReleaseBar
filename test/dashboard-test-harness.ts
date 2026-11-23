@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 
-import type { DashboardPayload, Project, SchedulerAuditEvent } from "../../src/types.js";
-import handler, { DashboardBuildLock as WorkerBuildLock } from "../../worker/index.js";
-import type { WorkerQueueMessage } from "../../worker/runtime.js";
+import type { DashboardPayload, Project, SchedulerAuditEvent } from "../src/types.ts";
+import handler, { DashboardBuildLock as WorkerBuildLock } from "../worker/index.ts";
+import type { WorkerQueueMessage } from "../worker/runtime.ts";
 
 const textEncoder = new TextEncoder();
 

@@ -1,7 +1,7 @@
 // Builds the Wrangler config a deployment uses from the generic wrangler.jsonc and the deployment's
 // own settings, so no host, account resource or login has to be committed to the repository.
 
-import { parseWholeNumber, summaryLimitSettings } from "../../worker/summary-limits.js";
+import { parseWholeNumber, summaryLimitSettings } from "../worker/summary-limits.ts";
 
 export type WranglerRoute = { readonly pattern: string; readonly custom_domain?: boolean };
 

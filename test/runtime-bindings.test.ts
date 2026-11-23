@@ -3,7 +3,7 @@
 // are the local ones Miniflare runs. Storage is separate for each test file.
 import { env, exports } from "cloudflare:workers";
 import { expect, test, vi } from "vitest";
-import type { RefreshJob } from "../../../src/types.js";
+import type { RefreshJob } from "../src/types.ts";
 
 test("the Worker's fetch handler answers a request", async () => {
   const response = await exports.default.fetch(new Request("https://releasebar.test/api/me"));

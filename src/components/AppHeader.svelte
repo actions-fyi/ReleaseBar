@@ -1,8 +1,8 @@
 <script lang="ts">
   import { DropdownMenu } from "bits-ui";
-  import { ownerDashboardPath, siteDomain } from "../routing.js";
-  import type { AuthPayload, Owner, Project, RepoDetailPayload } from "../types.js";
-  import { userDashboardDetail, userDashboards } from "../user-dashboards.js";
+  import { ownerDashboardPath, siteDomain } from "../routing.ts";
+  import type { AuthPayload, Owner, Project, RepoDetailPayload } from "../types.ts";
+  import { userDashboardDetail, userDashboards } from "../user-dashboards.ts";
 
   type RepoRoute = { owner: string; repo: string; fullName: string };
 

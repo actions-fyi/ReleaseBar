@@ -1,13 +1,13 @@
 import { tick } from "svelte";
 
-import { numberFormat, quotaLabel, relativeDate } from "./app-format.js";
-import type { DashboardRoute, OwnerActivityRoute, RepoRoute } from "./routing.js";
+import { numberFormat, quotaLabel, relativeDate } from "./app-format.ts";
+import type { DashboardRoute, OwnerActivityRoute, RepoRoute } from "./routing.ts";
 import type {
   DashboardPayload,
   RepoActivityRange,
   RepoDetailActivityPayload,
   RepoDetailPayload,
-} from "./types.js";
+} from "./types.ts";
 
 export type RouteState = {
   data: DashboardPayload | null;

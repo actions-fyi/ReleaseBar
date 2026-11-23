@@ -5,11 +5,11 @@
 // The counters live in one Durable Object, the DASHBOARD_LOCKS instance named below, because a
 // limit needs an atomic read-and-add, which KV cannot give.
 
-import { currentSession } from "./app-shell.js";
-import { jsonResponse } from "./http.js";
-import { isCrawlerRequest } from "./owner-metadata-write.js";
-import { summaryRateLimits } from "./summary-limits.js";
-import type { BackgroundContext } from "./runtime.js";
+import { currentSession } from "./app-shell.ts";
+import { jsonResponse } from "./http.ts";
+import { isCrawlerRequest } from "./owner-metadata-write.ts";
+import { summaryRateLimits } from "./summary-limits.ts";
+import type { BackgroundContext } from "./runtime.ts";
 
 export const summarySignInMessage = "Sign in to generate this AI summary.";
 export const summaryUserLimitMessage =

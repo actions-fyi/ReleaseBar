@@ -1,20 +1,15 @@
-import {
-  resolveOwnerType,
-  slugOwner,
-  validOwnerSlug,
-  validRepoSlug,
-} from "../scripts/lib/dashboard.js";
+import { resolveOwnerType, slugOwner, validOwnerSlug, validRepoSlug } from "../shared/dashboard.ts";
 import type {
   ActivityRange,
   ApiQuota,
   OwnerActivityPayload,
   OwnerActivitySummary,
   RepoDetailActivityPayload,
-} from "../src/types.js";
-import { sha256Base64Url } from "./crypto.js";
-import { auditGitHubFetch } from "./github-audit.js";
-import { jsonResponse } from "./http.js";
-import { gitHubRepositorySchema } from "./schemas.js";
+} from "../src/types.ts";
+import { sha256Base64Url } from "./crypto.ts";
+import { auditGitHubFetch } from "./github-audit.ts";
+import { jsonResponse } from "./http.ts";
+import { gitHubRepositorySchema } from "./schemas.ts";
 import {
   type ActivitySummaryPayload,
   activityEventsForCurrentRange,
@@ -43,18 +38,18 @@ import {
   writeOwnerActivity,
   writeOwnerActivitySummary,
   writeRepoActivity,
-} from "./activity-data.js";
-import { bestInstallationToken } from "./auth-tokens.js";
+} from "./activity-data.ts";
+import { bestInstallationToken } from "./auth-tokens.ts";
 import {
   activityRepositorySummaryLimit,
   activitySummaryPromptVersion,
   maxDisplayStaleMs,
-} from "./config.js";
-import { dashboardErrorMessage, errorStatus, retryAfterHeaders } from "./dashboard-cache.js";
-import { acquireBuildLock } from "./dashboard-rebuild.js";
-import { repositoryPublicCacheBarrier } from "./owner-metadata-read.js";
-import { allowRequestRefresh, crawlerCacheOnlyResponse } from "./owner-metadata-write.js";
-import { claudeSummaryText, summaryFailure, summaryRetryDue } from "./release-summary.js";
+} from "./config.ts";
+import { dashboardErrorMessage, errorStatus, retryAfterHeaders } from "./dashboard-cache.ts";
+import { acquireBuildLock } from "./dashboard-rebuild.ts";
+import { repositoryPublicCacheBarrier } from "./owner-metadata-read.ts";
+import { allowRequestRefresh, crawlerCacheOnlyResponse } from "./owner-metadata-write.ts";
+import { claudeSummaryText, summaryFailure, summaryRetryDue } from "./release-summary.ts";
 import {
   SummaryLimitError,
   type SummaryReservation,
@@ -62,15 +57,15 @@ import {
   refusedSummaryHeaders,
   startGatedSummary,
   summaryGate,
-} from "./summary-quota.js";
+} from "./summary-quota.ts";
 import {
   activityCacheTtlMs,
   activityRangeFromUrl,
   activityRangeMs,
   detailGitHubJson,
   ownerActivityCacheKey,
-} from "./repo-github.js";
-import type { BackgroundContext } from "./runtime.js";
+} from "./repo-github.ts";
+import type { BackgroundContext } from "./runtime.ts";
 
 async function prepareActivitySummary(
   payload: ActivitySummaryPayload,

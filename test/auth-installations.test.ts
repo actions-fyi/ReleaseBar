@@ -1,8 +1,8 @@
 import { generateKeyPairSync } from "node:crypto";
 import { assert, expect, test } from "vitest";
-import { dashboardCacheKey } from "../dashboard.js";
-import type { RefreshJob } from "../../../src/types.js";
-import { kvStore, signedJson, testDashboard, testEnv, worker } from "../dashboard-test-harness.js";
+import { dashboardCacheKey } from "../shared/dashboard.ts";
+import type { RefreshJob } from "../src/types.ts";
+import { kvStore, signedJson, testDashboard, testEnv, worker } from "./dashboard-test-harness.ts";
 
 test("worker rejects oversized custom source requests", async () => {
   const owners = Array.from({ length: 9 }, (_, index) => `owner-${index}`).join(",");
@@ -822,7 +822,7 @@ test("worker records server-verified install callbacks without signed return sta
 });
 
 test("admin logins come from ADMIN_LOGINS and default to nobody", async () => {
-  const { isAdminLogin } = await import("../../../worker/auth-oauth.js");
+  const { isAdminLogin } = await import("../worker/auth-oauth.ts");
   expect(isAdminLogin("steipete", testEnv({}))).toBe(false);
   expect(isAdminLogin("anyone", testEnv({ ADMIN_LOGINS: "" }))).toBe(false);
   expect(isAdminLogin("Octo", testEnv({ ADMIN_LOGINS: "first, octo ,third" }))).toBe(true);

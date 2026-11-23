@@ -1,9 +1,9 @@
 import { expect, test } from "vitest";
 
-import { type FakeLocks, claudeText, testEnv } from "../dashboard-test-harness.js";
-import { type RawWranglerConfig, deployConfig } from "../deploy-config.js";
-import { claudeSummaryText } from "../../../worker/release-summary.js";
-import { withLockJurisdiction } from "../../../worker/runtime.js";
+import { type FakeLocks, claudeText, testEnv } from "./dashboard-test-harness.ts";
+import { type RawWranglerConfig, deployConfig } from "../shared/deploy-config.ts";
+import { claudeSummaryText } from "../worker/release-summary.ts";
+import { withLockJurisdiction } from "../worker/runtime.ts";
 
 const kvId = "0123456789abcdef0123456789abcdef";
 

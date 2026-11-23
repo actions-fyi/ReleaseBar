@@ -1,14 +1,14 @@
-import { slugOwner } from "../scripts/lib/dashboard.js";
+import { slugOwner } from "../shared/dashboard.ts";
 import type {
   AuthFunnelEvent,
   AuthFunnelSummary,
   AuthInstallation,
   AuthInstallationRecord,
-} from "../src/types.js";
+} from "../src/types.ts";
 import * as v from "valibot";
-import { mapConcurrent } from "./concurrency.js";
-import { randomNonce } from "./crypto.js";
-import { safeJsonParse, tryJsonParse } from "./schemas.js";
+import { mapConcurrent } from "./concurrency.ts";
+import { randomNonce } from "./crypto.ts";
+import { safeJsonParse, tryJsonParse } from "./schemas.ts";
 
 const authFunnelPrefix = "auth:funnel:v1:";
 const authFunnelCounterPrefix = "auth:funnel-counter:v1:";

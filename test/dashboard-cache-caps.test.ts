@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { buildDashboard } from "../dashboard.js";
-import { kvStore } from "../dashboard-test-harness.js";
+import { buildDashboard } from "../shared/dashboard.ts";
+import { kvStore } from "./dashboard-test-harness.ts";
 
 test("dashboard cached hydration keeps fresh owner issue and PR totals", async () => {
   const cache = kvStore();

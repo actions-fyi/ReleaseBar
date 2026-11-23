@@ -1,5 +1,5 @@
-import { attentionReasons, matchesProjectSearch } from "./dashboard-view.js";
-import type { DashboardRoute } from "./routing.js";
+import { attentionReasons, matchesProjectSearch } from "./dashboard-view.ts";
+import type { DashboardRoute } from "./routing.ts";
 import type {
   ApiQuota,
   DashboardPayload,
@@ -11,7 +11,7 @@ import type {
   RepoDetailPayload,
   RepoDetailReleaseSummary,
   TrustProfilePayload,
-} from "./types.js";
+} from "./types.ts";
 
 export function dashboardOwnerLabel(payload: DashboardPayload, route: DashboardRoute): string {
   if (route.isDefault) return payload.title || "ReleaseBar Hot";

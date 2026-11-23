@@ -1,6 +1,6 @@
 import { assert, expect, test } from "vitest";
-import { dashboardCacheKey } from "../dashboard.js";
-import type { DashboardPayload, RefreshTarget } from "../../../src/types.js";
+import { dashboardCacheKey } from "../shared/dashboard.ts";
+import type { DashboardPayload, RefreshTarget } from "../src/types.ts";
 import {
   DashboardBuildLock,
   durableLocks,
@@ -8,7 +8,7 @@ import {
   testDashboard,
   testProject,
   worker,
-} from "../dashboard-test-harness.js";
+} from "./dashboard-test-harness.ts";
 
 test("push webhooks bypass terminal target backoff before invalidating caches", async () => {
   const owner = "backedoff";

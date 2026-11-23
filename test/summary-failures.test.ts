@@ -3,14 +3,14 @@ import type {
   OwnerActivityPayload,
   OwnerActivitySummary,
   RepoDetailPayload,
-} from "../../../src/types.js";
+} from "../src/types.ts";
 import {
   activitySummaryPromptVersion,
   summaryRetryBaseMs,
   summaryRetryMaxMs,
   summaryRetryMultiplier,
-} from "../../../worker/config.js";
-import { summaryFailedMessage, summaryRetryDue } from "../../../worker/release-summary.js";
+} from "../worker/config.ts";
+import { summaryFailedMessage, summaryRetryDue } from "../worker/release-summary.ts";
 import {
   claudeJson,
   claudeText,
@@ -18,7 +18,7 @@ import {
   signedIn,
   testProject,
   worker,
-} from "../dashboard-test-harness.js";
+} from "./dashboard-test-harness.ts";
 
 const httpOk = 200;
 const httpAccepted = 202;

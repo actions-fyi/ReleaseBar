@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { numberFormat, relativeDate } from "../app-format.js";
-  import type { AdminDashboardPayload } from "../app-types.js";
+  import { numberFormat, relativeDate } from "../app-format.ts";
+  import type { AdminDashboardPayload } from "../app-types.ts";
   import type {
     AuthPayload,
     RefreshJob,
     RefreshTarget,
     SchedulerAuditEvent,
-  } from "../types.js";
+  } from "../types.ts";
 
   export let adminError: string;
   export let auth: AuthPayload | null;

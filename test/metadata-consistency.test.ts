@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { dashboardCacheKey } from "../dashboard.js";
-import type { DashboardPayload, Project, RefreshTarget } from "../../../src/types.js";
+import { dashboardCacheKey } from "../shared/dashboard.ts";
+import type { DashboardPayload, Project, RefreshTarget } from "../src/types.ts";
 import {
   DashboardBuildLock,
   durableLocks,
@@ -8,7 +8,7 @@ import {
   testDashboard,
   testProject,
   worker,
-} from "../dashboard-test-harness.js";
+} from "./dashboard-test-harness.ts";
 
 test("worker serves fresh dashboard cache before GitHub App token discovery", async () => {
   const now = new Date().toISOString();

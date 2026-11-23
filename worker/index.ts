@@ -1,8 +1,8 @@
-import { validOwnerSlug } from "../scripts/lib/dashboard.js";
-import { decodedPathParts } from "../src/routing.js";
-import type { RefreshJob } from "../src/types.js";
-import { corsHeaders, jsonResponse } from "./http.js";
-import { openApiSpec } from "./openapi.js";
+import { validOwnerSlug } from "../shared/dashboard.ts";
+import { decodedPathParts } from "../src/routing.ts";
+import type { RefreshJob } from "../src/types.ts";
+import { corsHeaders, jsonResponse } from "./http.ts";
+import { openApiSpec } from "./openapi.ts";
 import {
   isOwnerActivityApiPath,
   isOwnerApiPath,
@@ -13,19 +13,19 @@ import {
   isRepoAudienceBackfillApiPath,
   isRepoDetailApiPath,
   isTrustProfileApiPath,
-} from "./routes.js";
-import { type WorkerQueueMessage, withLockJurisdiction } from "./runtime.js";
-import { ownerActivityResponse, repoActivityResponse } from "./activity.js";
-import { adminResponse, profileResponse } from "./admin.js";
-import { assetResponse, ownerActivityPageOwner } from "./app-shell.js";
+} from "./routes.ts";
+import { type WorkerQueueMessage, withLockJurisdiction } from "./runtime.ts";
+import { ownerActivityResponse, repoActivityResponse } from "./activity.ts";
+import { adminResponse, profileResponse } from "./admin.ts";
+import { assetResponse, ownerActivityPageOwner } from "./app-shell.ts";
 import {
   repoAudienceBackfillResponse,
   repoAudienceResponse,
   trustProfileResponse,
-} from "./audience.js";
-import { meResponse } from "./auth-oauth.js";
-import { authResponse } from "./auth-tokens.js";
-import { hotResponse } from "./build-progress.js";
+} from "./audience.ts";
+import { meResponse } from "./auth-oauth.ts";
+import { authResponse } from "./auth-tokens.ts";
+import { hotResponse } from "./build-progress.ts";
 import {
   buildLockRetrySeconds,
   githubWebhookDeliveryTtlMs,
@@ -34,34 +34,34 @@ import {
   refreshQueueMaxAttempts,
   schedulerBatchLimit,
   webhookPriorityFanoutRetrySeconds,
-} from "./config.js";
-import { errorMessage } from "./dashboard-cache.js";
-import { ownerEventsResponse } from "./dashboard-rebuild.js";
-import { discoverResponse } from "./discover.js";
-import { safeIso } from "./owner-metadata-write.js";
-import { ownerResponse } from "./owner-response.js";
-import { finishRefreshJobReservation, schedulerTick } from "./refresh-queue.js";
+} from "./config.ts";
+import { errorMessage } from "./dashboard-cache.ts";
+import { ownerEventsResponse } from "./dashboard-rebuild.ts";
+import { discoverResponse } from "./discover.ts";
+import { safeIso } from "./owner-metadata-write.ts";
+import { ownerResponse } from "./owner-response.ts";
+import { finishRefreshJobReservation, schedulerTick } from "./refresh-queue.ts";
 import {
   auditSyncEvent,
   clientTimingResponse,
   isGitHubWebhookFanoutJob,
   isGitHubWebhookJob,
   readRefreshJob,
-} from "./refresh-targets.js";
-import { repoDetailResponse } from "./repo-detail-response.js";
-import { failExhaustedRefreshJob, processRefreshJob } from "./scheduler.js";
-import { socialCardForLabel, socialImage, socialPng, socialRouteLabel } from "./social-card.js";
+} from "./refresh-targets.ts";
+import { repoDetailResponse } from "./repo-detail-response.ts";
+import { failExhaustedRefreshJob, processRefreshJob } from "./scheduler.ts";
+import { socialCardForLabel, socialImage, socialPng, socialRouteLabel } from "./social-card.ts";
 import {
   abandonGitHubWebhookDelivery,
   githubWebhookProcessorBusy,
   githubWebhookResponse,
   githubWebhookRetryDelaySeconds,
   processGitHubWebhookFanout,
-} from "./webhook.js";
-import { webhookRepo } from "./webhook-targets.js";
+} from "./webhook.ts";
+import { webhookRepo } from "./webhook-targets.ts";
 
-export { dashboardStreamSignature, dashboardStreamState } from "./dashboard-rebuild.js";
-export { DashboardBuildLock } from "./request-lock.js";
+export { dashboardStreamSignature, dashboardStreamState } from "./dashboard-rebuild.ts";
+export { DashboardBuildLock } from "./request-lock.ts";
 
 export default {
   async fetch(request: Request, rawEnv: Env, context: ExecutionContext): Promise<Response> {

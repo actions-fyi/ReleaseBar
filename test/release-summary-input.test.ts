@@ -1,9 +1,6 @@
 import { assert, expect, test } from "vitest";
-import { clipText, releaseTitlesInput } from "../../../worker/release-summary.js";
-import {
-  releaseSummaryLimitSettings,
-  releaseSummaryLimits,
-} from "../../../worker/summary-limits.js";
+import { clipText, releaseTitlesInput } from "../worker/release-summary.ts";
+import { releaseSummaryLimitSettings, releaseSummaryLimits } from "../worker/summary-limits.ts";
 
 const defaults = releaseSummaryLimits({});
 

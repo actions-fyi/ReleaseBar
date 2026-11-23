@@ -1,6 +1,6 @@
 import { assert, expect, test } from "vitest";
-import { buildDashboard } from "../dashboard.js";
-import { testProject } from "../dashboard-test-harness.js";
+import { buildDashboard } from "../shared/dashboard.ts";
+import { testProject } from "./dashboard-test-harness.ts";
 
 test("dashboard build uses GraphQL owner metadata when token is available", async () => {
   const requested: string[] = [];

@@ -1,15 +1,15 @@
-import { slugOwner, validRepoSlug } from "../scripts/lib/dashboard.js";
-import type { RepoDetailPayload } from "../src/types.js";
-import { sharedQuotaCooldown } from "./github-audit.js";
-import { jsonResponse } from "./http.js";
-import type { InitialPageData } from "./app-shell.js";
-import { withRepoDetailContributorTrustProfiles } from "./audience-data.js";
-import { sourceInstallationRegistryCovers } from "./auth-tokens.js";
-import { maxDisplayStaleMs, repoDetailCacheTtlMs, repoDetailWarmingRefreshMs } from "./config.js";
-import { dashboardErrorMessage, errorStatus, retryAfterHeaders } from "./dashboard-cache.js";
-import { acquireBuildLock } from "./dashboard-rebuild.js";
-import { repositoryPublicCacheBarrier } from "./owner-metadata-read.js";
-import { allowRequestRefresh, crawlerCacheOnlyResponse } from "./owner-metadata-write.js";
+import { slugOwner, validRepoSlug } from "../shared/dashboard.ts";
+import type { RepoDetailPayload } from "../src/types.ts";
+import { sharedQuotaCooldown } from "./github-audit.ts";
+import { jsonResponse } from "./http.ts";
+import type { InitialPageData } from "./app-shell.ts";
+import { withRepoDetailContributorTrustProfiles } from "./audience-data.ts";
+import { sourceInstallationRegistryCovers } from "./auth-tokens.ts";
+import { maxDisplayStaleMs, repoDetailCacheTtlMs, repoDetailWarmingRefreshMs } from "./config.ts";
+import { dashboardErrorMessage, errorStatus, retryAfterHeaders } from "./dashboard-cache.ts";
+import { acquireBuildLock } from "./dashboard-rebuild.ts";
+import { repositoryPublicCacheBarrier } from "./owner-metadata-read.ts";
+import { allowRequestRefresh, crawlerCacheOnlyResponse } from "./owner-metadata-write.ts";
 import {
   readRepoDetail,
   releaseSummaryCacheKey,
@@ -22,20 +22,20 @@ import {
   withRepoDetailState,
   writeReleaseSummary,
   writeRepoDetail,
-} from "./release-summary.js";
+} from "./release-summary.ts";
 import {
   SummaryLimitError,
   type SummaryReservation,
   refusedSummary,
   refusedSummaryHeaders,
   startGatedSummary,
-} from "./summary-quota.js";
+} from "./summary-quota.ts";
 import {
   buildRepoDetailSingleFlight,
   refreshRepoDetail,
   repoDetailCredential,
-} from "./repo-detail.js";
-import type { BackgroundContext } from "./runtime.js";
+} from "./repo-detail.ts";
+import type { BackgroundContext } from "./runtime.ts";
 
 export function releaseSummaryNeedsRefresh(payload: RepoDetailPayload | null, env: Env): boolean {
   const hasComparableCommits =

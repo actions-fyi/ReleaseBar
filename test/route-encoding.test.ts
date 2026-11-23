@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { ownerActivityFromPath, ownerFromPath, repoFromPath } from "../../../src/routing.js";
-import { kvStore, worker } from "../dashboard-test-harness.js";
+import { ownerActivityFromPath, ownerFromPath, repoFromPath } from "../src/routing.ts";
+import { kvStore, worker } from "./dashboard-test-harness.ts";
 
 test("page route parsers reject malformed percent encoding", () => {
   for (const invalid of ["%", "%GG", "%C0%AF", "%E0%A4%A"]) {

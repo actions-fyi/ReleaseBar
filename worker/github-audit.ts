@@ -1,7 +1,7 @@
-import type { ApiQuota, GitHubAccessRouteSummary, GitHubAccessSummary } from "../src/types.js";
-import { jsonResponse, workerFetch } from "./http.js";
-import { tryJsonParse } from "./schemas.js";
-import type { BackgroundContext } from "./runtime.js";
+import type { ApiQuota, GitHubAccessRouteSummary, GitHubAccessSummary } from "../src/types.ts";
+import { jsonResponse, workerFetch } from "./http.ts";
+import { tryJsonParse } from "./schemas.ts";
+import type { BackgroundContext } from "./runtime.ts";
 
 const githubAccessPrefix = "github:access:v1:";
 const githubAccessTtlSeconds = 14 * 24 * 60 * 60;

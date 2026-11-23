@@ -1,8 +1,8 @@
 import { generateKeyPairSync } from "node:crypto";
 import { expect, test } from "vitest";
-import { dashboardCacheKey } from "../dashboard.js";
-import type { RefreshJob, RefreshTarget, SchedulerAdminPayload } from "../../../src/types.js";
-import { kvStore, signedJson, testDashboard, worker } from "../dashboard-test-harness.js";
+import { dashboardCacheKey } from "../shared/dashboard.ts";
+import type { RefreshJob, RefreshTarget, SchedulerAdminPayload } from "../src/types.ts";
+import { kvStore, signedJson, testDashboard, worker } from "./dashboard-test-harness.ts";
 
 test("worker queue skips jobs from obsolete dashboard schemas", async () => {
   const key = "dashboard:v5:owner=legacy";

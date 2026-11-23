@@ -4,14 +4,14 @@ import type {
   OwnerActivitySummary,
   RepoDetailActivityPayload,
   RepoDetailPayload,
-} from "../../../src/types.js";
-import { activitySummaryPromptVersion } from "../../../worker/config.js";
-import { summaryRateLimitSettings, summaryRateLimits } from "../../../worker/summary-limits.js";
+} from "../src/types.ts";
+import { activitySummaryPromptVersion } from "../worker/config.ts";
+import { summaryRateLimitSettings, summaryRateLimits } from "../worker/summary-limits.ts";
 import {
   summaryGlobalLimitMessage,
   summarySignInMessage,
   summaryUserLimitMessage,
-} from "../../../worker/summary-quota.js";
+} from "../worker/summary-quota.ts";
 import {
   claudeJson,
   crawlerRequest,
@@ -20,8 +20,8 @@ import {
   signedIn,
   testProject,
   worker,
-} from "../dashboard-test-harness.js";
-import { deployConfig } from "../deploy-config.js";
+} from "./dashboard-test-harness.ts";
+import { deployConfig } from "../shared/deploy-config.ts";
 
 const httpOk = 200;
 const httpAccepted = 202;

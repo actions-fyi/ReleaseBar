@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import type { RepoDetailPayload } from "../../../src/types.js";
-import { kvStore, worker } from "../dashboard-test-harness.js";
+import type { RepoDetailPayload } from "../src/types.ts";
+import { kvStore, worker } from "./dashboard-test-harness.ts";
 
 test("worker rejects private repository detail payloads", async () => {
   const originalFetch = globalThis.fetch;

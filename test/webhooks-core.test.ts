@@ -1,12 +1,12 @@
 import { assert, expect, test } from "vitest";
-import { dashboardCacheKey } from "../dashboard.js";
+import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type {
   DashboardPayload,
   OwnerActivityPayload,
   Project,
   RepoDetailPayload,
   RefreshTarget,
-} from "../../../src/types.js";
+} from "../src/types.ts";
 import {
   DashboardBuildLock,
   durableLocks,
@@ -15,7 +15,7 @@ import {
   testProject,
   webhookSignature,
   worker,
-} from "../dashboard-test-harness.js";
+} from "./dashboard-test-harness.ts";
 
 test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes", async () => {
   const secret = "webhook-secret";

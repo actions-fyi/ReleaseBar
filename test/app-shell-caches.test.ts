@@ -1,7 +1,7 @@
 import { generateKeyPairSync } from "node:crypto";
 import { assert, expect, test } from "vitest";
-import { dashboardCacheKey } from "../dashboard.js";
-import type { DashboardPayload, RepoDetailPayload } from "../../../src/types.js";
+import { dashboardCacheKey } from "../shared/dashboard.ts";
+import type { DashboardPayload, RepoDetailPayload } from "../src/types.ts";
 import {
   crawlerRequest,
   kvStore,
@@ -9,7 +9,7 @@ import {
   testDashboard,
   testProject,
   worker,
-} from "../dashboard-test-harness.js";
+} from "./dashboard-test-harness.ts";
 
 test("signed-in mixed-account fast paths preserve release dashboards", async () => {
   const sessionId = "session-mixed-cache";

@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import { buildDashboard } from "../dashboard.js";
-import { buildCommands } from "../../../src/app-commands.js";
-import type { AuthInstallation, AuthPayload } from "../../../src/types.js";
-import { userDashboardDetail, userDashboards } from "../../../src/user-dashboards.js";
+import { buildDashboard } from "../shared/dashboard.ts";
+import { buildCommands } from "../src/app-commands.ts";
+import type { AuthInstallation, AuthPayload } from "../src/types.ts";
+import { userDashboardDetail, userDashboards } from "../src/user-dashboards.ts";
 
 function installation(
   accountLogin: string,

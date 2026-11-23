@@ -3,7 +3,7 @@ import type {
   OwnerActivityPayload,
   RepoDetailActivityPayload,
   RepoDetailPayload,
-} from "../../../src/types.js";
+} from "../src/types.ts";
 import {
   claudeJson,
   claudeText,
@@ -12,7 +12,7 @@ import {
   signedIn,
   testProject,
   worker,
-} from "../dashboard-test-harness.js";
+} from "./dashboard-test-harness.ts";
 
 test("worker throttles cached warming repository detail refreshes", async () => {
   const generatedAt = new Date().toISOString();

@@ -1,6 +1,6 @@
 import { assert, expect, test } from "vitest";
-import type { RepoDetailPayload } from "../../../src/types.js";
-import { kvStore, socialRenderAsset, testProject, worker } from "../dashboard-test-harness.js";
+import type { RepoDetailPayload } from "../src/types.ts";
+import { kvStore, socialRenderAsset, testProject, worker } from "./dashboard-test-harness.ts";
 
 test("worker social cards include owner avatars and repository release metrics", async () => {
   const generatedAt = new Date().toISOString();

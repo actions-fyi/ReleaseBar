@@ -1,6 +1,6 @@
 import { assert, expect, test } from "vitest";
-import { dashboardCacheKey } from "../dashboard.js";
-import type { DashboardPayload, Project, RefreshJob, RefreshTarget } from "../../../src/types.js";
+import { dashboardCacheKey } from "../shared/dashboard.ts";
+import type { DashboardPayload, Project, RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
   DashboardBuildLock,
   durableLocks,
@@ -9,7 +9,7 @@ import {
   testProject,
   webhookSignature,
   worker,
-} from "../dashboard-test-harness.js";
+} from "./dashboard-test-harness.ts";
 
 test("older owner count refreshes cannot replace newer snapshots", async () => {
   const metadataAt = "2026-06-11T02:00:00Z";

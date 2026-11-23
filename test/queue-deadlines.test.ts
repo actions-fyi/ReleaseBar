@@ -1,7 +1,7 @@
 import { generateKeyPairSync } from "node:crypto";
 import { expect, test } from "vitest";
-import { dashboardCacheKey } from "../dashboard.js";
-import type { DashboardPayload, RefreshJob, RefreshTarget } from "../../../src/types.js";
+import { dashboardCacheKey } from "../shared/dashboard.ts";
+import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
   crawlerRequest,
   kvStore,
@@ -10,7 +10,7 @@ import {
   testDashboard,
   testProject,
   worker,
-} from "../dashboard-test-harness.js";
+} from "./dashboard-test-harness.ts";
 
 test("worker terminalizes exhausted refresh retries before dead-lettering", async () => {
   const key = dashboardCacheKey({

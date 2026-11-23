@@ -1,4 +1,4 @@
-import type { Owner, Project } from "../../src/types.js";
+import type { Owner, Project } from "../src/types.ts";
 import {
   type DashboardBuildOptions,
   type GitHubOwner,
@@ -6,9 +6,9 @@ import {
   type ProjectCache,
   type ProjectCacheEntry,
   repoFragmentTtlSeconds,
-} from "./dashboard-contracts.js";
-import { github, githubClient } from "./dashboard-github.js";
-import { slugOwner, validOwnerSlug } from "./dashboard-projects.js";
+} from "./dashboard-contracts.ts";
+import { github, githubClient } from "./dashboard-github.ts";
+import { slugOwner, validOwnerSlug } from "./dashboard-projects.ts";
 
 export function projectCacheKey(
   repo: GitHubRepo,

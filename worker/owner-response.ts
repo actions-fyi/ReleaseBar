@@ -1,15 +1,15 @@
-import { dashboardCacheKey, slugOwner, validOwnerSlug } from "../scripts/lib/dashboard.js";
-import type { DashboardPayload, Owner } from "../src/types.js";
-import { corsHeaders, jsonResponse } from "./http.js";
-import { rebuildingPayload, statusPayload, unresolvedDashboardRequest } from "./admin.js";
-import { ownerListFromUrl, repoListFromUrl, resolveOwners, uniqueSorted } from "./app-shell.js";
+import { dashboardCacheKey, slugOwner, validOwnerSlug } from "../shared/dashboard.ts";
+import type { DashboardPayload, Owner } from "../src/types.ts";
+import { corsHeaders, jsonResponse } from "./http.ts";
+import { rebuildingPayload, statusPayload, unresolvedDashboardRequest } from "./admin.ts";
+import { ownerListFromUrl, repoListFromUrl, resolveOwners, uniqueSorted } from "./app-shell.ts";
 import {
   appTokenConfigured,
   authDependentDashboardHeaders,
   dashboardReleaseDataAllowed,
-} from "./auth-oauth.js";
-import { bestInstallationToken, sourceInstallationRegistryCovers } from "./auth-tokens.js";
-import { partialDashboardPayload, readProgress } from "./build-progress.js";
+} from "./auth-oauth.ts";
+import { bestInstallationToken, sourceInstallationRegistryCovers } from "./auth-tokens.ts";
+import { partialDashboardPayload, readProgress } from "./build-progress.ts";
 import {
   buildLockTtlMs,
   buildPending,
@@ -21,7 +21,7 @@ import {
   maxCustomSources,
   refreshQueueDeliveryDelaySeconds,
   type RequestToken,
-} from "./config.js";
+} from "./config.ts";
 import {
   cacheAgeMs,
   canDisplayCached,
@@ -36,7 +36,7 @@ import {
   retryAfterHeaders,
   withCacheState,
   writeCached,
-} from "./dashboard-cache.js";
+} from "./dashboard-cache.ts";
 import {
   dashboardPayloadFromProgress,
   errorPayload,
@@ -44,21 +44,21 @@ import {
   refreshDashboardMetadataFirst,
   scheduleProgressiveBuild,
   sleep,
-} from "./dashboard-rebuild.js";
+} from "./dashboard-rebuild.ts";
 import {
   allowRequestRefresh,
   mergeOwnerMetadata,
   readCachedWithOwnerMetadata,
-} from "./owner-metadata-write.js";
-import { refreshTargetBackoffActive } from "./refresh-queue.js";
+} from "./owner-metadata-write.ts";
+import { refreshTargetBackoffActive } from "./refresh-queue.ts";
 import {
   auditDashboardSync,
   auditSyncEvent,
   dashboardSyncDetail,
   rememberRefreshTarget,
-} from "./refresh-targets.js";
-import { dashboardRequest } from "./request-lock.js";
-import type { BackgroundContext } from "./runtime.js";
+} from "./refresh-targets.ts";
+import { dashboardRequest } from "./request-lock.ts";
+import type { BackgroundContext } from "./runtime.ts";
 
 export async function ownerResponse(
   request: Request,

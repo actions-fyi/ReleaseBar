@@ -1,12 +1,12 @@
-import { slugOwner } from "../scripts/lib/dashboard.js";
-import type { DashboardPayload } from "../src/types.js";
-import { jsonResponse } from "./http.js";
-import { dashboardTotals } from "./build-progress.js";
+import { slugOwner } from "../shared/dashboard.ts";
+import type { DashboardPayload } from "../src/types.ts";
+import { jsonResponse } from "./http.ts";
+import { dashboardTotals } from "./build-progress.ts";
 import {
   crawlerUserAgentPattern,
   type OwnerMetadataMutation,
   type OwnerMetadataSnapshot,
-} from "./config.js";
+} from "./config.ts";
 import {
   canDisplayOwnerCounts,
   canDisplayOwnerMetadata,
@@ -15,7 +15,7 @@ import {
   dashboardWithVisibleProjects,
   newestOwnerTimestamp,
   readCachedRaw,
-} from "./dashboard-cache.js";
+} from "./dashboard-cache.ts";
 import {
   mergeProjectCountFields,
   mergeProjectIssuePullCounts,
@@ -24,7 +24,7 @@ import {
   readDurableOwnerMetadata,
   readOwnerMetadataKv,
   writeOwnerMetadata,
-} from "./owner-metadata-read.js";
+} from "./owner-metadata-read.ts";
 
 export function applyOwnerMetadataMutation(
   owner: string,

@@ -2,7 +2,11 @@
 // environment variables (Workers Builds build variables). `npm run deploy` deploys from it.
 import { writeFile } from "node:fs/promises";
 
-import { type RawWranglerConfig, deployConfig, deploySettingNames } from "./lib/deploy-config.js";
+import {
+  type RawWranglerConfig,
+  deployConfig,
+  deploySettingNames,
+} from "../shared/deploy-config.ts";
 
 type WranglerConfigReader = {
   readonly experimental_readRawConfig: (args: { readonly config: string }) => {

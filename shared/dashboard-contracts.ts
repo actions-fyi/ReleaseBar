@@ -1,4 +1,4 @@
-import type { ApiQuota, CiState, DashboardPayload, Owner, Project } from "../../src/types.js";
+import type { ApiQuota, CiState, DashboardPayload, Owner, Project } from "../src/types.ts";
 
 export type DashboardBuildOptions = {
   title: string;

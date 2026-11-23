@@ -1,8 +1,8 @@
 import { generateKeyPairSync } from "node:crypto";
 import { expect, test } from "vitest";
-import { dashboardCacheKey } from "../dashboard.js";
-import type { DashboardPayload, Project, RefreshJob } from "../../../src/types.js";
-import { kvStore, testDashboard, testProject, worker } from "../dashboard-test-harness.js";
+import { dashboardCacheKey } from "../shared/dashboard.ts";
+import type { DashboardPayload, Project, RefreshJob } from "../src/types.ts";
+import { kvStore, testDashboard, testProject, worker } from "./dashboard-test-harness.ts";
 
 test("worker filters shared owner snapshots for cold combined dashboards", async () => {
   const originalFetch = globalThis.fetch;

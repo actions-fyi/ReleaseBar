@@ -3,27 +3,27 @@ import {
   dashboardCacheKey,
   slugOwner,
   validOwnerSlug,
-} from "../scripts/lib/dashboard.js";
-import type { DashboardPayload, Project, RefreshTarget } from "../src/types.js";
-import { randomNonce } from "./crypto.js";
+} from "../shared/dashboard.ts";
+import type { DashboardPayload, Project, RefreshTarget } from "../src/types.ts";
+import { randomNonce } from "./crypto.ts";
 import {
   auditGitHubFetch,
   sharedQuotaCooldown,
   type SharedQuotaCooldown,
   sharedQuotaDeferUntil,
-} from "./github-audit.js";
-import { corsHeaders, jsonResponse } from "./http.js";
-import { type BackgroundContext, canonicalDomain } from "./runtime.js";
-import { statusPayload } from "./admin.js";
-import { ownerListFromUrl, repoListFromUrl, uniqueSorted } from "./app-shell.js";
-import { appTokenConfigured, dashboardReleaseDataAllowed } from "./auth-oauth.js";
+} from "./github-audit.ts";
+import { corsHeaders, jsonResponse } from "./http.ts";
+import { type BackgroundContext, canonicalDomain } from "./runtime.ts";
+import { statusPayload } from "./admin.ts";
+import { ownerListFromUrl, repoListFromUrl, uniqueSorted } from "./app-shell.ts";
+import { appTokenConfigured, dashboardReleaseDataAllowed } from "./auth-oauth.ts";
 import {
   bestInstallationToken,
   sourceAccounts,
   sourceInstallationRegistryCovers,
   sourceInstallationToken,
   sourcesForAccount,
-} from "./auth-tokens.js";
+} from "./auth-tokens.ts";
 import {
   beginProgressGeneration,
   dashboardTotals,
@@ -33,7 +33,7 @@ import {
   rememberHotDashboard,
   withProfile,
   writeProgress,
-} from "./build-progress.js";
+} from "./build-progress.ts";
 import {
   authenticatedReleaseOwnerPageSize,
   type BuildLock,
@@ -53,7 +53,7 @@ import {
   repoLimit,
   repoScanBatchSize,
   type StoredBuildProgress,
-} from "./config.js";
+} from "./config.ts";
 import {
   cacheAgeMs,
   canDisplayCached,
@@ -67,15 +67,15 @@ import {
   readProfile,
   withCacheState,
   writeCached,
-} from "./dashboard-cache.js";
+} from "./dashboard-cache.ts";
 import {
   allowRequestRefresh,
   mergeOwnerMetadata,
   readCachedWithOwnerMetadata,
   rememberOwnerMetadata,
-} from "./owner-metadata-write.js";
-import { enqueueRefreshJob } from "./refresh-queue.js";
-import { auditSyncEvent, dashboardSyncDetail } from "./refresh-targets.js";
+} from "./owner-metadata-write.ts";
+import { enqueueRefreshJob } from "./refresh-queue.ts";
+import { auditSyncEvent, dashboardSyncDetail } from "./refresh-targets.ts";
 
 export async function dashboardEventParts(
   request: Request,

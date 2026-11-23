@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
-import { dashboardCacheKey } from "../dashboard.js";
-import type { DashboardPayload, RefreshJob, RefreshTarget } from "../../../src/types.js";
-import { kvStore, testProject, worker } from "../dashboard-test-harness.js";
+import { dashboardCacheKey } from "../shared/dashboard.ts";
+import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.ts";
+import { kvStore, testProject, worker } from "./dashboard-test-harness.ts";
 
 test("worker does not restore stale KV progress after an authoritative Durable Object miss", async () => {
   const key = dashboardCacheKey({

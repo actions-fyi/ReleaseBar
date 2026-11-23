@@ -1,15 +1,15 @@
-import { type OwnerRepoCount, slugOwner, validOwnerSlug } from "../scripts/lib/dashboard.js";
-import type { Project } from "../src/types.js";
-import { mapConcurrent } from "./concurrency.js";
-import { tryJsonParse } from "./schemas.js";
-import { type OwnerMetadataSnapshot, ownerMetadataTtlSeconds } from "./config.js";
+import { type OwnerRepoCount, slugOwner, validOwnerSlug } from "../shared/dashboard.ts";
+import type { Project } from "../src/types.ts";
+import { mapConcurrent } from "./concurrency.ts";
+import { tryJsonParse } from "./schemas.ts";
+import { type OwnerMetadataSnapshot, ownerMetadataTtlSeconds } from "./config.ts";
 import {
   newestOwnerTimestamp,
   normalizeOwnerMetadataSnapshot,
   ownerMetadataKey,
   ownerSnapshotIsNewer,
-} from "./dashboard-cache.js";
-import { safeIso } from "./owner-metadata-write.js";
+} from "./dashboard-cache.ts";
+import { safeIso } from "./owner-metadata-write.ts";
 
 export function reconcileOwnerMetadataSnapshots(
   owner: string,
