@@ -115,9 +115,16 @@ async function installationRegistryEntryFresh(
   if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > installationRegistryRewriteMinAgeMs) {
     return false;
   }
-  const { updatedAt: _existingUpdatedAt, ...existingContent } = existing;
-  const { updatedAt: _nextUpdatedAt, ...nextContent } = installation;
-  return JSON.stringify(existingContent) === JSON.stringify(nextContent);
+  return (
+    existing.id === installation.id &&
+    existing.accountLogin === installation.accountLogin &&
+    existing.accountType === installation.accountType &&
+    existing.accountUrl === installation.accountUrl &&
+    existing.avatarUrl === installation.avatarUrl &&
+    existing.repositorySelection === installation.repositorySelection &&
+    existing.repositories.length === installation.repositories.length &&
+    existing.repositories.every((repo, index) => repo === installation.repositories[index])
+  );
 }
 
 export async function writeInstallationRegistry(
