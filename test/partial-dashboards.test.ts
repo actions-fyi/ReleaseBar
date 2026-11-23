@@ -6,6 +6,10 @@ import {
   BuildCoordinator,
   buildLocksHeld,
   kvStore,
+  observedDatabase,
+  storedRefreshJob,
+  storedRefreshJobs,
+  storedRefreshJobSnapshot,
   testDashboard,
   testProject,
   testQueue,
@@ -672,21 +676,16 @@ test("worker deduplicates queued refreshes for partial dashboards", async () => 
       },
     },
   };
-  const backingCache = kvStore({ [key]: JSON.stringify(cached) });
-  let targetReads = 0;
-  const cache = {
-    ...backingCache,
-    async get(storageKey: string) {
-      if (storageKey.startsWith("refresh:target:v1:")) {
-        targetReads += 1;
-      }
-      return backingCache.get(storageKey);
-    },
-  };
+  const cache = kvStore({ [key]: JSON.stringify(cached) });
+  const { database, counts } = observedDatabase();
+  const targetReads = () =>
+    counts.sql.filter((sql) => sql.startsWith("SELECT value FROM refresh_targets WHERE key = ?"))
+      .length;
   const sentJobs: RefreshJob[] = [];
   let deliveryDelaySeconds: number | undefined;
   const env = {
     DASHBOARD_CACHE: cache,
+    DB: database,
     GITHUB_TOKEN: "shared-token",
     REFRESH_QUEUE: {
       async send(job: RefreshJob, options?: { delaySeconds?: number }) {
@@ -710,14 +709,13 @@ test("worker deduplicates queued refreshes for partial dashboards", async () => 
   expect(sentJobs.length).toBe(1);
   expect(sentJobs[0]?.reason).toBe("partial-cache");
   expect(sentJobs[0]?.target).toBe(undefined);
-  expect(sentJobs[0]?.targetSnapshotKey ?? "").toMatch(/^refresh:jobs:v2:/);
+  expect(sentJobs[0]?.targetSnapshotKey).toBe(`refresh-job:${sentJobs[0]?.id}`);
   expect(deliveryDelaySeconds).toBe(2);
-  expect(targetReads).toBe(2);
-  const indexedJobs = await cache.list({ prefix: "refresh:jobs:v2:" });
-  expect(indexedJobs.keys.length).toBe(1);
-  const snapshot = JSON.parse(
-    (await cache.get(sentJobs[0]?.targetSnapshotKey ?? "")) ?? "{}",
-  ) as RefreshJob;
+  expect(targetReads()).toBe(2);
+  expect((await storedRefreshJobs()).length).toBe(1);
+  const snapshot = ((await storedRefreshJobSnapshot(sentJobs[0]?.targetSnapshotKey)) ??
+    {}) as RefreshJob;
   expect(snapshot.target?.key).toBe(key);
-  expect((await cache.list({ prefix: "refresh:job:v1:" })).keys.length).toBe(0);
+  // Enqueueing stores the snapshot only: no job state before a delivery.
+  expect(await storedRefreshJob(sentJobs[0]?.id ?? "")).toBe(null);
 });

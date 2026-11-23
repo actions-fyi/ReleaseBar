@@ -19,6 +19,7 @@ import { withLockJurisdiction } from "./store/bindings.ts";
 import { ownerActivityResponse, repoActivityResponse } from "./activity.ts";
 import { adminResponse, profileResponse } from "./admin.ts";
 import { assetResponse, ownerActivityPageOwner } from "./app-shell.ts";
+import { deleteExpiredAuditRows } from "./audit-retention.ts";
 import {
   repoAudienceBackfillResponse,
   repoAudienceResponse,
@@ -65,7 +66,7 @@ import {
 import { webhookRepo } from "./webhook-targets.ts";
 
 export { BuildCoordinator } from "./objects/build-coordinator.ts";
-export { RefreshTargetIndex } from "./objects/refresh-target-index.ts";
+export { RateLimiter } from "./objects/rate-limiter.ts";
 export { SummaryQuota } from "./objects/summary-quota.ts";
 export { WebhookAdmission } from "./objects/webhook-admission.ts";
 export { WebhookProcessor } from "./objects/webhook-processor.ts";
@@ -119,6 +120,7 @@ export default {
   ): Promise<void> {
     const env = withLockJurisdiction(rawEnv);
     context.waitUntil(schedulerTick(env, context, `cron:${controller.cron}`, schedulerBatchLimit));
+    context.waitUntil(deleteExpiredAuditRows(env));
     context.waitUntil(deleteExpiredRegistryRows(env));
   },
   async queue(

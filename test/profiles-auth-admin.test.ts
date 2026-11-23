@@ -1,4 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
+import { env as runtimeEnv } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import type {
   AuthFunnelSummary,
@@ -11,11 +12,15 @@ import type {
 import {
   kvStore,
   signedJson,
+  storedSchedulerState,
+  storeRefreshJob,
+  storeRefreshTarget,
+  storeRefreshTargets,
   testDashboard,
   worker,
   storedInstallationJson,
   seedInstallation,
-  recordingDatabase,
+  observedDatabase,
 } from "./dashboard-test-harness.ts";
 
 test("worker discovers and stores source-owned app installs for anonymous dashboards", async () => {
@@ -377,22 +382,18 @@ test("worker admin scheduler requires an admin session and reports refresh targe
       iat: exp - 600,
       exp,
     }),
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
-    [`refresh:target:v1:${legacyTarget.key}`]: JSON.stringify(legacyTarget),
-    [`refresh:job:v1:${activeJob.id}`]: JSON.stringify(activeJob),
-    "refresh:jobs:index:v1": JSON.stringify([activeJob.id]),
-    [`github:access:v1:${accessHour}:dashboard:shared:_:graphql:200:graphql`]: JSON.stringify({
-      area: "dashboard",
-      route: "graphql",
-      status: 200,
-      source: "shared",
-      account: null,
-      resource: "graphql",
-      count: 3,
-      lastPath: "/graphql",
-      lastAt: `${accessHour}:00:00.000Z`,
-    }),
   });
+  await runtimeEnv.DB.prepare(
+    `INSERT INTO github_access_counts
+       (hour, route_key, area, route, status, source, account, resource, count, last_at, last_path)
+     VALUES (?, 'dashboard:200:shared:_:graphql:graphql', 'dashboard', 'graphql', 200, 'shared',
+       NULL, 'graphql', 3, ?, '/graphql')`,
+  )
+    .bind(accessHour, `${accessHour}:00:00.000Z`)
+    .run();
+  await storeRefreshTarget(target);
+  await storeRefreshTarget(legacyTarget);
+  await storeRefreshJob(activeJob);
   const sentJobs: RefreshJob[] = [];
   const env = {
     ADMIN_LOGINS: "steipete",
@@ -508,19 +509,17 @@ test("worker admin installation summary bounds record and counter reads", async 
       repositories: [],
       updatedAt: new Date(index * 1000).toISOString(),
     });
-    entries[`auth:funnel-counter:v1:2026-06-13:event-${String(index).padStart(3, "0")}:_:ok`] =
-      String(index + 1);
   }
-  const baseCache = kvStore(entries);
-  const database = recordingDatabase();
-  let counterReads = 0;
-  const cache = {
-    ...baseCache,
-    async get(key: string) {
-      if (key.startsWith("auth:funnel-counter:v1:")) counterReads += 1;
-      return baseCache.get(key);
-    },
-  };
+  const insertCount = runtimeEnv.DB.prepare(
+    "INSERT INTO auth_funnel_counts (day, event, account, status, count) VALUES (?, ?, '_', 'ok', ?)",
+  );
+  await runtimeEnv.DB.batch(
+    Array.from({ length: 121 }, (_, index) =>
+      insertCount.bind("2026-06-13", `event-${String(index).padStart(3, "0")}`, index + 1),
+    ),
+  );
+  const cache = kvStore(entries);
+  const observed = observedDatabase();
 
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/installations", {
@@ -530,7 +529,7 @@ test("worker admin installation summary bounds record and counter reads", async 
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
-      DB: database.DB,
+      DB: observed.database,
     },
     { waitUntil: () => undefined },
   );
@@ -541,11 +540,13 @@ test("worker admin installation summary bounds record and counter reads", async 
   expect(body.installations.length).toBe(80);
   expect(body.counterCount).toBe(121);
   expect(body.counts.length).toBe(80);
-  // The newest 80 of the 121, read with one count and one bounded query.
+  // The counts are the last 80 by key, as before, highest first.
+  expect(body.counts[0]).toStrictEqual({ key: "2026-06-13:event-120:_:ok", count: 121 });
+  expect(body.counts.at(-1)).toStrictEqual({ key: "2026-06-13:event-041:_:ok", count: 42 });
+  // The newest 80 installations of the 121, read with one count and one bounded query.
   expect(body.installations[0]?.accountLogin).toBe("account-120");
   expect(body.installations.at(-1)?.accountLogin).toBe("account-041");
-  expect(database.statements.filter((sql) => sql.includes("FROM installations")).length).toBe(2);
-  expect(counterReads).toBe(80);
+  expect(observed.counts.sql.filter((sql) => sql.includes("FROM installations")).length).toBe(2);
 });
 
 test("worker scheduler rotates bounded current-schema target pages", async () => {
@@ -567,13 +568,13 @@ test("worker scheduler rotates bounded current-schema target pages", async () =>
       exp,
     }),
   };
+  const targets: RefreshTarget[] = [];
   for (let index = 0; index < 121; index += 1) {
     const owner = `page-${String(index).padStart(3, "0")}`;
     const key = `dashboard:v6:${owner}`;
     const target: RefreshTarget = {
       key,
       kind: "dashboard",
-      indexVersion: 2,
       owner,
       owners: [],
       repos: [],
@@ -586,10 +587,10 @@ test("worker scheduler rotates bounded current-schema target pages", async () =>
       nextDueAt: "2999-01-01T00:00:00Z",
       failureCount: 0,
     };
-    entries[`refresh:target:v1:${key}`] = JSON.stringify(target);
+    targets.push(target);
     entries[key] = JSON.stringify(testDashboard(owner, []));
   }
-  entries["refresh:target:v1:dashboard:v5:obsolete"] = JSON.stringify({
+  targets.push({
     key: "dashboard:v5:obsolete",
     kind: "dashboard",
     owner: "obsolete",
@@ -603,7 +604,8 @@ test("worker scheduler rotates bounded current-schema target pages", async () =>
     lastSuccessAt: now,
     nextDueAt: "2999-01-01T00:00:00Z",
     failureCount: 0,
-  } satisfies RefreshTarget);
+  });
+  await storeRefreshTargets(targets);
   const cache = kvStore(entries);
   const run = async () => {
     const response = await worker.fetch(
@@ -623,16 +625,11 @@ test("worker scheduler rotates bounded current-schema target pages", async () =>
   };
 
   expect(await run()).toStrictEqual({ ok: true, considered: 120, due: 0, enqueued: 0 });
-  const firstState = JSON.parse((await cache.get("refresh:state:v1")) ?? "{}") as {
-    targetCursor?: string;
-  };
-  expect(firstState.targetCursor).toBe("120");
+  // The cursor is the last key of the page.
+  expect((await storedSchedulerState())?.targetCursor).toBe("dashboard:v6:page-119");
 
   expect(await run()).toStrictEqual({ ok: true, considered: 1, due: 0, enqueued: 0 });
-  const secondState = JSON.parse((await cache.get("refresh:state:v1")) ?? "{}") as {
-    targetCursor?: string;
-  };
-  expect(secondState.targetCursor).toBe(undefined);
+  expect((await storedSchedulerState())?.targetCursor).toBe(undefined);
 
   const admin = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler", {

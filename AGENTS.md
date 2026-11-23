@@ -39,8 +39,8 @@ Steps, one pull request each, in order; 7a to 7c may run in parallel. Tick a ste
 - [x] 4 Single build: Cloudflare Vite plugin v1, one `vite build`, one `vite dev`; shared code moves from `scripts/lib` to `shared/`.
 - [x] 5 Durable Objects: classes that extend `DurableObject`, typed RPC methods, SQLite tables.
 - [x] 6 Store layer: `worker/store/` is the only code that touches a binding; D1 binding added.
-- [ ] 7a Refresh data to D1: targets, target index, jobs, deliveries, scheduler state, profile snapshots.
-- [ ] 7b Audit and counters to D1: refresh audit log with client timing, GitHub call counts, sign-in funnel; request rate limits to a Durable Object.
+- [x] 7a Refresh data to D1: targets, target index, jobs, deliveries, scheduler state, profile snapshots.
+- [x] 7b Audit and counters to D1: refresh audit log with client timing, GitHub call counts, sign-in funnel; request rate limits to a Durable Object.
 - [x] 7c Auth and registry to D1: installations, owner metadata, dashboard profiles with their added and hidden owners and repositories.
 - [ ] 8 Cleanup: legacy readers and the fake-binding test harness go; docs updated; sampled traces on.
 

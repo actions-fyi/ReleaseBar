@@ -35,7 +35,7 @@ import { mutateOwnerMetadataSnapshot, safeIso } from "./owner-metadata-write.ts"
 import {
   auditScheduler,
   auditSyncEvent,
-  backfillRefreshTargetIndexes,
+  deleteExpiredRefreshData,
   indexRefreshJob,
   jitterMs,
   listRefreshJobs,
@@ -485,7 +485,6 @@ export async function schedulerTick(
   ]);
   const page = await listRefreshTargets(env, schedulerTargetPageLimit, previousState?.targetCursor);
   const targets = page.targets;
-  await backfillRefreshTargetIndexes(env, targets);
   const countRefresh = await refreshDueOwnerCounts(env, context, targets, dueOptions.now);
   const activeTargetKeys = new Set(
     jobs.filter((job) => refreshJobActive(job)).map((job) => job.targetKey),
@@ -526,6 +525,10 @@ export async function schedulerTick(
         .filter((value) => safeIso(value) > 0)
         .sort()[0] ?? null,
     countRefresh,
+  });
+  // Nothing waits for the deletions: a tick that fails here deletes on the next one.
+  await deleteExpiredRefreshData(env).catch((error: unknown) => {
+    console.warn("releasebar: deleting expired refresh data failed:", error);
   });
   await auditScheduler(env, {
     event: "scheduler_tick",

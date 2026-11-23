@@ -22,7 +22,7 @@ import { deleteExpiredOwnerMetadata } from "../worker/store/owner-metadata.ts";
 import { deleteProfile, readProfile, writeStoredProfile } from "../worker/store/profiles.ts";
 import {
   kvStore,
-  recordingDatabase,
+  observedDatabase,
   seedOwnerMetadata,
   storedOwnerMetadataJson,
   testDashboard,
@@ -56,20 +56,6 @@ function storedSnapshot(owner: string): Promise<OwnerMetadataSnapshot> {
   );
 }
 
-// A database that can't be reached: every statement fails.
-function unreachableDatabase(): D1Database {
-  return new Proxy(runtimeEnv.DB, {
-    get(target, property) {
-      if (property === "prepare" || property === "batch") {
-        return () => {
-          throw new Error("D1_ERROR: database unreachable");
-        };
-      }
-      return Reflect.get(target, property) as unknown;
-    },
-  });
-}
-
 test("concurrent conflicting owner metadata mutations are all applied", async () => {
   const at = (minutes: number) => new Date(Date.UTC(2026, 5, 11, 0, minutes)).toISOString();
   const names = ["a", "b", "c", "d", "e", "f", "g", "h"];
@@ -77,8 +63,8 @@ test("concurrent conflicting owner metadata mutations are all applied", async ()
   // all of them read the same revision and all but one must be applied again.
   for (let round = 0; round < 4; round += 1) {
     const owner = `owner${round}`;
-    const database = recordingDatabase();
-    const env = testEnv({ DASHBOARD_CACHE: kvStore(), DB: database.DB });
+    const observed = observedDatabase();
+    const env = testEnv({ DASHBOARD_CACHE: kvStore(), DB: observed.database });
     const mutate = (mutation: OwnerMetadataMutation) =>
       mutateOwnerMetadataSnapshot(env, owner, mutation);
     const merge = (minutes: number, repos: string[]): OwnerMetadataMutation => ({
@@ -95,7 +81,7 @@ test("concurrent conflicting owner metadata mutations are all applied", async ()
     await mutate(merge(1, names));
     await mutate({ kind: "remove", fullName: `${owner}/e`, observedAt: at(2) });
     await mutate({ kind: "remove", fullName: `${owner}/f`, observedAt: at(2) });
-    database.statements.length = 0;
+    observed.counts.sql.length = 0;
 
     const mutations: OwnerMetadataMutation[] = [
       { kind: "remove", fullName: `${owner}/a`, observedAt: at(10) },
@@ -117,7 +103,7 @@ test("concurrent conflicting owner metadata mutations are all applied", async ()
     const results = await Promise.all(mutations.map(mutate));
 
     expect(results.every((result) => result !== null)).toBe(true);
-    const writes = database.statements.filter((sql) => sql.includes("UPDATE owner_metadata"));
+    const writes = observed.counts.sql.filter((sql) => sql.includes("UPDATE owner_metadata"));
     // More writes were tried than there are mutations: they did conflict.
     expect(writes.length).toBeGreaterThan(mutations.length);
     const snapshot = await storedSnapshot(owner);
@@ -171,7 +157,10 @@ test("owner metadata fails closed when the database can't be reached", async () 
   const key = "dashboard:test";
   const cache = kvStore({ [key]: JSON.stringify(testDashboard("owner", [project])) });
   const reachable = testEnv({ DASHBOARD_CACHE: cache });
-  const unreachable = testEnv({ DASHBOARD_CACHE: cache, DB: unreachableDatabase() });
+  const unreachable = testEnv({
+    DASHBOARD_CACHE: cache,
+    DB: observedDatabase(() => true).database,
+  });
 
   expect((await readCachedWithOwnerMetadata(reachable, key))?.projects.length).toBe(1);
   expect(await readCachedWithOwnerMetadata(unreachable, key)).toBe(null);
@@ -182,7 +171,7 @@ test("owner metadata fails closed when the database can't be reached", async () 
       fullName: "owner/repo",
       observedAt: new Date().toISOString(),
     }),
-  ).rejects.toThrow("database unreachable");
+  ).rejects.toThrow("D1 unavailable");
 });
 
 test("an expired owner metadata snapshot reads as absent and is deleted in bounded steps", async () => {

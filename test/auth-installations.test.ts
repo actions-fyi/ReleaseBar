@@ -3,8 +3,10 @@ import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { RefreshJob } from "../src/types.ts";
 import {
+  authFunnelEventCount,
   kvStore,
   signedJson,
+  storedRefreshJobSnapshot,
   testDashboard,
   testEnv,
   worker,
@@ -69,7 +71,7 @@ test("worker exposes GitHub App auth endpoints", async () => {
     context,
   );
   expect(badCallback.status).toBe(400);
-  expect((await env.DASHBOARD_CACHE.list({ prefix: "auth:funnel:v1:" })).keys.length).toBe(0);
+  expect(await authFunnelEventCount()).toBe(0);
 
   const install = await worker.fetch(
     new Request("https://release.bar/api/auth/install?returnTo=/openclaw"),
@@ -265,14 +267,13 @@ test("worker queues shared cache warming after login discovers an installation",
     expect(sentJobs.length).toBe(1);
     expect(sentJobs[0]?.reason).toBe("installation-warm");
     expect(sentJobs[0]?.targetKey ?? "").toMatch(/openclaw/);
-    const snapshot = JSON.parse(
-      (await cache.get(sentJobs[0]?.targetSnapshotKey ?? "")) ?? "{}",
-    ) as RefreshJob;
+    const snapshot = ((await storedRefreshJobSnapshot(sentJobs[0]?.targetSnapshotKey)) ??
+      {}) as RefreshJob;
     expect(snapshot.target?.owners).toStrictEqual(["openclaw"]);
     expect(snapshot.target?.repos).toStrictEqual(["outside/releasebar"]);
     expect(snapshot.target?.includeReleaseData).toBe(false);
     expect(snapshot.target?.profileSnapshotKey).toBe(
-      `refresh:profile-snapshot:v1:openclaw:${encodeURIComponent(profile.updatedAt)}`,
+      `profile-snapshot:openclaw:${encodeURIComponent(profile.updatedAt)}`,
     );
   } finally {
     globalThis.fetch = originalFetch;
@@ -822,8 +823,7 @@ test("worker records server-verified install callbacks without signed return sta
     const remembered = JSON.parse((await storedInstallationJson("outside-org")) ?? "{}");
     expect(remembered.id).toBe(101);
     expect(remembered.accountLogin).toBe("outside-org");
-    const events = await cache.list({ prefix: "auth:funnel:v1:" });
-    expect(events.keys.length).toBe(2);
+    expect(await authFunnelEventCount()).toBe(2);
   } finally {
     globalThis.fetch = originalFetch;
   }

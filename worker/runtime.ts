@@ -33,10 +33,9 @@ export type GitHubWebhookFanoutJob = {
   payload: Record<string, unknown>;
   createdAt: string;
   action: WebhookTargetAction;
-  source: "indexed" | "owner" | "repo" | "kv-owner" | "kv-repo" | "legacy";
+  source: "owner" | "repo";
   priorityBatchStartedAt?: string;
   cursor?: string;
-  backfillFailed?: boolean;
 };
 
 export type WorkerQueueMessage = RefreshJob | GitHubWebhookJob | GitHubWebhookFanoutJob;
@@ -48,11 +47,13 @@ export type BackgroundContext = Pick<ExecutionContext, "waitUntil">;
 // The name of each Durable Object instance. A name is all that addresses an instance, so every
 // caller builds it here.
 export const summaryQuotaObjectName = "summary-quota";
+// The endpoints that limit each client's requests per minute, one `RateLimiter` object each.
+export type RateLimitedEndpoint = "client-timing" | "install-callback";
+export const rateLimiterObjectName = (endpoint: RateLimitedEndpoint): string =>
+  `rate-limit:${endpoint}`;
 export const webhookAdmissionObjectName = "github-webhook-admission";
 export const webhookProcessorObjectName = (owner: string): string =>
   `github-webhook-process:${owner}`;
-export const refreshTargetIndexName = (kind: "owner" | "repo", value: string): string =>
-  `refresh-target-index:${kind}:${value}`;
 
 // A leading http(s) scheme: matches "https://releasebar.example.com", rejects "releasebar.example.com".
 // https://regex101.com/?regex=%5Ehttps%3F%3A%5C%2F%5C%2F&flags=i&testString=https%3A%2F%2Freleasebar.example.com

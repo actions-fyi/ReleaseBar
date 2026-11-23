@@ -107,19 +107,6 @@ export const githubGraphqlRepoStargazersOperation = "ReleaseBarRepoStargazers";
 export const githubGraphqlRepoWorkTrendOperation = "ReleaseBarRepoWorkTrend";
 export const crawlerUserAgentPattern =
   /(ahrefsbot|applebot|baiduspider|bingbot|bot|bytespider|ccbot|claudebot|crawler|duckduckbot|facebookexternalhit|googlebot|googleother|gptbot|linkedinbot|mediapartners|perplexitybot|preview|semrushbot|slackbot|slurp|spider|telegrambot|twitterbot|yandexbot)/i;
-export const refreshTargetPrefix = "refresh:target:v1:";
-export const refreshTargetIndexPrefix = "refresh:target-index:v1:";
-export const refreshTargetIndexReadyKey = "refresh:target-index:v1:ready";
-export const refreshTargetIndexVersion = 2;
-export const refreshTargetIndexBackfillLimit = 50;
-export const refreshProfileSnapshotPrefix = "refresh:profile-snapshot:v1:";
-export const refreshJobPrefix = "refresh:job:v1:";
-export const refreshJobIndexPrefix = "refresh:jobs:v2:";
-export const refreshJobDeliveryPrefix = "refresh:job-deliveries:v1:";
-export const legacyRefreshJobIndexKey = "refresh:jobs:index:v1";
-export const refreshAuditPrefix = "refresh:audit:v2:";
-export const refreshStateKey = "refresh:state:v1";
-export const refreshOwnerCountCursorKey = "refresh:owner-count-cursor:v1";
 export const ownerMetadataTtlSeconds = 90 * 24 * 60 * 60;
 export const githubWebhookDeliveryTtlMs = 24 * 60 * 60 * 1000;
 export const githubWebhookDeliveryLimit = 2000;
@@ -132,10 +119,12 @@ export const githubWebhookPendingLimit = 256;
 export const githubWebhookPendingLimitBytes = 96 * 1024;
 export const manualRefreshCooldownPrefix = "refresh:manual:v1:";
 export const manualRefreshCooldownSeconds = 10 * 60;
+// How many refresh targets a source (an owner or a repository) lists, and how large one stored
+// target may be.
 export const refreshTargetSourceLimit = 512;
-export const durableRefreshTargetIndexLimit = refreshTargetSourceLimit;
-export const durableRefreshTargetEntryLimitBytes = 8 * 1024;
-export const durableRefreshTargetIndexLimitBytes = 1024 * 1024;
+export const refreshTargetEntryLimitBytes = 8 * 1024;
+// How many expired rows of each kind a scheduler tick deletes.
+export const refreshExpiryBatchLimit = 500;
 export const webhookTargetPageSize = 200;
 export const webhookTargetBatchSize = 50;
 export const webhookTargetConcurrency = 8;

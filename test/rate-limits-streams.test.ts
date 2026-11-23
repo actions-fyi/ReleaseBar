@@ -331,7 +331,7 @@ test("worker records dashboard stream sync audits", async () => {
 
   expect(response.status).toBe(200);
   await response.text();
-  const events = await refreshAuditEvents(cache);
+  const events = await refreshAuditEvents();
   expect(events.some((event) => event.event === "dashboard_stream_start")).toBe(true);
   const send = events.find((event) => event.event === "dashboard_stream_send");
   expect(send?.status).toBe("fresh");

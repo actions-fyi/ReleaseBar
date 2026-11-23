@@ -10,8 +10,8 @@ import {
 } from "./store/cache.ts";
 import {
   countGitHubAccess,
+  type GitHubAccessCalls,
   listGitHubAccessCounts,
-  type StoredGitHubAccessCounter,
 } from "./store/github-access.ts";
 import type { BackgroundContext } from "./runtime.ts";
 
@@ -37,7 +37,11 @@ const sharedQuotaEnrichmentMinimumRemaining: Record<string, number> = {
   _: 1000,
 };
 
-const githubAccessWriteChains = new WeakMap<BackgroundContext, Promise<void>>();
+// The audit writes of one request or job: the calls not yet counted, by route key, and the chain
+// that counts them. One write runs at a time, and the calls made meanwhile go into the next as
+// one batch, so a dashboard build of hundreds of GitHub calls makes few D1 queries.
+type GitHubAccessWrites = { pending: Map<string, GitHubAccessCalls>; chain: Promise<void> };
+const githubAccessWrites = new WeakMap<BackgroundContext, GitHubAccessWrites>();
 
 export type GitHubAuditArea =
   | "dashboard"
@@ -317,17 +321,17 @@ export function githubGraphqlBackoffDeferUntil(): string {
   return new Date(Date.now() + githubGraphqlBackoffSeconds * 1000).toISOString();
 }
 
-async function recordGitHubAccessCounter(
-  env: Env | undefined,
+// Adds one call to those of its route key in `pending`.
+function addGitHubAccessCall(
+  pending: Map<string, GitHubAccessCalls>,
   area: GitHubAuditArea,
   path: string,
   status: number,
   quota: ApiQuota,
-): Promise<void> {
-  if (!env) return;
+): void {
   const route = githubPathBucket(path);
   const routeKey = `${area}:${status}:${quota.source}:${quota.account ?? "_"}:${quota.resource ?? "_"}:${route}`;
-  await countGitHubAccess(env, {
+  pending.set(routeKey, {
     key: routeKey,
     area,
     route,
@@ -335,8 +339,22 @@ async function recordGitHubAccessCounter(
     source: quota.source,
     account: quota.account,
     resource: quota.resource,
+    count: (pending.get(routeKey)?.count ?? 0) + 1,
     lastPath: path.slice(0, 240),
+    lastAt: new Date().toISOString(),
   });
+}
+
+// Counts the pending calls in one batch. Calls of an hour that has ended meanwhile count for the
+// hour of the last of them.
+async function countPendingGitHubAccess(
+  env: Env | undefined,
+  pending: Map<string, GitHubAccessCalls>,
+): Promise<void> {
+  if (!env || pending.size === 0) return;
+  const calls = [...pending.values()];
+  pending.clear();
+  await countGitHubAccess(env, calls);
 }
 
 function sharedQuotaPressure(status: number, quota: ApiQuota, rateLimited = false): boolean {
@@ -375,8 +393,14 @@ export async function recordAuditedGitHubAccess(
   context?: BackgroundContext,
 ): Promise<void> {
   auditGitHubTokenUse(area, path, status, quota);
+  const writes = (context && githubAccessWrites.get(context)) ?? {
+    pending: new Map<string, GitHubAccessCalls>(),
+    chain: Promise.resolve(),
+  };
+  if (context) githubAccessWrites.set(context, writes);
+  addGitHubAccessCall(writes.pending, area, path, status, quota);
   const write = () =>
-    recordGitHubAccessCounter(env, area, path, status, quota)
+    countPendingGitHubAccess(env, writes.pending)
       .then(() => {
         if (sharedQuotaPressure(status, quota, rateLimited)) {
           return markSharedQuotaCooldown(
@@ -399,9 +423,8 @@ export async function recordAuditedGitHubAccess(
       .catch(() => undefined);
   const mustWait = forceWait || sharedQuotaPressure(status, quota, rateLimited);
   if (context) {
-    const previous = githubAccessWriteChains.get(context) ?? Promise.resolve();
-    const chained = previous.then(write, write);
-    githubAccessWriteChains.set(context, chained);
+    const chained = writes.chain.then(write, write);
+    writes.chain = chained;
     if (mustWait) {
       await chained;
     } else {
@@ -557,19 +580,6 @@ function safeIso(value: string | null | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function githubAccessHours(hours: number): string[] {
-  const result: string[] = [];
-  const seen = new Set<string>();
-  for (let index = 0; index <= hours; index += 1) {
-    const hour = new Date(Date.now() - index * 60 * 60 * 1000).toISOString().slice(0, 13);
-    if (!seen.has(hour)) {
-      seen.add(hour);
-      result.push(hour);
-    }
-  }
-  return result;
-}
-
 function incrementSummary(map: Map<string, number>, key: string, count: number): void {
   map.set(key, (map.get(key) ?? 0) + count);
 }
@@ -585,38 +595,18 @@ export async function githubAccessSummary(
   hours = githubAccessAdminHours,
 ): Promise<GitHubAccessSummary> {
   const cooldown = await sharedQuotaCooldown(env);
-  const stored = await listGitHubAccessCounts(env, githubAccessHours(hours));
-  const counters = stored.map(({ key, stored: parsed }): GitHubAccessRouteSummary[] => {
-    if (!parsed) return [];
-    if ("routes" in parsed && parsed.routes) {
-      return Object.values(parsed.routes).map((route) => ({
-        ...route,
-        account: route.account ?? null,
-        resource: route.resource ?? null,
-        lastAt: route.lastAt ?? null,
-        lastPath: route.lastPath ?? null,
-      }));
-    }
-    const counter = parsed as StoredGitHubAccessCounter;
-    if (typeof counter.count !== "number" || !counter.route) return [];
-    return [
-      {
-        ...counter,
-        key,
-        account: counter.account ?? null,
-        resource: counter.resource ?? null,
-        lastAt: counter.lastAt ?? null,
-        lastPath: counter.lastPath ?? null,
-      },
-    ];
-  });
+  const sinceHour = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString().slice(0, 13);
+  const { counts: counters, complete } = await listGitHubAccessCounts(env, sinceHour);
+  if (!complete) {
+    console.warn(JSON.stringify({ area: "github", event: "access_summary_truncated", hours }));
+  }
 
   const byArea = new Map<string, number>();
   const bySource = new Map<string, number>();
   const byStatus = new Map<string, number>();
   const routeCounts = new Map<string, GitHubAccessRouteSummary>();
   let total = 0;
-  for (const counter of counters.flat()) {
+  for (const counter of counters) {
     const count = counter.count;
     total += count;
     incrementSummary(byArea, counter.area, count);
@@ -651,7 +641,7 @@ export async function githubAccessSummary(
   return {
     generatedAt: new Date().toISOString(),
     hours,
-    buckets: stored.length,
+    buckets: counters.length,
     total,
     cooldown,
     byArea: summaryRows(byArea),

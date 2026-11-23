@@ -5,6 +5,9 @@ import type { RefreshJob, RefreshTarget, SchedulerAdminPayload } from "../src/ty
 import {
   kvStore,
   signedJson,
+  storedRefreshJob,
+  storeRefreshJob,
+  storeRefreshTarget,
   testDashboard,
   worker,
   seedInstallation,
@@ -42,9 +45,8 @@ test("worker queue skips jobs from obsolete dashboard schemas", async () => {
     attempts: 0,
     durationMs: null,
   };
-  const cache = kvStore({
-    [`refresh:job:v1:${job.id}`]: JSON.stringify(job),
-  });
+  const cache = kvStore({});
+  await storeRefreshJob(job);
   let acked = false;
 
   await (
@@ -80,7 +82,7 @@ test("worker queue skips jobs from obsolete dashboard schemas", async () => {
   );
 
   expect(acked).toBe(true);
-  const stored = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
+  const stored = ((await storedRefreshJob(job.id)) ?? {}) as RefreshJob;
   expect(stored.status).toBe("skipped");
   expect(stored.error).toBe("obsolete dashboard schema");
 });
@@ -357,8 +359,8 @@ test("worker admin scheduler counts missing caches as due even before nextDueAt"
       iat: exp - 600,
       exp,
     }),
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
   });
+  await storeRefreshTarget(target);
 
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler", {
@@ -410,8 +412,8 @@ test("worker admin scheduler respects transient failure retry delay", async () =
       iat: exp - 600,
       exp,
     }),
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
   });
+  await storeRefreshTarget(target);
 
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler", {
@@ -462,7 +464,6 @@ test("worker scheduler skips shared cold targets while GraphQL is backed off", a
       iat: exp - 600,
       exp,
     }),
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
     "github:backoff:v2:graphql:shared:_:ReleaseBarRepoDetails": JSON.stringify({
       active: true,
       status: 502,
@@ -471,6 +472,7 @@ test("worker scheduler skips shared cold targets while GraphQL is backed off", a
       at: new Date().toISOString(),
     }),
   });
+  await storeRefreshTarget(target);
   const sentJobs: RefreshJob[] = [];
   const env = {
     ADMIN_LOGINS: "steipete",
@@ -532,7 +534,6 @@ test("worker scheduler keeps repo-only targets runnable during RepoDetails backo
       iat: exp - 600,
       exp,
     }),
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
     "github:backoff:v2:graphql:shared:_:ReleaseBarRepoDetails": JSON.stringify({
       active: true,
       status: 502,
@@ -541,6 +542,7 @@ test("worker scheduler keeps repo-only targets runnable during RepoDetails backo
       at: new Date().toISOString(),
     }),
   });
+  await storeRefreshTarget(target);
   const sentJobs: RefreshJob[] = [];
 
   const response = await worker.fetch(
@@ -611,8 +613,8 @@ test("worker scheduler keeps dormant shared targets on weekly cadence after succ
       exp,
     }),
     [key]: JSON.stringify(testDashboard("sleepy", [])),
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
   });
+  await storeRefreshTarget(target);
   const sentJobs: RefreshJob[] = [];
 
   const response = await worker.fetch(
@@ -674,8 +676,8 @@ test("worker scheduler still rebuilds missing dormant shared caches", async () =
       iat: exp - 600,
       exp,
     }),
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
   });
+  await storeRefreshTarget(target);
   const sentJobs: RefreshJob[] = [];
 
   const response = await worker.fetch(

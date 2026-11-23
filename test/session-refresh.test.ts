@@ -4,7 +4,7 @@ import {
   signedJson,
   worker,
   storedInstallationJson,
-  recordingDatabase,
+  observedDatabase,
 } from "./dashboard-test-harness.ts";
 
 const context = { waitUntil: () => undefined };
@@ -149,8 +149,8 @@ test("worker keeps sessions logged in across redundant or failing KV writes", as
       installationsUpdatedAt: new Date((now - 3600) * 1000).toISOString(),
     }),
   });
-  const database = recordingDatabase();
-  const env = { ...sessionEnv(cache), DB: database.DB };
+  const observed = observedDatabase();
+  const env = { ...sessionEnv(cache), DB: observed.database };
   const authCookie = await signedJson("test-secret", { id: sessionId, exp: now + 86400 });
   const sessionPuts: string[] = [];
   const basePut = cache.put.bind(cache);
@@ -205,7 +205,7 @@ test("worker keeps sessions logged in across redundant or failing KV writes", as
     // Fresh, unchanged registry entries are not rewritten on the second /api/me call.
     // One write each: octocat's on the first call, clawtopia's on the second.
     expect(
-      database.statements.filter((sql) => sql.includes("INSERT INTO installations")).length,
+      observed.counts.sql.filter((sql) => sql.includes("INSERT INTO installations")).length,
     ).toBe(2);
     expect(await storedInstallationJson("octocat")).not.toBe(null);
     expect(await storedInstallationJson("clawtopia")).not.toBe(null);
