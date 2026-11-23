@@ -51,6 +51,7 @@ Conventions. Each applies from the step that introduces it; until then the old c
 - Durable Objects expose RPC methods; no `stub.fetch` and no URL routing inside one (from 5).
 - Only `worker/store/` reads or writes KV, D1, the queue, the assets or a Durable Object (from 6).
 - The queue binding is required: no code path for a Worker without it (from 6).
+- A Worker invocation sends D1 few queries, whatever it handles: rows of one kind go in a `batch`, never a statement per item in a loop, and audit rows go through the audit collector. D1 allows 50 queries per invocation on the free plan and counts a batch as one (`docs/data-model.md`, "D1 queries per invocation").
 - KV holds cached payloads and short-lived entries only. Anything queried, listed or counted is in D1; anything that must be checked and changed in one step is in a Durable Object (from 7).
 - D1, KV and queues are created with `--jurisdiction eu`; a jurisdiction can't be added later.
 - Every step leaves `main` deployable and keeps the script names CI calls: `typecheck`, `lint`, `format:check`, `build`, `test`.

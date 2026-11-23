@@ -187,21 +187,26 @@ export async function countStoredRefreshTargets(
   };
 }
 
-// The targets listed under the source, most recently seen first, not validated: at most
-// `refreshTargetSourceLimit` of them.
+// The targets listed under each of the sources, most recently seen first, not validated: at most
+// `refreshTargetSourceLimit` of them per source, in the order of `sources`. One batch.
 export async function indexedRefreshTargets(
   env: Env,
-  source: RefreshTargetSource,
-): Promise<RefreshTarget[]> {
-  const { results } = await env.DB.prepare(
+  sources: RefreshTargetSource[],
+): Promise<RefreshTarget[][]> {
+  if (sources.length === 0) return [];
+  const statement = env.DB.prepare(
     `SELECT targets.value FROM refresh_target_sources AS sources
      JOIN refresh_targets AS targets ON targets.key = sources.target_key
      WHERE sources.kind = ? AND sources.value = ? AND targets.last_seen_at >= ?
      ORDER BY targets.last_seen_at DESC, targets.key LIMIT ?`,
-  )
-    .bind(source.kind, source.value, seenCutoff(), refreshTargetSourceLimit)
-    .all<ValueRow>();
-  return parseTargets(results);
+  );
+  const cutoff = seenCutoff();
+  const results = await env.DB.batch<ValueRow>(
+    sources.map((source) =>
+      statement.bind(source.kind, source.value, cutoff, refreshTargetSourceLimit),
+    ),
+  );
+  return results.map((result) => parseTargets(result.results));
 }
 
 // A page of the targets listed under the source, in key order after `cursor`, not validated.

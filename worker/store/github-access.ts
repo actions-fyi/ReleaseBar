@@ -30,10 +30,13 @@ type CountRow = {
   last_path: string | null;
 };
 
-// Adds the calls to the counts of the hour of their `lastAt`: one batch, which D1 counts as one
-// query, whatever the number of route keys.
-export async function countGitHubAccess(env: Env, calls: GitHubAccessCalls[]): Promise<void> {
-  if (calls.length === 0) return;
+// The statements that add the calls to the counts of the hour of their `lastAt`, one per route
+// key: for a batch.
+export function gitHubAccessCountStatements(
+  env: Env,
+  calls: GitHubAccessCalls[],
+): D1PreparedStatement[] {
+  if (calls.length === 0) return [];
   const statement = env.DB.prepare(
     `INSERT INTO github_access_counts
        (hour, route_key, area, route, status, source, account, resource, count, last_at, last_path)
@@ -43,23 +46,28 @@ export async function countGitHubAccess(env: Env, calls: GitHubAccessCalls[]): P
        last_path = CASE WHEN excluded.last_at >= last_at THEN excluded.last_path ELSE last_path END,
        last_at = max(last_at, excluded.last_at)`,
   );
-  await env.DB.batch(
-    calls.map((call) =>
-      statement.bind(
-        call.lastAt.slice(0, 13),
-        call.key,
-        call.area,
-        call.route,
-        call.status,
-        call.source,
-        call.account,
-        call.resource,
-        call.count,
-        call.lastAt,
-        call.lastPath,
-      ),
+  return calls.map((call) =>
+    statement.bind(
+      call.lastAt.slice(0, 13),
+      call.key,
+      call.area,
+      call.route,
+      call.status,
+      call.source,
+      call.account,
+      call.resource,
+      call.count,
+      call.lastAt,
+      call.lastPath,
     ),
   );
+}
+
+// Adds the calls to the counts: one batch, which D1 counts as one query, whatever the number of
+// route keys.
+export async function countGitHubAccess(env: Env, calls: GitHubAccessCalls[]): Promise<void> {
+  if (calls.length === 0) return;
+  await env.DB.batch(gitHubAccessCountStatements(env, calls));
 }
 
 // The counts of the hours from `sinceHour` ("2026-06-13T12") on, one per hour and route key, read
@@ -102,7 +110,7 @@ export async function listGitHubAccessCounts(
   return { counts, complete: false };
 }
 
-// Deletes counts older than 14 days, at most 5,000 a call. Returns how many.
+// Deletes counts older than 14 days, at most 5,000 a call, in one batch. Returns how many.
 export async function deleteExpiredGitHubAccessCounts(env: Env, now: number): Promise<number> {
   const before = new Date(now - githubAccessRetentionMs).toISOString().slice(0, 13);
   const statement = env.DB.prepare(
@@ -110,11 +118,6 @@ export async function deleteExpiredGitHubAccessCounts(env: Env, now: number): Pr
        SELECT hour, route_key FROM github_access_counts WHERE hour < ?1 LIMIT ?2
      )`,
   ).bind(before, deleteBatchRows);
-  let deleted = 0;
-  for (let round = 0; round < deleteBatchRounds; round += 1) {
-    const changes = (await statement.run()).meta.changes;
-    deleted += changes;
-    if (changes < deleteBatchRows) break;
-  }
-  return deleted;
+  const results = await env.DB.batch(Array.from({ length: deleteBatchRounds }, () => statement));
+  return results.reduce((deleted, result) => deleted + result.meta.changes, 0);
 }

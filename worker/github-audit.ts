@@ -14,6 +14,7 @@ import {
   listGitHubAccessCounts,
 } from "./store/github-access.ts";
 import type { BackgroundContext } from "./runtime.ts";
+import { collectGitHubAccess } from "./audit-collector.ts";
 
 export const githubAccessAdminHours = 24;
 const githubAccessAdminRouteLimit = 30;
@@ -37,9 +38,10 @@ const sharedQuotaEnrichmentMinimumRemaining: Record<string, number> = {
   _: 1000,
 };
 
-// The audit writes of one request or job: the calls not yet counted, by route key, and the chain
-// that counts them. One write runs at a time, and the calls made meanwhile go into the next as
-// one batch, so a dashboard build of hundreds of GitHub calls makes few D1 queries.
+// The audit writes of one request or job whose env has no audit collector
+// (worker/audit-collector.ts): the calls not yet counted, by route key, and the chain that counts
+// them. One write runs at a time, and the calls made meanwhile go into the next as one batch.
+// With a collector the calls are counted in its batch, and the chain only marks the cooldowns.
 type GitHubAccessWrites = { pending: Map<string, GitHubAccessCalls>; chain: Promise<void> };
 const githubAccessWrites = new WeakMap<BackgroundContext, GitHubAccessWrites>();
 
@@ -398,7 +400,11 @@ export async function recordAuditedGitHubAccess(
     chain: Promise.resolve(),
   };
   if (context) githubAccessWrites.set(context, writes);
-  addGitHubAccessCall(writes.pending, area, path, status, quota);
+  if (
+    !collectGitHubAccess(env, (pending) => addGitHubAccessCall(pending, area, path, status, quota))
+  ) {
+    addGitHubAccessCall(writes.pending, area, path, status, quota);
+  }
   const write = () =>
     countPendingGitHubAccess(env, writes.pending)
       .then(() => {

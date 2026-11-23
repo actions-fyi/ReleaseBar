@@ -45,7 +45,7 @@ The same tick schedules deep dashboard work:
 6. Enqueues up to 20 jobs per tick.
 7. Deletes up to 500 rows of each kind that are past their lifetime: targets nobody has seen for 90 days, jobs and delivery records not updated for 14 days, profile snapshots older than 90 days. D1 keeps a row until it is deleted.
 
-A tick over a full page sends D1 eleven statements, plus one insert for each job it enqueues: five reads (the last tick's state, the newest jobs, the newest delivery records, the page of targets, the owner-count cursor), the write of its state, and five deletions of expired rows.
+A tick over a full page that enqueues its 20 jobs sends D1 11 queries, however many targets are due: five reads (the last tick's state, the newest jobs, the newest delivery records, the page of targets, the owner-count cursor), one batch with the jobs it enqueues, the write of its state, three for the five deletions of expired rows, and one batch with its audit events. The deletion of expired audit and registry rows in the same invocation adds five, and the refresh of repository counts adds the registry queries of each owner it handles. D1 allows an invocation 50 queries on the Workers free plan and counts a batch as one; [the data model](data-model.md) lists the other invocations.
 
 Successful targets get their next refresh time based on recent use:
 

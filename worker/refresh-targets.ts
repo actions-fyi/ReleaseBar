@@ -6,6 +6,7 @@ import type {
   RefreshTarget,
   SchedulerAuditEvent,
 } from "../src/types.ts";
+import { collectAuditEvent } from "./audit-collector.ts";
 import { randomNonce, sha256Base64Url } from "./crypto.ts";
 import { jsonResponse } from "./http.ts";
 import {
@@ -55,6 +56,7 @@ import { deleteExpiredProfileSnapshots } from "./store/profile-snapshots.ts";
 import {
   deleteExpiredRefreshJobs,
   indexRefreshJob,
+  indexRefreshJobs,
   listStoredRefreshJobDeliveries,
   listStoredRefreshJobs,
   readStoredRefreshJob,
@@ -62,6 +64,7 @@ import {
   refreshJobSnapshotKey,
   writeRefreshJob,
   writeRefreshJobDelivery,
+  writeRefreshJobs,
 } from "./store/refresh-jobs.ts";
 import {
   countStoredRefreshTargets,
@@ -73,7 +76,13 @@ import {
   writeRefreshTarget,
 } from "./store/refresh-targets.ts";
 
-export { indexRefreshJob, writeRefreshJob, writeRefreshJobDelivery };
+export {
+  indexRefreshJob,
+  indexRefreshJobs,
+  writeRefreshJob,
+  writeRefreshJobDelivery,
+  writeRefreshJobs,
+};
 export { isAuditEvent };
 
 export function refreshTargetSources(target: RefreshTarget): RefreshTargetSource[] {
@@ -503,7 +512,8 @@ export async function auditScheduler(
     ...event,
   };
   console.log(JSON.stringify({ area: "scheduler", ...item }));
-  await appendRefreshAuditEvent(env, item);
+  // The events of a request or job are written as one batch; without a collector, at once.
+  if (!collectAuditEvent(env, item)) await appendRefreshAuditEvent(env, item);
 }
 
 export function dashboardSyncDetail(payload: DashboardPayload | null, extra = ""): string {

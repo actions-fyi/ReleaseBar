@@ -11,6 +11,9 @@ import { safeIso } from "../time.ts";
 
 const refreshJobLifetimeMs = 14 * 24 * 60 * 60 * 1000;
 const snapshotKeyPrefix = "refresh-job:";
+// How many jobs one batch stores. A job carries its target, of at most 8 KiB, so a batch stays
+// near 200 KiB, and a scheduler tick at its limit or the first targets of a webhook take one.
+export const refreshJobBatchRows = 25;
 
 type ValueRow = { value: string };
 
@@ -25,21 +28,38 @@ export function refreshJobSnapshotKey(job: Pick<RefreshJob, "id">): string {
   return `${snapshotKeyPrefix}${job.id}`;
 }
 
-// Stores the latest state of a job.
-export async function writeRefreshJob(env: Env, job: RefreshJob): Promise<void> {
-  await env.DB.prepare(
+function chunks<Item>(items: Item[], size: number): Item[][] {
+  const result: Item[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+  return result;
+}
+
+function writeStatement(env: Env, job: RefreshJob): D1PreparedStatement {
+  return env.DB.prepare(
     `INSERT INTO refresh_jobs (id, target_key, created_at, updated_at, value)
      VALUES (?, ?, ?, ?, ?)
      ON CONFLICT (id) DO UPDATE SET updated_at = excluded.updated_at, value = excluded.value`,
-  )
-    .bind(
-      job.id,
-      job.targetKey,
-      safeIso(job.createdAt) || Date.now(),
-      safeIso(job.updatedAt) || Date.now(),
-      JSON.stringify(job),
-    )
-    .run();
+  ).bind(
+    job.id,
+    job.targetKey,
+    safeIso(job.createdAt) || Date.now(),
+    safeIso(job.updatedAt) || Date.now(),
+    JSON.stringify(job),
+  );
+}
+
+// Stores the latest state of a job.
+export async function writeRefreshJob(env: Env, job: RefreshJob): Promise<void> {
+  await writeStatement(env, job).run();
+}
+
+// Stores the latest state of each job, `refreshJobBatchRows` to a batch.
+export async function writeRefreshJobs(env: Env, jobs: RefreshJob[]): Promise<void> {
+  for (const chunk of chunks(jobs, refreshJobBatchRows)) {
+    await env.DB.batch(chunk.map((job) => writeStatement(env, job)));
+  }
 }
 
 // The latest state of a job as it was stored, not validated. Null for a job that was enqueued
@@ -62,22 +82,42 @@ export async function writeRefreshJobDelivery(env: Env, job: RefreshJob): Promis
     .run();
 }
 
-// Stores the snapshot of a job as it is enqueued.
-export async function indexRefreshJob(env: Env, job: RefreshJob): Promise<void> {
+function indexStatement(env: Env, job: RefreshJob): D1PreparedStatement {
   const createdAt = safeIso(job.createdAt) || Date.now();
-  await env.DB.prepare(
+  return env.DB.prepare(
     `INSERT INTO refresh_jobs (id, target_key, created_at, updated_at, snapshot)
      VALUES (?, ?, ?, ?, ?)
      ON CONFLICT (id) DO UPDATE SET snapshot = excluded.snapshot`,
-  )
-    .bind(
-      job.id,
-      job.targetKey,
-      createdAt,
-      safeIso(job.updatedAt) || createdAt,
-      JSON.stringify(job),
-    )
-    .run();
+  ).bind(
+    job.id,
+    job.targetKey,
+    createdAt,
+    safeIso(job.updatedAt) || createdAt,
+    JSON.stringify(job),
+  );
+}
+
+// Stores the snapshot of a job as it is enqueued.
+export async function indexRefreshJob(env: Env, job: RefreshJob): Promise<void> {
+  await indexStatement(env, job).run();
+}
+
+// Stores the snapshots of jobs as they are enqueued, `refreshJobBatchRows` to a batch. A batch is
+// one transaction: its jobs are all stored or none is. Returns the jobs of the batches that
+// failed, each with the error: the others are stored.
+export async function indexRefreshJobs(
+  env: Env,
+  jobs: RefreshJob[],
+): Promise<Array<{ job: RefreshJob; error: unknown }>> {
+  const failed: Array<{ job: RefreshJob; error: unknown }> = [];
+  for (const chunk of chunks(jobs, refreshJobBatchRows)) {
+    try {
+      await env.DB.batch(chunk.map((job) => indexStatement(env, job)));
+    } catch (error) {
+      failed.push(...chunk.map((job) => ({ job, error })));
+    }
+  }
+  return failed;
 }
 
 // The snapshot a job's `targetSnapshotKey` names, not validated. Null for any other key.

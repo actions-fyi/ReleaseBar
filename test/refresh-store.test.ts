@@ -3,8 +3,13 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import type { DashboardProfile, RefreshJob, RefreshTarget } from "../src/types.ts";
-import { dashboardStorageTtlSeconds, refreshExpiryBatchLimit } from "../worker/config.ts";
+import {
+  dashboardStorageTtlSeconds,
+  refreshExpiryBatchLimit,
+  schedulerBatchLimit,
+} from "../worker/config.ts";
 import { deleteExpiredRefreshData } from "../worker/refresh-targets.ts";
+import { refreshJobBatchRows } from "../worker/store/refresh-jobs.ts";
 import {
   deleteExpiredRefreshTargets,
   indexedRefreshTargetPage,
@@ -14,6 +19,7 @@ import {
   indexedTargets,
   kvStore,
   observedDatabase,
+  refreshAuditEvents,
   storedProfileSnapshot,
   storedRefreshJob,
   storedRefreshJobDeliveries,
@@ -211,7 +217,7 @@ test("a scheduler tick sends D1 a bounded number of statements", async () => {
     entries[`dashboard:v6:${owner}`] = JSON.stringify(testDashboard(owner, []));
     return target(owner, {
       owners: [],
-      nextDueAt: index < 20 ? "2020-01-01T00:00:00Z" : "2999-01-01T00:00:00Z",
+      nextDueAt: index < schedulerBatchLimit ? "2020-01-01T00:00:00Z" : "2999-01-01T00:00:00Z",
     });
   });
   await storeRefreshTargets(targets);
@@ -225,24 +231,142 @@ test("a scheduler tick sends D1 a bounded number of statements", async () => {
   const measured = async () => {
     counts.statements = 0;
     counts.batches = 0;
+    counts.queries = 0;
     counts.sql.length = 0;
     await tick(testEnv);
-    return { statements: counts.statements, batches: counts.batches };
+    return { statements: counts.statements, batches: counts.batches, queries: counts.queries };
   };
 
-  // 120 targets on the page, 20 of them due. Reads: the last tick's state, the jobs, the delivery
-  // records, the page of targets, the owner count cursor. Writes: one insert per enqueued job,
-  // the tick's state, and the five deletions of expired rows, four of them in two batches. The
-  // audit log is in D1 too: an event per enqueued job and one for the tick, and the four
-  // deletions of expired audit rows. The registry adds two deletions: expired installations and
-  // expired owner metadata.
-  expect(await measured()).toStrictEqual({ statements: 5 + 20 + 1 + 5 + 21 + 4 + 2, batches: 2 });
-  expect(sent.length).toBe(20);
-  expect((await storedSchedulerState())?.due).toBe(20);
+  // A page of 120 targets, as many of them due as a tick enqueues. What D1 limits per invocation
+  // is the queries, and a batch is one, whatever it holds.
+  // - Reads, a query each: the last tick's state, the jobs, the delivery records, the page of
+  //   targets, the owner count cursor.
+  // - The enqueued jobs: one batch.
+  // - The tick's state: one statement.
+  // - The five deletions of expired refresh rows: two batches and a statement.
+  // - The audit events, one per enqueued job and one for the tick: one batch.
+  // - The deletions of expired audit rows, five rounds for each of four tables: three batches.
+  // - The deletions of expired installations and owner metadata: a statement each.
+  const jobs = schedulerBatchLimit;
+  expect(await measured()).toStrictEqual({
+    statements: 5 + jobs + 1 + 5 + (jobs + 1) + 20 + 2,
+    batches: 1 + 2 + 1 + 3,
+    queries: 5 + 1 + 1 + 3 + 1 + 3 + 2,
+  });
+  expect(sent.length).toBe(jobs);
+  expect((await storedSchedulerState())?.due).toBe(jobs);
+  expect((await refreshAuditEvents()).filter((event) => event.event === "job_enqueue").length).toBe(
+    jobs,
+  );
+  // The ceiling: well under the 50 queries the Workers free plan allows an invocation.
+  expect(counts.queries <= 20).toBe(true);
 
-  // The same page with the 20 jobs active: nothing is enqueued.
-  expect(await measured()).toStrictEqual({ statements: 5 + 1 + 5 + 1 + 4 + 2, batches: 2 });
-  expect(sent.length).toBe(20);
+  // The same page with the jobs active: nothing is enqueued.
+  expect(await measured()).toStrictEqual({
+    statements: 5 + 1 + 5 + 1 + 20 + 2,
+    batches: 2 + 1 + 3,
+    queries: 5 + 1 + 3 + 1 + 3 + 2,
+  });
+  expect(sent.length).toBe(jobs);
+});
+
+test("a tick stores a job the queue did not take as failed and enqueues the others", async () => {
+  const entries: Record<string, string> = {};
+  const owners = ["due-a", "due-b", "due-c"];
+  await storeRefreshTargets(
+    owners.map((owner) => {
+      entries[`dashboard:v6:${owner}`] = JSON.stringify(testDashboard(owner, []));
+      return target(owner, { owners: [], nextDueAt: "2020-01-01T00:00:00Z" });
+    }),
+  );
+  const sent: RefreshJob[] = [];
+  let queueDown = true;
+  const testEnv = {
+    DASHBOARD_CACHE: kvStore(entries),
+    REFRESH_QUEUE: {
+      send: async (message: RefreshJob) => {
+        if (queueDown && message.targetKey === "dashboard:v6:due-b") {
+          throw new Error("queue unavailable");
+        }
+        sent.push(message);
+      },
+    },
+  };
+
+  await expect(tick(testEnv)).rejects.toThrow("queue unavailable");
+
+  expect(sent.map((message) => message.targetKey)).toStrictEqual([
+    "dashboard:v6:due-a",
+    "dashboard:v6:due-c",
+  ]);
+  const stored = await storedRefreshJobs();
+  expect(stored.length).toBe(3);
+  const failed = stored.filter((job) => job.status === "failed");
+  expect(failed.map((job) => [job.targetKey, job.error])).toStrictEqual([
+    ["dashboard:v6:due-b", "queue unavailable"],
+  ]);
+  expect(stored.filter((job) => job.status === "queued").length).toBe(2);
+
+  // Its reservation is released: the next tick enqueues it, and only it.
+  queueDown = false;
+  await tick(testEnv);
+  expect(sent.map((message) => message.targetKey).slice(2)).toStrictEqual(["dashboard:v6:due-b"]);
+});
+
+test("a webhook fan-out page stores its jobs in batches and audits them in one", async () => {
+  const count = 60;
+  await storeRefreshTargets(
+    Array.from({ length: count }, (_, index) =>
+      target(`fan-${String(index).padStart(2, "0")}`, { owners: ["fan-owner"] }),
+    ),
+  );
+  const { database, counts } = observedDatabase();
+  const sent: Array<{ kind: string }> = [];
+  const waits: Promise<unknown>[] = [];
+  let acknowledged = false;
+
+  await worker.queue(
+    {
+      messages: [
+        {
+          body: {
+            kind: "github-webhook-fanout",
+            id: "fanout-1",
+            event: "repository",
+            delivery: "delivery-1",
+            payload: { repository: { full_name: "fan-owner/repo" } },
+            createdAt: new Date().toISOString(),
+            action: {
+              reason: "webhook:repository",
+              includeReleaseDataOnly: false,
+              invalidateDashboard: true,
+            },
+            source: "owner",
+          },
+          attempts: 1,
+          ack: () => {
+            acknowledged = true;
+          },
+          retry: () => undefined,
+        },
+      ],
+    },
+    {
+      DASHBOARD_CACHE: kvStore(),
+      DB: database,
+      REFRESH_QUEUE: { send: async (message: never) => void sent.push(message) },
+    },
+    { waitUntil: (promise) => void waits.push(promise) },
+  );
+  await Promise.all(waits);
+
+  expect(acknowledged).toBe(true);
+  expect(sent.filter((message) => message.kind === "dashboard").length).toBe(count);
+  expect((await refreshAuditEvents()).filter((event) => event.event === "job_enqueue").length).toBe(
+    count,
+  );
+  // The page of targets, the jobs in batches of `refreshJobBatchRows`, the audit events.
+  expect(counts.queries).toBe(1 + Math.ceil(count / refreshJobBatchRows) + 1);
 });
 
 test("a job whose snapshot is gone is retried, not run without its target", async () => {
@@ -254,6 +378,8 @@ test("a job whose snapshot is gone is retried, not run without its target", asyn
   });
   let acknowledged = false;
   let retried = false;
+  const { database, counts } = observedDatabase();
+  const waits: Promise<unknown>[] = [];
 
   await worker.queue(
     {
@@ -270,12 +396,18 @@ test("a job whose snapshot is gone is retried, not run without its target", asyn
         },
       ],
     },
-    { DASHBOARD_CACHE: kvStore() },
-    { waitUntil: () => undefined },
+    { DASHBOARD_CACHE: kvStore(), DB: database },
+    { waitUntil: (promise) => void waits.push(promise) },
   );
+  await Promise.all(waits);
 
   expect(acknowledged).toBe(false);
   expect(retried).toBe(true);
+  // The job and its snapshot are read, its state is stored, and its audit events are one batch,
+  // written once the handler is done.
+  expect(counts.queries).toBe(2 + 1 + 1);
+  expect(counts.sql.at(-1)?.startsWith("INSERT INTO refresh_audit_events")).toBe(true);
+  expect((await refreshAuditEvents()).map((event) => event.event)).toStrictEqual(["job_retry"]);
   const stored = await storedRefreshJob(queued.id);
   expect(stored?.status).toBe("queued");
   expect(stored?.error).toBe("target snapshot unavailable");

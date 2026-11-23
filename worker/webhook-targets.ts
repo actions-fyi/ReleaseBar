@@ -290,16 +290,14 @@ export async function prioritizedIndexedWebhookTargets(
   fullName: string,
   includeReleaseDataOnly: boolean,
 ): Promise<WebhookTargetPage> {
-  const read = async (source: "owner" | "repo", value: string): Promise<RefreshTarget[]> => {
-    const stored = await indexedRefreshTargets(env, { kind: source, value });
-    return stored.filter(isRefreshTarget);
-  };
-  const [ownerTargets, repoTargets] = await Promise.all([
-    read("owner", owner),
-    read("repo", fullName),
+  const stored = await indexedRefreshTargets(env, [
+    { kind: "owner", value: owner },
+    { kind: "repo", value: fullName },
   ]);
   const targets = freshestWebhookTargets(
-    [...ownerTargets, ...repoTargets]
+    stored
+      .flat()
+      .filter(isRefreshTarget)
       .filter((target) => webhookTargetMatches(target, owner, fullName))
       .filter((target) => !includeReleaseDataOnly || target.includeReleaseData),
   )

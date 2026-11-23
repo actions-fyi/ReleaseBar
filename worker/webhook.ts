@@ -20,6 +20,7 @@ import {
   webhookPriorityFanoutRetrySeconds,
   webhookPriorityFanoutWaitMs,
   webhookPriorityTargetLimit,
+  webhookTargetConcurrency,
   webhookRecentTargetMs,
 } from "./config.ts";
 import { errorMessage, readCachedRaw } from "./dashboard-cache.ts";
@@ -29,7 +30,7 @@ import {
   rememberOwnerMetadata,
   safeIso,
 } from "./owner-metadata-write.ts";
-import { enqueueRefreshJob, refreshOwnerCounts } from "./refresh-queue.ts";
+import { enqueueRefreshJobs, refreshOwnerCounts } from "./refresh-queue.ts";
 import { auditSyncEvent } from "./refresh-targets.ts";
 import {
   compactGitHubWebhookPayload,
@@ -37,7 +38,6 @@ import {
   invalidatePublicRepoCaches,
   invalidateRepoDetailCaches,
   invalidateRepoProjectCache,
-  mapWebhookTargets,
   releaseWebhookAffectsDashboard,
   validWebhookSignature,
   webhookRepo,
@@ -234,8 +234,11 @@ export async function applyWebhookTargetAction(
       matching.filter((target) => !prioritized.has(target.key)),
     );
   }
-  await mapWebhookTargets(selected, (target) =>
-    enqueueRefreshJob(env, context, target, action.reason),
+  await enqueueRefreshJobs(
+    env,
+    context,
+    selected.map((target) => ({ target, reason: action.reason })),
+    { concurrency: webhookTargetConcurrency },
   );
 }
 
