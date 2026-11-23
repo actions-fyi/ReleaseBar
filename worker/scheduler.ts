@@ -8,7 +8,8 @@ import {
 } from "./github-audit.ts";
 import { canonicalDomain } from "./runtime.ts";
 import { resolveOwners } from "./app-shell.ts";
-import { sourceInstallationToken } from "./auth-tokens.ts";
+import { appTokenConfigured } from "./auth-oauth.ts";
+import { installationRegistryFor, sourceInstallationToken } from "./auth-tokens.ts";
 import { adminTargetListLimit, queuedProgressiveBuildBudgetMs } from "./config.ts";
 import { errorMessage, isAbortError, readCached } from "./dashboard-cache.ts";
 import { continueProgressiveBuild } from "./dashboard-rebuild.ts";
@@ -459,9 +460,16 @@ export async function schedulerAdminPayload(env: Env): Promise<SchedulerAdminPay
       target,
       cached: await readCached(env, target.key),
     }));
+    // The installations of the targets' accounts, read once for all of them.
+    const registry = appTokenConfigured(env)
+      ? await installationRegistryFor(env, targets).catch(() => null)
+      : null;
     const dueTargetStates = await mapConcurrent(targetStates, 16, async (targetState) => ({
       ...targetState,
-      due: await schedulerTargetDue(env, targetState.target, targetState.cached, dueOptions),
+      due: await schedulerTargetDue(env, targetState.target, targetState.cached, {
+        ...dueOptions,
+        registry,
+      }),
     }));
     scannedTargets = targets.length;
     dueTargets = dueTargetStates.filter(

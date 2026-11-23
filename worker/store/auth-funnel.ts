@@ -23,33 +23,55 @@ type EventRow = {
   detail: string | null;
 };
 
-type CountRow = { day: string; event: string; account: string; status: string; count: number };
+type CountRow = {
+  day: string;
+  event: string;
+  account: string;
+  status: string;
+  count: number;
+};
 
 // Stores the event and adds one to today's count for its event, account and status, in one
 // transaction. The count is one statement, so concurrent events lose none.
 export async function appendAuthFunnelEvent(env: Env, event: AuthFunnelEvent): Promise<void> {
+  await appendAuthFunnelEvents(env, [event]);
+}
+
+// Events per batch: an event is two statements.
+const eventsPerWrite = 50;
+
+// Stores the events and adds each to its count: one batch for `eventsPerWrite` events.
+export async function appendAuthFunnelEvents(env: Env, events: AuthFunnelEvent[]): Promise<void> {
   const day = new Date().toISOString().slice(0, 10);
-  await env.DB.batch([
-    env.DB.prepare(
-      `INSERT INTO auth_funnel_events
-         (id, at, event, account, installation_id, repository_selection, status, detail)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
-    ).bind(
-      event.id,
-      event.at,
-      event.event,
-      event.account,
-      event.installationId,
-      event.repositorySelection,
-      event.status,
-      event.detail,
-    ),
-    env.DB.prepare(
-      `INSERT INTO auth_funnel_counts (day, event, account, status, count)
-       VALUES (?1, ?2, ?3, ?4, 1)
-       ON CONFLICT (day, event, account, status) DO UPDATE SET count = count + 1`,
-    ).bind(day, event.event, event.account ?? "_", event.status ?? "_"),
-  ]);
+  const insertEvent = env.DB.prepare(
+    `INSERT INTO auth_funnel_events
+       (id, at, event, account, installation_id, repository_selection, status, detail)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+  );
+  const addToCount = env.DB.prepare(
+    `INSERT INTO auth_funnel_counts (day, event, account, status, count)
+     VALUES (?1, ?2, ?3, ?4, 1)
+     ON CONFLICT (day, event, account, status) DO UPDATE SET count = count + 1`,
+  );
+  for (let index = 0; index < events.length; index += eventsPerWrite) {
+    await env.DB.batch(
+      events
+        .slice(index, index + eventsPerWrite)
+        .flatMap((event) => [
+          insertEvent.bind(
+            event.id,
+            event.at,
+            event.event,
+            event.account,
+            event.installationId,
+            event.repositorySelection,
+            event.status,
+            event.detail,
+          ),
+          addToCount.bind(day, event.event, event.account ?? "_", event.status ?? "_"),
+        ]),
+    );
+  }
 }
 
 // The newest events, at most `limit`.

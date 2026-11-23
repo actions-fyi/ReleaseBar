@@ -2,7 +2,11 @@ import { slugOwner, validOwnerSlug } from "../shared/dashboard.ts";
 import type { DashboardPayload } from "../src/types.ts";
 import { jsonResponse } from "./http.ts";
 import { dashboardTotals } from "./build-progress.ts";
-import { changeOwnerMetadata } from "./store/owner-metadata.ts";
+import {
+  changeOwnerMetadata,
+  changeOwnerMetadataOf,
+  type OwnerMetadataChangeResult,
+} from "./store/owner-metadata.ts";
 import { safeIso } from "./time.ts";
 import {
   crawlerUserAgentPattern,
@@ -24,7 +28,7 @@ import {
   mergeProjectIssuePullCounts,
   mergeProjectMetadata,
   ownerSnapshotWithCounts,
-  readDurableOwnerMetadata,
+  readOwnerMetadataOf,
 } from "./owner-metadata-read.ts";
 
 export function applyOwnerMetadataMutation(
@@ -384,21 +388,63 @@ export async function mutateOwnerMetadataSnapshot(
   );
 }
 
-export async function mergeOwnerMetadata(
+// `mutateOwnerMetadataSnapshot` for many owners, each with its own mutation, with two queries for
+// 20 owners: the store reads their snapshots together and writes them in one batch, in which
+// each owner's write applies only if that owner's snapshot is still the one that was read; the
+// owners whose write did not apply are read and written again. So a mutation is no more lost to
+// a concurrent write than one applied by itself. The results are in the order of `mutations`:
+// fulfilled with the stored snapshot, or null when the mutation leaves none to store, or
+// rejected when the mutation could not be stored. An owner may be named once only.
+export async function mutateOwnerMetadataSnapshots(
   env: Env,
-  payload: DashboardPayload,
-  observedAt = payload.generatedAt,
-): Promise<DashboardPayload> {
-  const owners = [
+  mutations: Array<{ owner: string; mutation: OwnerMetadataMutation }>,
+): Promise<OwnerMetadataChangeResult[]> {
+  return changeOwnerMetadataOf(
+    env,
+    mutations.map(({ owner, mutation }) => {
+      const normalizedOwner = slugOwner(owner);
+      if (!validOwnerSlug(normalizedOwner)) throw new TypeError("invalid owner");
+      if (!isOwnerMetadataMutation(mutation)) {
+        throw new TypeError("invalid owner metadata mutation");
+      }
+      return {
+        owner: normalizedOwner,
+        change: (stored) =>
+          applyOwnerMetadataMutation(
+            normalizedOwner,
+            normalizeOwnerMetadataSnapshot(normalizedOwner, stored),
+            mutation,
+          ),
+      };
+    }),
+  );
+}
+
+// The owners whose metadata a payload is merged with: the ones it lists and the ones of its
+// projects.
+function payloadOwners(payload: DashboardPayload): string[] {
+  return [
     ...new Set([
       ...payload.owners.map((owner) => slugOwner(owner.login)),
       ...payload.projects.map((project) => slugOwner(project.owner)),
     ]),
   ];
+}
+
+// `stored` is the metadata of the payload's owners when the caller has read it already, for
+// several payloads at once; without it, it is read here, with one query.
+export async function mergeOwnerMetadata(
+  env: Env,
+  payload: DashboardPayload,
+  observedAt = payload.generatedAt,
+  stored?: Map<string, OwnerMetadataSnapshot | null>,
+): Promise<DashboardPayload> {
+  const owners = payloadOwners(payload);
   if (owners.length === 0) return dashboardWithVisibleProjects(payload);
-  const snapshots = (
-    await Promise.all(owners.map((owner) => readDurableOwnerMetadata(env, owner)))
-  ).filter((snapshot): snapshot is OwnerMetadataSnapshot => Boolean(snapshot));
+  const read = stored ?? (await readOwnerMetadataOf(env, owners));
+  const snapshots = owners
+    .map((owner) => read.get(owner) ?? null)
+    .filter((snapshot): snapshot is OwnerMetadataSnapshot => Boolean(snapshot));
   if (snapshots.length === 0) return dashboardWithVisibleProjects(payload);
   const snapshotByOwner = new Map(snapshots.map((snapshot) => [snapshot.owner, snapshot]));
   const payloadObservedAt = safeIso(observedAt);
@@ -521,6 +567,32 @@ export async function readCachedWithOwnerMetadata(
   }
 }
 
+// `readCachedWithOwnerMetadata` for many keys, in their order, with one query for the metadata of
+// all the owners the cached payloads show.
+export async function readCachedWithOwnerMetadataOf(
+  env: Env,
+  keys: string[],
+): Promise<Array<DashboardPayload | null>> {
+  const payloads = await Promise.all(keys.map((key) => readCachedRaw(env, key)));
+  const owners = [
+    ...new Set(payloads.flatMap((payload) => (payload ? payloadOwners(payload) : []))),
+  ];
+  if (owners.length === 0) {
+    return payloads.map((payload) => (payload ? dashboardWithVisibleProjects(payload) : null));
+  }
+  try {
+    const stored = await readOwnerMetadataOf(env, owners);
+    return await Promise.all(
+      payloads.map((payload) =>
+        payload ? mergeOwnerMetadata(env, payload, payload.generatedAt, stored) : null,
+      ),
+    );
+  } catch {
+    // Never serve cached public metadata when its durable privacy barrier is unavailable.
+    return payloads.map(() => null);
+  }
+}
+
 export async function rememberOwnerMetadata(
   env: Env,
   payload: DashboardPayload,
@@ -535,11 +607,12 @@ export async function rememberOwnerMetadata(
       ...payload.projects.map((project) => slugOwner(project.owner)),
     ]),
   ];
-  await Promise.all(
-    owners.map(async (owner) => {
-      const incoming = payload.projects.filter((project) => slugOwner(project.owner) === owner);
-      const countsUpdatedAt = payload.cache?.countsUpdatedAt ?? null;
-      await mutateOwnerMetadataSnapshot(env, owner, {
+  const countsUpdatedAt = payload.cache?.countsUpdatedAt ?? null;
+  const results = await mutateOwnerMetadataSnapshots(
+    env,
+    owners.map((owner) => ({
+      owner,
+      mutation: {
         kind: "merge",
         generatedAt: payload.generatedAt,
         observedAt,
@@ -547,11 +620,15 @@ export async function rememberOwnerMetadata(
         countsComplete: payload.cache?.progress?.done !== false,
         releaseDataComplete: mode === "hydrated" && payload.cache?.progress?.done !== false,
         mode,
-        projects: incoming,
+        projects: payload.projects.filter((project) => slugOwner(project.owner) === owner),
         removedRepos: [...removed],
-      });
-    }),
+      },
+    })),
   );
+  // A mutation that was not stored fails the whole, as it did when each owner was written alone.
+  for (const result of results) {
+    if (result.status === "rejected") throw result.reason;
+  }
 }
 
 export { safeIso };

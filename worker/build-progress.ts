@@ -41,11 +41,12 @@ import {
   mergeProjectIssuePullCounts,
   mergeProjectMetadata,
   projectWithoutReleaseData,
-  readDurableOwnerMetadata,
+  readOwnerMetadataOf,
 } from "./owner-metadata-read.ts";
 import {
   mergeOwnerMetadata,
   readCachedWithOwnerMetadata,
+  readCachedWithOwnerMetadataOf,
   safeIso,
 } from "./owner-metadata-write.ts";
 import {
@@ -348,9 +349,7 @@ export async function partialDashboardPayload(
       }),
     ),
   ];
-  const dashboards = (
-    await Promise.all([...new Set(keys)].map((key) => readCachedWithOwnerMetadata(env, key)))
-  ).filter(
+  const dashboards = (await readCachedWithOwnerMetadataOf(env, [...new Set(keys)])).filter(
     (payload): payload is DashboardPayload =>
       canDisplayCached(payload) && payload.cache?.state !== "error" && payload.projects.length > 0,
   );
@@ -360,10 +359,9 @@ export async function partialDashboardPayload(
       ...dashboard.includeRepos.map((repo) => slugOwner(repo.split("/")[0] ?? "")),
     ]),
   ].filter(validOwnerSlug);
-  const ownerSnapshots = (
-    await Promise.all(snapshotOwners.map((owner) => readDurableOwnerMetadata(env, owner)))
-  ).filter((snapshot): snapshot is OwnerMetadataSnapshot =>
-    Boolean(snapshot && canDisplayOwnerMetadata(snapshot)),
+  const ownerSnapshots = [...(await readOwnerMetadataOf(env, snapshotOwners)).values()].filter(
+    (snapshot): snapshot is OwnerMetadataSnapshot =>
+      Boolean(snapshot && canDisplayOwnerMetadata(snapshot)),
   );
   if (dashboards.length === 0 && ownerSnapshots.length === 0) return null;
 

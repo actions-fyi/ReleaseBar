@@ -52,7 +52,11 @@ import {
   isAuditEvent,
   listRefreshAuditEvents,
 } from "./store/refresh-audit.ts";
-import { deleteExpiredProfileSnapshots } from "./store/profile-snapshots.ts";
+import { mapConcurrent } from "./concurrency.ts";
+import {
+  deleteExpiredProfileSnapshots,
+  ensureProfileSnapshots,
+} from "./store/profile-snapshots.ts";
 import {
   deleteExpiredRefreshJobs,
   indexRefreshJob,
@@ -70,10 +74,13 @@ import {
   countStoredRefreshTargets,
   deleteExpiredRefreshTargets,
   deleteRefreshTarget,
+  deleteRefreshTargets,
   listStoredRefreshTargets,
   readStoredRefreshTarget,
+  readStoredRefreshTargetsOf,
   type RefreshTargetSource,
   writeRefreshTarget,
+  writeRefreshTargets,
 } from "./store/refresh-targets.ts";
 
 export {
@@ -415,6 +422,83 @@ export async function rememberRefreshTarget(
   });
 }
 
+type RefreshTargetInput = Pick<
+  RefreshTarget,
+  "key" | "owner" | "owners" | "repos" | "includeReleaseData" | "path" | "priority"
+> & { profile?: DashboardProfile | null };
+
+// How many targets are observed at once: each observation is a call to the dashboard's object.
+const rememberConcurrency = 8;
+
+// `rememberRefreshTarget` for many targets, with a bounded number of D1 queries, however many
+// there are: the profile snapshots are one batch, the stored targets are one read, the limits
+// one query, and the targets one batch for 25. Each target's state is still changed by its own
+// dashboard's object. The results are in the order of `inputs`: null for a target that was not
+// kept. A key that is given twice is remembered once, as the first input says.
+export async function rememberRefreshTargets(
+  env: Env,
+  inputs: RefreshTargetInput[],
+): Promise<Array<RefreshTarget | null>> {
+  const byKey = new Map<string, RefreshTargetInput>();
+  for (const input of inputs) {
+    if (
+      !byKey.has(input.key) &&
+      new TextEncoder().encode(input.path).byteLength <= refreshTargetEntryLimitBytes
+    ) {
+      byKey.set(input.key, input);
+    }
+  }
+  const accepted = [...byKey.values()];
+  const remembered = new Map<string, RefreshTarget | null>();
+  if (accepted.length > 0) {
+    const now = new Date().toISOString();
+    const profiles = accepted.flatMap((input) => (input.profile ? [input.profile] : []));
+    if (profiles.length > 0) await ensureProfileSnapshots(env, profiles);
+    const stored = await readStoredRefreshTargetsOf(
+      env,
+      accepted.map((input) => input.key),
+    );
+    const updated = await mapConcurrent(accepted, rememberConcurrency, async (input) => {
+      const { profile, ...targetInput } = input;
+      const mutation: RefreshTargetMutation = {
+        kind: "observe",
+        input: targetInput,
+        observedAt: now,
+        profileProvided: profile !== undefined,
+        profileSnapshotKey:
+          profile === undefined ? undefined : profile ? profileSnapshotStorageKey(profile) : null,
+      };
+      const candidate = stored.get(input.key);
+      const current = isRefreshTarget(candidate) ? candidate : null;
+      try {
+        const coordinated = await mutateCoordinatedTarget(env, input.key, null, mutation, {
+          current,
+        });
+        if (isRefreshTarget(coordinated)) return coordinated;
+      } catch {
+        // The object can't be reached: the database alone keeps the target.
+      }
+      return applyRefreshTargetMutation(null, current, mutation);
+    });
+    const written = await writeRefreshTargets(
+      env,
+      updated.map((target) => ({
+        target,
+        sources: refreshTargetSources(target),
+      })),
+    );
+    const refused: string[] = [];
+    for (const [index, target] of updated.entries()) {
+      const kept = written[index] === "created" || written[index] === "updated";
+      remembered.set(target.key, kept ? target : null);
+      if (!kept) refused.push(target.key);
+    }
+    // A refused target is not kept, as in `persistRefreshTarget`.
+    await deleteRefreshTargets(env, refused);
+  }
+  return inputs.map((input) => remembered.get(input.key) ?? null);
+}
+
 export async function refreshTargetProfile(
   env: Env,
   target: RefreshTarget,
@@ -618,18 +702,27 @@ export async function clientTimingResponse(
 ): Promise<Response> {
   const origin = request.headers.get("origin");
   if (origin && origin !== new URL(request.url).origin) {
-    return jsonResponse({ error: "forbidden" }, 403, { "cache-control": "no-store" });
+    return jsonResponse({ error: "forbidden" }, 403, {
+      "cache-control": "no-store",
+    });
   }
   if (await clientTimingRateLimited(request, env)) {
-    return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+    return new Response(null, {
+      status: 204,
+      headers: { "cache-control": "no-store" },
+    });
   }
   const raw = await request.text().catch(() => "");
   if (raw.length > 2048) {
-    return jsonResponse({ error: "payload too large" }, 413, { "cache-control": "no-store" });
+    return jsonResponse({ error: "payload too large" }, 413, {
+      "cache-control": "no-store",
+    });
   }
   const input = tryJsonParse<Record<string, unknown>>(raw, "client timing");
   if (!input || typeof input !== "object") {
-    return jsonResponse({ error: "invalid timing" }, 400, { "cache-control": "no-store" });
+    return jsonResponse({ error: "invalid timing" }, 400, {
+      "cache-control": "no-store",
+    });
   }
   const cacheState = timingText(input.cacheState, "ok");
   auditDashboardSync(context, env, {

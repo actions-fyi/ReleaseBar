@@ -2,7 +2,7 @@ import { slugOwner } from "../shared/dashboard.ts";
 import type { AuthFunnelEvent, AuthFunnelSummary } from "../src/types.ts";
 import { randomNonce } from "./crypto.ts";
 import {
-  appendAuthFunnelEvent,
+  appendAuthFunnelEvents,
   authFunnelCountInventory,
   listAuthFunnelEvents,
 } from "./store/auth-funnel.ts";
@@ -28,24 +28,40 @@ function authEventDetail(value: string | null | undefined): string | null {
   return value.replace(/\s+/g, " ").slice(0, 160);
 }
 
-export async function recordAuthFunnelEvent(
+// Records the events with one batch. A failure is logged, not thrown: the funnel is not worth
+// failing a sign-in for.
+export async function recordAuthFunnelEvents(
+  env: Env,
+  inputs: Array<Omit<AuthFunnelEvent, "id" | "at">>,
+): Promise<void> {
+  if (inputs.length === 0) return;
+  try {
+    await appendAuthFunnelEvents(
+      env,
+      inputs.map((input) => ({
+        id: randomNonce(),
+        at: new Date().toISOString(),
+        ...input,
+        account: input.account ? slugOwner(input.account) : null,
+        detail: authEventDetail(input.detail),
+      })),
+    );
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        area: "auth",
+        event: "funnel_write_failed",
+        error: errorMessage(error),
+      }),
+    );
+  }
+}
+
+export function recordAuthFunnelEvent(
   env: Env,
   input: Omit<AuthFunnelEvent, "id" | "at">,
 ): Promise<void> {
-  try {
-    const item: AuthFunnelEvent = {
-      id: randomNonce(),
-      at: new Date().toISOString(),
-      ...input,
-      account: input.account ? slugOwner(input.account) : null,
-      detail: authEventDetail(input.detail),
-    };
-    await appendAuthFunnelEvent(env, item);
-  } catch (error) {
-    console.warn(
-      JSON.stringify({ area: "auth", event: "funnel_write_failed", error: errorMessage(error) }),
-    );
-  }
+  return recordAuthFunnelEvents(env, [input]);
 }
 
 export async function authFunnelSummary(env: Env): Promise<AuthFunnelSummary> {

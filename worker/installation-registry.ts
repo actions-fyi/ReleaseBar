@@ -13,24 +13,21 @@ import type {
 import {
   installationMissKey,
   readStoredInstallation,
+  readStoredInstallationsOf,
   type StoredInstallationRecord,
-  writeStoredInstallation,
+  writeStoredInstallations,
 } from "./store/installations.ts";
+import { readProfilesOf } from "./store/profiles.ts";
 import { type GitHubInstallationRepository } from "./schemas.ts";
 import { uniqueSorted } from "./app-shell.ts";
 import { appTokenConfigured } from "./auth-oauth.ts";
-import { sourceInstallationRegistryCovers } from "./auth-tokens.ts";
+import { installationRegistryCovers, installationRegistryFor } from "./auth-tokens.ts";
 import { dashboardSchemaVersion, fullTtlMs, maxCustomSources } from "./config.ts";
-import {
-  cacheAgeMs,
-  canDisplayCached,
-  errorMessage,
-  readCached,
-  readProfile,
-} from "./dashboard-cache.ts";
+import { cacheAgeMs, canDisplayCached, errorMessage, readCached } from "./dashboard-cache.ts";
 import { safeIso } from "./owner-metadata-write.ts";
-import { enqueueRefreshJob, refreshTargetBackoffActive } from "./refresh-queue.ts";
-import { auditSyncEvent, rememberRefreshTarget } from "./refresh-targets.ts";
+import { mapConcurrent } from "./concurrency.ts";
+import { enqueueRefreshJobs, refreshTargetBackoffActive } from "./refresh-queue.ts";
+import { auditSyncEvent, rememberRefreshTargets } from "./refresh-targets.ts";
 import type { BackgroundContext } from "./runtime.ts";
 
 export function isPublicInstallationRepository(repo: GitHubInstallationRepository): boolean {
@@ -51,53 +48,79 @@ export function normalizedInstallation(installation: AuthInstallation): StoredIn
   };
 }
 
+type InstallationRefreshTargetInput = Pick<
+  RefreshTarget,
+  "key" | "owner" | "owners" | "repos" | "includeReleaseData" | "path" | "priority"
+> & { profile: DashboardProfile | null };
+
+// What to remember as the refresh target of each account's dashboard, by the account's slug:
+// null for an account that has no valid slug, or whose profile adds more sources than a dashboard
+// takes. Two queries, however many accounts: their profiles, and the installations of the
+// accounts their dashboards show.
+export async function installationRefreshTargetInputs(
+  env: Env,
+  accountLogins: string[],
+): Promise<Map<string, InstallationRefreshTargetInput | null>> {
+  const inputs = new Map<string, InstallationRefreshTargetInput | null>(
+    accountLogins.map((accountLogin) => [slugOwner(accountLogin), null]),
+  );
+  const accounts = [...inputs.keys()].filter(validOwnerSlug);
+  if (accounts.length === 0) return inputs;
+  const profiles = await readProfilesOf(env, accounts);
+  const drafts = accounts.flatMap((account) => {
+    const profile = profiles.get(account) ?? null;
+    const hiddenOwners = new Set(profile?.hiddenOwners ?? []);
+    const hiddenRepos = new Set(profile?.hiddenRepos ?? []);
+    const extraOwners = uniqueSorted(profile?.includeOwners ?? []).filter(
+      (owner) => owner !== account && !hiddenOwners.has(owner),
+    );
+    const repos = uniqueSorted(profile?.includeRepos ?? []).filter(
+      (repo) => !hiddenOwners.has(repo.split("/")[0] ?? "") && !hiddenRepos.has(repo),
+    );
+    if (extraOwners.length + repos.length > maxCustomSources) return [];
+    const owners = hiddenOwners.has(account) ? extraOwners : [account, ...extraOwners];
+    return [{ account, profile, extraOwners, repos, owners }];
+  });
+  const registry = appTokenConfigured(env)
+    ? await installationRegistryFor(env, drafts).catch(() => null)
+    : null;
+  for (const { account, profile, extraOwners, repos, owners } of drafts) {
+    const registryCovered = registry
+      ? installationRegistryCovers(registry, { owners, repos })
+      : false;
+    const includeReleaseData = !appTokenConfigured(env) || registryCovered;
+    inputs.set(account, {
+      key: dashboardCacheKey({
+        owner: account,
+        owners: extraOwners,
+        repos,
+        salt: profile?.updatedAt,
+        includeForks: false,
+        includeArchived: false,
+        includeUnreleased: true,
+        includeReleaseData,
+        schemaVersion: dashboardSchemaVersion,
+      }),
+      owner: account,
+      owners,
+      repos,
+      profile,
+      includeReleaseData,
+      path: `/${account}`,
+      priority: 80,
+    });
+  }
+  return inputs;
+}
+
 export async function installationRefreshTargetInput(
   env: Env,
   accountLogin: string,
-): Promise<
-  | (Pick<
-      RefreshTarget,
-      "key" | "owner" | "owners" | "repos" | "includeReleaseData" | "path" | "priority"
-    > & { profile: DashboardProfile | null })
-  | null
-> {
-  const account = slugOwner(accountLogin);
-  if (!validOwnerSlug(account)) return null;
-  const profile = await readProfile(env, account);
-  const hiddenOwners = new Set(profile?.hiddenOwners ?? []);
-  const hiddenRepos = new Set(profile?.hiddenRepos ?? []);
-  const extraOwners = uniqueSorted(profile?.includeOwners ?? []).filter(
-    (owner) => owner !== account && !hiddenOwners.has(owner),
+): Promise<InstallationRefreshTargetInput | null> {
+  return (
+    (await installationRefreshTargetInputs(env, [accountLogin])).get(slugOwner(accountLogin)) ??
+    null
   );
-  const repos = uniqueSorted(profile?.includeRepos ?? []).filter(
-    (repo) => !hiddenOwners.has(repo.split("/")[0] ?? "") && !hiddenRepos.has(repo),
-  );
-  if (extraOwners.length + repos.length > maxCustomSources) return null;
-  const owners = hiddenOwners.has(account) ? extraOwners : [account, ...extraOwners];
-  const registryCovered = await sourceInstallationRegistryCovers(env, { owners, repos }).catch(
-    () => false,
-  );
-  const includeReleaseData = !appTokenConfigured(env) || registryCovered;
-  return {
-    key: dashboardCacheKey({
-      owner: account,
-      owners: extraOwners,
-      repos,
-      salt: profile?.updatedAt,
-      includeForks: false,
-      includeArchived: false,
-      includeUnreleased: true,
-      includeReleaseData,
-      schemaVersion: dashboardSchemaVersion,
-    }),
-    owner: account,
-    owners,
-    repos,
-    profile,
-    includeReleaseData,
-    path: `/${account}`,
-    priority: 80,
-  };
 }
 
 // Skip rewrites of registry entries that already hold the same content and were
@@ -105,11 +128,10 @@ export async function installationRefreshTargetInput(
 // do not each write the same row again.
 const installationRegistryRewriteMinAgeMs = 5 * 60 * 1000;
 
-async function installationRegistryEntryFresh(
-  env: Env,
+function installationRegistryEntryFresh(
+  existing: StoredInstallationRecord | null,
   installation: StoredInstallationRecord,
-): Promise<boolean> {
-  const existing = await readInstallationRegistry(env, installation.accountLogin).catch(() => null);
+): boolean {
   if (!existing) return false;
   const updatedAt = Date.parse(existing.updatedAt ?? "");
   if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > installationRegistryRewriteMinAgeMs) {
@@ -127,31 +149,40 @@ async function installationRegistryEntryFresh(
   );
 }
 
+function notNull<Value>(value: Value | null): value is Value {
+  return value !== null;
+}
+
+// Stores the installations that are not stored as they are already, and remembers the dashboard
+// of each account that installed the app for all its repositories as a refresh target. The
+// queries do not grow with the installations: the stored ones are one read, the writes one batch
+// for 25, and the targets are remembered together.
 export async function writeInstallationRegistry(
   env: Env,
   installations: AuthInstallation[],
 ): Promise<void> {
+  if (installations.length === 0) return;
   const normalized = installations.map(normalizedInstallation);
-  const stale = (
-    await Promise.all(
-      normalized.map(async (installation) =>
-        (await installationRegistryEntryFresh(env, installation)) ? null : installation,
+  const existing = await readInstallationRegistries(
+    env,
+    normalized.map((installation) => installation.accountLogin),
+  ).catch(() => null);
+  const stale = normalized.filter(
+    (installation) =>
+      !installationRegistryEntryFresh(
+        existing?.get(installation.accountLogin) ?? null,
+        installation,
       ),
-    )
-  ).filter((installation): installation is StoredInstallationRecord => installation !== null);
-  await Promise.all(
-    stale.map((installation) => {
-      return writeStoredInstallation(env, installation);
-    }),
   );
-  await Promise.all(
+  if (stale.length === 0) return;
+  await writeStoredInstallations(env, stale);
+  const inputs = await installationRefreshTargetInputs(
+    env,
     stale
       .filter((installation) => installation.repositorySelection === "all")
-      .map(async (installation) => {
-        const input = await installationRefreshTargetInput(env, installation.accountLogin);
-        return input ? rememberRefreshTarget(env, input) : null;
-      }),
+      .map((installation) => installation.accountLogin),
   );
+  await rememberRefreshTargets(env, [...inputs.values()].filter(notNull));
 }
 
 export async function warmInstallationCaches(
@@ -167,16 +198,21 @@ export async function warmInstallationCaches(
         .filter(validOwnerSlug),
     ),
   ];
-  await Promise.all(
-    accounts.map(async (account) => {
-      const input = await installationRefreshTargetInput(env, account);
-      if (!input) return;
-      const target = await rememberRefreshTarget(env, input);
-      if (!target) return;
-      const cached = await readCached(env, target.key);
-      if (!installationCacheNeedsWarm(target, cached)) return;
-      await enqueueRefreshJob(env, context, target, "installation-warm", 0);
-    }),
+  if (accounts.length === 0) return;
+  const inputs = await installationRefreshTargetInputs(env, accounts);
+  const targets = (await rememberRefreshTargets(env, [...inputs.values()].filter(notNull))).filter(
+    notNull,
+  );
+  const cold = (
+    await mapConcurrent(targets, 8, async (target) =>
+      installationCacheNeedsWarm(target, await readCached(env, target.key)) ? target : null,
+    )
+  ).filter(notNull);
+  await enqueueRefreshJobs(
+    env,
+    context,
+    cold.map((target) => ({ target, reason: "installation-warm" })),
+    { delaySeconds: 0, concurrency: 4 },
   );
 }
 
@@ -222,4 +258,15 @@ export async function readInstallationRegistry(
   const account = slugOwner(accountLogin);
   if (!validOwnerSlug(account)) return null;
   return readStoredInstallation(env, account);
+}
+
+// The stored installations of the accounts, by the account's slug: null for an account that has
+// none, or no valid slug. One query, however many accounts.
+export async function readInstallationRegistries(
+  env: Env,
+  accountLogins: string[],
+): Promise<Map<string, StoredInstallationRecord | null>> {
+  const accounts = [...new Set(accountLogins.map(slugOwner))];
+  const stored = await readStoredInstallationsOf(env, accounts.filter(validOwnerSlug));
+  return new Map(accounts.map((account) => [account, stored.get(account) ?? null]));
 }

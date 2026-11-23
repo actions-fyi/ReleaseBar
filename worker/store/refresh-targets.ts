@@ -23,7 +23,10 @@ export type RefreshTargetSource = { kind: "owner" | "repo"; value: string };
 // targets already.
 export type RefreshTargetWrite = "created" | "updated" | "too-large" | "full";
 
-export type RefreshTargetPage = { targets: RefreshTarget[]; nextCursor?: string };
+export type RefreshTargetPage = {
+  targets: RefreshTarget[];
+  nextCursor?: string;
+};
 
 type ValueRow = { value: string };
 
@@ -133,12 +136,158 @@ export async function writeRefreshTarget(
   return existing ? "updated" : "created";
 }
 
+// Keys per statement of a lookup, and targets per batch of writes: a target is at most
+// `refreshTargetEntryLimitBytes`.
+const keysPerRead = 90;
+const targetsPerWrite = 25;
+
+// The targets with the keys, as they were stored, not validated, by key: null for a key that has
+// none. One query, however many keys: a statement per `keysPerRead` of them, in one batch.
+export async function readStoredRefreshTargetsOf(
+  env: Env,
+  keys: string[],
+): Promise<Map<string, RefreshTarget | null>> {
+  const found = new Map<string, RefreshTarget | null>(keys.map((key) => [key, null]));
+  if (found.size === 0) return found;
+  const results = await env.DB.batch<ValueRow & { key: string }>(
+    chunks([...found.keys()], keysPerRead).map((chunk) =>
+      env.DB.prepare(
+        `SELECT key, value FROM refresh_targets
+         WHERE key IN (${chunk.map(() => "?").join(", ")})`,
+      ).bind(...chunk),
+    ),
+  );
+  for (const row of results.flatMap((result) => result.results)) {
+    found.set(row.key, tryJsonParse<RefreshTarget>(row.value, `refresh target ${row.key}`));
+  }
+  return found;
+}
+
+// Stores each target as `writeRefreshTarget` does, with a query for the limits of all of them
+// and a batch per `targetsPerWrite` targets that are stored. The results are in the order of
+// `entries`. A target is named once only.
+export async function writeRefreshTargets(
+  env: Env,
+  entries: Array<{ target: RefreshTarget; sources: RefreshTargetSource[] }>,
+): Promise<RefreshTargetWrite[]> {
+  const results = Array.from<RefreshTargetWrite>({ length: entries.length });
+  const values = entries.map(({ target }) => JSON.stringify(target));
+  const sized: number[] = [];
+  for (const [index, value] of values.entries()) {
+    if (new TextEncoder().encode(value).byteLength > refreshTargetEntryLimitBytes) {
+      results[index] = "too-large";
+    } else {
+      sized.push(index);
+    }
+  }
+  if (sized.length === 0) return results;
+
+  // Which of the targets are stored already, and for each how many of its sources are full: a
+  // statement per target, and the statements of `fullSources` after them.
+  const checks: Array<{ index: number; statement: D1PreparedStatement }> = [];
+  for (const index of sized) {
+    const entry = entries[index];
+    if (!entry) continue;
+    for (const chunk of chunks(entry.sources, sourcesPerCount)) {
+      checks.push({
+        index,
+        statement: env.DB.prepare(
+          `SELECT COUNT(*) AS found FROM (
+             SELECT 1 FROM refresh_target_sources
+             WHERE (kind, value) IN (VALUES ${chunk.map(() => "(?, ?)").join(", ")})
+               AND target_key <> ?
+             GROUP BY kind, value
+             HAVING COUNT(*) >= ?
+           )`,
+        ).bind(
+          ...chunk.flatMap((source) => [source.kind, source.value]),
+          entry.target.key,
+          refreshTargetSourceLimit,
+        ),
+      });
+    }
+  }
+  const checked = await env.DB.batch<{ found: number }>([
+    ...sized.map((index) =>
+      env.DB.prepare("SELECT COUNT(*) AS found FROM refresh_targets WHERE key = ?").bind(
+        entries[index]?.target.key ?? "",
+      ),
+    ),
+    ...checks.map((check) => check.statement),
+  ]);
+  const existing = new Set(
+    sized.filter((_index, position) => (checked[position]?.results[0]?.found ?? 0) > 0),
+  );
+  const full = new Set(
+    checks
+      .filter((_check, position) => (checked[sized.length + position]?.results[0]?.found ?? 0) > 0)
+      .map((check) => check.index),
+  );
+
+  const stored: number[] = [];
+  for (const index of sized) {
+    if (!existing.has(index) && full.has(index)) {
+      results[index] = "full";
+    } else {
+      stored.push(index);
+    }
+  }
+  for (const chunk of chunks(stored, targetsPerWrite)) {
+    await env.DB.batch(
+      chunk.flatMap((index) => {
+        const entry = entries[index];
+        if (!entry) return [];
+        const { target, sources } = entry;
+        return [
+          env.DB.prepare(
+            `INSERT INTO refresh_targets (key, next_due_at, last_seen_at, value)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT (key) DO UPDATE SET
+               next_due_at = excluded.next_due_at,
+               last_seen_at = excluded.last_seen_at,
+               value = excluded.value`,
+          ).bind(
+            target.key,
+            safeIso(target.nextDueAt),
+            safeIso(target.lastSeenAt),
+            values[index] ?? "",
+          ),
+          env.DB.prepare("DELETE FROM refresh_target_sources WHERE target_key = ?").bind(
+            target.key,
+          ),
+          ...chunks(sources, sourcesPerInsert).map((sourceChunk) =>
+            env.DB.prepare(
+              `INSERT INTO refresh_target_sources (kind, value, target_key)
+               VALUES ${sourceChunk.map(() => "(?, ?, ?)").join(", ")}`,
+            ).bind(...sourceChunk.flatMap((source) => [source.kind, source.value, target.key])),
+          ),
+        ];
+      }),
+    );
+    for (const index of chunk) results[index] = existing.has(index) ? "updated" : "created";
+  }
+  return results;
+}
+
 // Deletes the target and takes it out of the index of its sources.
 export async function deleteRefreshTarget(env: Env, key: string): Promise<void> {
-  await env.DB.batch([
-    env.DB.prepare("DELETE FROM refresh_target_sources WHERE target_key = ?").bind(key),
-    env.DB.prepare("DELETE FROM refresh_targets WHERE key = ?").bind(key),
-  ]);
+  await deleteRefreshTargets(env, [key]);
+}
+
+// Deletes the targets and takes them out of the index of their sources: one batch.
+export async function deleteRefreshTargets(env: Env, keys: string[]): Promise<void> {
+  if (keys.length === 0) return;
+  await env.DB.batch(
+    chunks([...new Set(keys)], keysPerRead).flatMap((chunk) => {
+      const list = chunk.map(() => "?").join(", ");
+      return [
+        env.DB.prepare(`DELETE FROM refresh_target_sources WHERE target_key IN (${list})`).bind(
+          ...chunk,
+        ),
+        env.DB.prepare(`DELETE FROM refresh_targets WHERE key IN (${list})`).bind(...chunk),
+      ];
+    }),
+  );
 }
 
 // A page of the stored targets of dashboards with the current cache key version, in key order
@@ -170,7 +319,10 @@ export async function countStoredRefreshTargets(
   sampleLimit: number,
 ): Promise<{ total: number; targets: RefreshTarget[] }> {
   const [from, before] = currentKeyRange();
-  const [count, sample] = await env.DB.batch<{ total?: number; value?: string }>([
+  const [count, sample] = await env.DB.batch<{
+    total?: number;
+    value?: string;
+  }>([
     env.DB.prepare("SELECT COUNT(*) AS total FROM refresh_targets WHERE key >= ? AND key < ?").bind(
       from,
       before,

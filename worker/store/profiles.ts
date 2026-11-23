@@ -26,17 +26,13 @@ function stringList(raw: string, context: string): string[] {
   return safeJsonParse(stringListSchema, raw, context) ?? [];
 }
 
-// The owner's profile. Null when none is stored. The owner is matched by its slug, exactly.
-export async function readProfile(env: Env, owner: string): Promise<DashboardProfile | null> {
-  const row = await env.DB.prepare(
-    `SELECT owner, include_owners, include_repos, hidden_owners, hidden_repos, updated_at,
-            updated_by
-     FROM profiles
-     WHERE owner = ?1`,
-  )
-    .bind(slugOwner(owner))
-    .first<ProfileRow>();
-  if (!row) return null;
+const profileColumns =
+  "owner, include_owners, include_repos, hidden_owners, hidden_repos, updated_at, updated_by";
+
+// Owners per statement of a lookup: D1 takes 100 bound parameters per statement.
+const ownersPerRead = 90;
+
+function profileFromRow(row: ProfileRow): DashboardProfile {
   const context = `profile ${row.owner}`;
   return {
     owner: row.owner,
@@ -47,6 +43,43 @@ export async function readProfile(env: Env, owner: string): Promise<DashboardPro
     updatedAt: row.updated_at,
     updatedBy: row.updated_by,
   };
+}
+
+// The owner's profile. Null when none is stored. The owner is matched by its slug, exactly.
+export async function readProfile(env: Env, owner: string): Promise<DashboardProfile | null> {
+  const row = await env.DB.prepare(`SELECT ${profileColumns} FROM profiles WHERE owner = ?1`)
+    .bind(slugOwner(owner))
+    .first<ProfileRow>();
+  return row ? profileFromRow(row) : null;
+}
+
+// The profiles of the owners, by the owner's slug: null for an owner that has none stored. One
+// query, however many owners: a statement per `ownersPerRead` of them, in one batch. An owner is
+// matched by its slug, exactly, as by `=`; only the number of "?" depends on the owners.
+export async function readProfilesOf(
+  env: Env,
+  owners: string[],
+): Promise<Map<string, DashboardProfile | null>> {
+  const found = new Map<string, DashboardProfile | null>(
+    owners.map((owner) => [slugOwner(owner), null]),
+  );
+  if (found.size === 0) return found;
+  const slugs = [...found.keys()];
+  const statements: D1PreparedStatement[] = [];
+  for (let index = 0; index < slugs.length; index += ownersPerRead) {
+    const chunk = slugs.slice(index, index + ownersPerRead);
+    statements.push(
+      env.DB.prepare(
+        `SELECT ${profileColumns} FROM profiles
+         WHERE owner IN (${chunk.map(() => "?").join(", ")})`,
+      ).bind(...chunk),
+    );
+  }
+  const results = await env.DB.batch<ProfileRow>(statements);
+  for (const row of results.flatMap((result) => result.results)) {
+    found.set(row.owner, profileFromRow(row));
+  }
+  return found;
 }
 
 // Stores the profile in place of the one its owner had: one statement, the last write wins.

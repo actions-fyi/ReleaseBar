@@ -12,7 +12,13 @@ import {
   graphqlBackoffActive,
   sharedQuotaCooldown,
 } from "./github-audit.ts";
-import { sourceInstallationRegistryCovers, sourceInstallationToken } from "./auth-tokens.ts";
+import { appTokenConfigured } from "./auth-oauth.ts";
+import {
+  type InstallationRegistry,
+  installationRegistryFor,
+  sourceInstallationRegistryCovers,
+  sourceInstallationToken,
+} from "./auth-tokens.ts";
 import { markHotCacheStale } from "./build-progress.ts";
 import {
   githubGraphqlOwnerCountsOperation,
@@ -27,11 +33,17 @@ import {
   schedulerSharedDormantAfterMs,
   schedulerSharedDormantRefreshMs,
   schedulerTargetPageLimit,
+  type OwnerMetadataMutation,
   type StoredRefreshDirty,
 } from "./config.ts";
 import { canDisplayCached, errorMessage, readCached } from "./dashboard-cache.ts";
 import { readOwnerMetadata } from "./owner-metadata-read.ts";
-import { mutateOwnerMetadataSnapshot, safeIso } from "./owner-metadata-write.ts";
+import {
+  mutateOwnerMetadataSnapshot,
+  mutateOwnerMetadataSnapshots,
+  safeIso,
+} from "./owner-metadata-write.ts";
+import { readOwnerCountTimes } from "./store/owner-metadata.ts";
 import {
   auditScheduler,
   auditSyncEvent,
@@ -251,7 +263,9 @@ export async function enqueueRefreshJob(
   reason: string,
   delaySeconds = refreshQueueDeliveryDelaySeconds,
 ): Promise<RefreshJob | null> {
-  const [job] = await enqueueRefreshJobs(env, context, [{ target, reason }], { delaySeconds });
+  const [job] = await enqueueRefreshJobs(env, context, [{ target, reason }], {
+    delaySeconds,
+  });
   return job ?? null;
 }
 
@@ -322,6 +336,9 @@ export type SchedulerDueOptions = {
   sharedQuotaPaused: boolean;
   sharedGraphqlPausedOperations: ReadonlySet<string>;
   now: number;
+  // The installations of the targets' accounts, when the caller has read them for all its
+  // targets at once; null when that read failed, and no target then counts as covered.
+  registry?: InstallationRegistry | null;
 };
 
 export function refreshTargetGraphqlOperations(target: RefreshTarget): string[] {
@@ -363,10 +380,11 @@ export async function schedulerTargetDue(
   },
 ): Promise<boolean> {
   const hasAppTokenCoverage = () =>
-    sourceInstallationRegistryCovers(env, {
-      owners: target.owners,
-      repos: target.repos,
-    }).catch(() => false);
+    sourceInstallationRegistryCovers(
+      env,
+      { owners: target.owners, repos: target.repos },
+      options.registry,
+    ).catch(() => false);
   if (sharedQuotaDeferredTarget(target)) {
     return hasAppTokenCoverage();
   }
@@ -416,22 +434,28 @@ export async function schedulerDueOptions(env: Env): Promise<SchedulerDueOptions
     now: Date.now(),
   };
 }
-export async function refreshOwnerCounts(
+type OwnerCountsFetch =
+  | { status: "deferred" }
+  | {
+      status: "fetched";
+      mutation: OwnerMetadataMutation;
+      repos: OwnerRepoCount[];
+    };
+
+// Asks GitHub for the owner's repository counts, with the owner's installation token or the
+// shared one. Nothing is stored: the result carries the mutation that stores the counts.
+// `registry` is the installations the invocation has read already.
+async function fetchOwnerCounts(
   env: Env,
   owner: string,
-  requiredRepo?: string,
   context?: BackgroundContext,
-): Promise<{
-  status: "refreshed" | "missing" | "missing-repo" | "deferred";
-  exact?: OwnerRepoCount;
-}> {
-  const snapshot = await readOwnerMetadata(env, owner);
-  if (!snapshot) return { status: "missing" };
+  registry?: InstallationRegistry,
+): Promise<OwnerCountsFetch> {
   const observedAt = new Date().toISOString();
   const token = await sourceInstallationToken(
     env,
     { owners: [owner], repos: [] },
-    { discover: false },
+    { discover: false, registry },
   ).catch(() => null);
   const quotaSource = token?.quotaSource ?? (env.GITHUB_TOKEN ? "shared" : "anonymous");
   if (quotaSource === "anonymous") return { status: "deferred" };
@@ -450,26 +474,57 @@ export async function refreshOwnerCounts(
     limit: 500,
     fetch: auditGitHubFetch("dashboard", quotaSource, token?.quotaAccount ?? null, env, context),
   });
-  await mutateOwnerMetadataSnapshot(env, owner, {
-    kind: "counts",
-    updatedAt: observedAt,
-    counts: result.repos,
-    complete: result.complete,
-  });
+  return {
+    status: "fetched",
+    mutation: {
+      kind: "counts",
+      updatedAt: observedAt,
+      counts: result.repos,
+      complete: result.complete,
+    },
+    repos: result.repos,
+  };
+}
+
+export async function refreshOwnerCounts(
+  env: Env,
+  owner: string,
+  requiredRepo?: string,
+  context?: BackgroundContext,
+): Promise<{
+  status: "refreshed" | "missing" | "missing-repo" | "deferred";
+  exact?: OwnerRepoCount;
+}> {
+  const snapshot = await readOwnerMetadata(env, owner);
+  if (!snapshot) return { status: "missing" };
+  const fetched = await fetchOwnerCounts(env, owner, context);
+  if (fetched.status === "deferred") return { status: "deferred" };
+  await mutateOwnerMetadataSnapshot(env, owner, fetched.mutation);
   await markHotCacheStale(env);
   const exact = requiredRepo
-    ? result.repos.find((repo) => repo.fullName.toLowerCase() === requiredRepo.toLowerCase())
+    ? fetched.repos.find((repo) => repo.fullName.toLowerCase() === requiredRepo.toLowerCase())
     : undefined;
   if (requiredRepo && !exact) return { status: "missing-repo" };
   return { status: "refreshed", exact };
 }
 
+// Refreshes the repository counts of the owners of `targets` that are due for it, at most
+// `schedulerCountOwnerLimit` of them. The D1 queries do not grow with the owners: one tells
+// which are due, one reads their snapshots and one batch writes them (and a read and a batch
+// more for the owners something else changed meanwhile). `registry` is the installations of the
+// targets' accounts, which the tick has read already; null when that read failed.
 export async function refreshDueOwnerCounts(
   env: Env,
   context: BackgroundContext,
   targets: RefreshTarget[],
   now = Date.now(),
-): Promise<{ considered: number; refreshed: number; deferred: number; failed: number }> {
+  registry?: InstallationRegistry | null,
+): Promise<{
+  considered: number;
+  refreshed: number;
+  deferred: number;
+  failed: number;
+}> {
   const owners = [
     ...new Set(
       targets
@@ -482,7 +537,10 @@ export async function refreshDueOwnerCounts(
         .filter(validOwnerSlug),
     ),
   ];
-  const cursor = await readOwnerCountCursor(env);
+  const [cursor, countTimes] = await Promise.all([
+    readOwnerCountCursor(env),
+    readOwnerCountTimes(env, owners),
+  ]);
   const cursorIndex = cursor ? owners.indexOf(cursor) : -1;
   const rotatedOwners =
     cursorIndex >= 0
@@ -490,10 +548,10 @@ export async function refreshDueOwnerCounts(
       : owners;
   const due: string[] = [];
   for (const owner of rotatedOwners) {
-    const snapshot = await readOwnerMetadata(env, owner);
+    // An owner without a snapshot that counts is not in `countTimes`.
     if (
-      snapshot &&
-      now - safeIso(snapshot.countsAttemptedAt) >=
+      countTimes.has(owner) &&
+      now - safeIso(countTimes.get(owner)) >=
         schedulerCountRefreshMs + jitterMs(owner, 3 * 60 * 1000)
     ) {
       due.push(owner);
@@ -506,23 +564,51 @@ export async function refreshDueOwnerCounts(
   }
   let refreshed = 0;
   let deferred = 0;
-  let failed = 0;
+  const failures: Array<{ owner: string; error: unknown }> = [];
+  const fetched: Array<{ owner: string; mutation: OwnerMetadataMutation }> = [];
   await mapConcurrent(due, schedulerCountConcurrency, async (owner) => {
     try {
-      const result = await refreshOwnerCounts(env, owner, undefined, context);
-      if (result.status === "refreshed") refreshed += 1;
+      const result = await fetchOwnerCounts(env, owner, context, registry ?? undefined);
       if (result.status === "deferred") deferred += 1;
+      else fetched.push({ owner, mutation: result.mutation });
     } catch (error) {
-      failed += 1;
-      await auditSyncEvent(env, {
-        event: "owner_counts_failed",
-        status: "failed",
-        account: owner,
-        reason: errorMessage(error),
-      });
+      failures.push({ owner, error });
     }
   });
-  return { considered: owners.length, refreshed, deferred, failed };
+  // The counts of all the owners are stored together. An owner whose snapshot went away
+  // meanwhile has nothing to store them in and counts as neither refreshed nor failed.
+  const stored = await mutateOwnerMetadataSnapshots(env, fetched).catch((error: unknown) =>
+    fetched.map((): PromiseRejectedResult => ({ status: "rejected", reason: error })),
+  );
+  for (const [index, result] of stored.entries()) {
+    if (result.status === "rejected") {
+      failures.push({
+        owner: fetched[index]?.owner ?? "",
+        error: result.reason,
+      });
+    } else if (result.value) {
+      refreshed += 1;
+    }
+  }
+  if (refreshed > 0) {
+    await markHotCacheStale(env).catch((error: unknown) => {
+      console.warn("releasebar: marking the hot dashboard stale failed:", error);
+    });
+  }
+  for (const { owner, error } of failures) {
+    await auditSyncEvent(env, {
+      event: "owner_counts_failed",
+      status: "failed",
+      account: owner,
+      reason: errorMessage(error),
+    });
+  }
+  return {
+    considered: owners.length,
+    refreshed,
+    deferred,
+    failed: failures.length,
+  };
 }
 
 export async function schedulerTick(
@@ -538,7 +624,12 @@ export async function schedulerTick(
   ]);
   const page = await listRefreshTargets(env, schedulerTargetPageLimit, previousState?.targetCursor);
   const targets = page.targets;
-  const countRefresh = await refreshDueOwnerCounts(env, context, targets, dueOptions.now);
+  // The installations of every account on the page, read once: the owner counts and the due
+  // check of each target ask them.
+  const registry = appTokenConfigured(env)
+    ? await installationRegistryFor(env, targets).catch(() => null)
+    : null;
+  const countRefresh = await refreshDueOwnerCounts(env, context, targets, dueOptions.now, registry);
   const activeTargetKeys = new Set(
     jobs.filter((job) => refreshJobActive(job)).map((job) => job.targetKey),
   );
@@ -548,7 +639,10 @@ export async function schedulerTick(
   }));
   const duePairs = await mapConcurrent(pairs, 16, async (pair) => ({
     ...pair,
-    due: await schedulerTargetDue(env, pair.target, pair.cached, dueOptions),
+    due: await schedulerTargetDue(env, pair.target, pair.cached, {
+      ...dueOptions,
+      registry,
+    }),
   }));
   const due = duePairs
     .filter(({ due }) => due)
@@ -563,7 +657,10 @@ export async function schedulerTick(
     await enqueueRefreshJobs(
       env,
       context,
-      picked.map(({ target, cached }) => ({ target, reason: refreshReason(target, cached) })),
+      picked.map(({ target, cached }) => ({
+        target,
+        reason: refreshReason(target, cached),
+      })),
     )
   ).filter(Boolean).length;
   await writeSchedulerState(env, {
