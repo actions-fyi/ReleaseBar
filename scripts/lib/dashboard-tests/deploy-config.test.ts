@@ -26,7 +26,7 @@ test("deploy config refuses to deploy without any setting unless allowed", () =>
   );
 });
 
-test("deploy config without settings is the generic wrangler.toml when allowed", () => {
+test("deploy config without settings is the generic wrangler.jsonc when allowed", () => {
   const config = deployConfig(base, { RELEASEBAR_ALLOW_GENERIC: "true" });
   assert.deepEqual(config, { ...base, vars: base.vars, kv_namespaces: base.kv_namespaces });
   assert.equal(config.routes, undefined);

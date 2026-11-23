@@ -1,4 +1,4 @@
-// Writes wrangler.deploy.json: wrangler.toml with this deployment's settings applied from
+// Writes wrangler.deploy.json: wrangler.jsonc with this deployment's settings applied from
 // environment variables (Workers Builds build variables). `npm run deploy` deploys from it.
 import { writeFile } from "node:fs/promises";
 
@@ -16,11 +16,11 @@ const jsonIndent = 2;
 const wranglerModule = "wrangler";
 
 const wrangler = (await import(wranglerModule)) as WranglerConfigReader;
-const { rawConfig } = wrangler.experimental_readRawConfig({ config: "wrangler.toml" });
+const { rawConfig } = wrangler.experimental_readRawConfig({ config: "wrangler.jsonc" });
 const config = deployConfig(rawConfig as RawWranglerConfig, process.env);
 await writeFile(outputPath, `${JSON.stringify(config, null, jsonIndent)}\n`);
 
 const applied = deploySettingNames.filter((name) => process.env[name]?.trim());
 console.log(
-  `wrote ${outputPath} from wrangler.toml with ${applied.length > 0 ? applied.join(", ") : "no deployment settings"}`,
+  `wrote ${outputPath} from wrangler.jsonc with ${applied.length > 0 ? applied.join(", ") : "no deployment settings"}`,
 );
