@@ -5,8 +5,17 @@ import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
   buildLocksHeld,
+  jobStateWrites,
   kvStore,
+  observedDatabase,
   refreshAuditEvents,
+  storedRefreshJob,
+  storedRefreshJobDeliveries,
+  storedRefreshTarget,
+  storeProfileSnapshot,
+  storeRefreshJob,
+  storeRefreshJobSnapshot,
+  storeRefreshTarget,
   testDashboard,
   testProject,
   worker,
@@ -48,9 +57,8 @@ test("worker refresh jobs can use shared quota when no source app token exists",
     attempts: 0,
     durationMs: null,
   };
-  const cache = kvStore({
-    [`refresh:job:v1:${job.id}`]: JSON.stringify(job),
-  });
+  const cache = kvStore({});
+  await storeRefreshJob(job);
   const originalFetch = globalThis.fetch;
   const paths: string[] = [];
   globalThis.fetch = async (input, init) => {
@@ -115,7 +123,7 @@ test("worker refresh jobs can use shared quota when no source app token exists",
     globalThis.fetch = originalFetch;
   }
   expect(acked).toBe(true);
-  const updated = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
+  const updated = ((await storedRefreshJob(job.id)) ?? {}) as RefreshJob;
   expect(updated.status).toBe("succeeded");
   const auditEvents = await refreshAuditEvents(cache);
   expect(auditEvents.some((event) => event.event === "job_start")).toBe(true);
@@ -142,9 +150,7 @@ test("worker refresh jobs preserve profile filters from the queued target snapsh
     updatedAt: "2026-06-11T07:00:00Z",
     updatedBy: "profiled",
   };
-  const profileSnapshotKey = `refresh:profile-snapshot:v1:profiled:${encodeURIComponent(
-    profile.updatedAt,
-  )}`;
+  const profileSnapshotKey = await storeProfileSnapshot(profile);
   const target: RefreshTarget = {
     key,
     kind: "dashboard",
@@ -161,9 +167,7 @@ test("worker refresh jobs preserve profile filters from the queued target snapsh
     nextDueAt: "2026-06-11T07:00:00Z",
     failureCount: 0,
   };
-  const targetSnapshotKey = `refresh:jobs:v2:${String(
-    Number.MAX_SAFE_INTEGER - Date.parse("2026-06-11T07:00:00Z"),
-  ).padStart(16, "0")}:job-profile-snapshot`;
+  const targetSnapshotKey = "refresh-job:job-profile-snapshot";
   const job: RefreshJob = {
     id: "job-profile-snapshot",
     targetKey: key,
@@ -181,21 +185,10 @@ test("worker refresh jobs preserve profile filters from the queued target snapsh
   };
   const latestLastSeenAt = "2026-06-11T07:30:00Z";
   const latestPath = "/profiled?sort=prs&dir=desc";
-  const backingCache = kvStore({
-    [targetSnapshotKey]: JSON.stringify(job),
-    [profileSnapshotKey]: JSON.stringify(profile),
-    [`refresh:target:v1:${key}`]: JSON.stringify(target),
-  });
-  let mutableJobWrites = 0;
-  const cache = {
-    ...backingCache,
-    async put(storageKey: string, value: string) {
-      if (storageKey === `refresh:job:v1:${job.id}`) {
-        mutableJobWrites += 1;
-      }
-      await backingCache.put(storageKey, value);
-    },
-  };
+  const cache = kvStore();
+  await storeRefreshJobSnapshot(job);
+  await storeRefreshTarget(target);
+  const { database, counts } = observedDatabase();
   const originalFetch = globalThis.fetch;
   let releaseOwnerFetch: (() => void) | undefined;
   const ownerFetchGate = new Promise<void>((resolve) => {
@@ -227,14 +220,11 @@ test("worker refresh jobs preserve profile filters from the queued target snapsh
     globalThis.fetch = async (input) => {
       const url = new URL(String(input));
       if (url.pathname === "/users/profiled") {
-        await cache.put(
-          `refresh:target:v1:${key}`,
-          JSON.stringify({
-            ...target,
-            lastSeenAt: latestLastSeenAt,
-            path: latestPath,
-          }),
-        );
+        await storeRefreshTarget({
+          ...target,
+          lastSeenAt: latestLastSeenAt,
+          path: latestPath,
+        });
         markOwnerFetchStarted?.();
         await ownerFetchGate;
         return Response.json({ login: "profiled", type: "User" });
@@ -275,17 +265,14 @@ test("worker refresh jobs preserve profile filters from the queued target snapsh
           },
         ],
       },
-      { DASHBOARD_CACHE: cache },
+      { DASHBOARD_CACHE: cache, DB: database },
       { waitUntil: () => undefined },
     );
     await ownerFetchStarted;
-    const deliveries = await cache.list({ prefix: "refresh:job-deliveries:v1:" });
-    expect(deliveries.keys.length).toBe(1);
-    const running = JSON.parse(
-      (await cache.get(deliveries.keys[0]?.name ?? "")) ?? "{}",
-    ) as RefreshJob;
-    expect(running.status).toBe("running");
-    expect(running.startedAt).not.toBe(null);
+    const deliveries = await storedRefreshJobDeliveries();
+    expect(deliveries.length).toBe(1);
+    expect(deliveries[0]?.status).toBe("running");
+    expect(deliveries[0]?.startedAt).not.toBe(null);
     releaseOwnerFetch?.();
     await processing;
   } finally {
@@ -294,13 +281,11 @@ test("worker refresh jobs preserve profile filters from the queued target snapsh
   }
 
   expect(acked).toBe(true);
-  expect(mutableJobWrites).toBe(1);
+  expect(jobStateWrites(counts.sql)).toBe(1);
   const dashboard = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
   expect(dashboard.profile).toStrictEqual(profile);
   expect(dashboard.projects.map((project) => project.fullName)).toStrictEqual(["profiled/visible"]);
-  const updatedTarget = JSON.parse(
-    (await cache.get(`refresh:target:v1:${key}`)) ?? "{}",
-  ) as RefreshTarget;
+  const updatedTarget = ((await storedRefreshTarget(key)) ?? {}) as RefreshTarget;
   expect(updatedTarget.lastSeenAt).toBe(latestLastSeenAt);
   expect(updatedTarget.path).toBe(latestPath);
 });
@@ -344,9 +329,9 @@ test("worker retries refresh jobs when the dashboard build lock is busy", async 
     [key]: JSON.stringify(
       testDashboard("openclaw", [testProject({ owner: "openclaw", name: "repo" })]),
     ),
-    [`refresh:target:v1:${key}`]: JSON.stringify(target),
-    [`refresh:job:v1:${job.id}`]: JSON.stringify(job),
   });
+  await storeRefreshTarget(target);
+  await storeRefreshJob(job);
   buildLocksHeld();
   let acked = false;
   let retryDelaySeconds: number | undefined;
@@ -385,7 +370,7 @@ test("worker retries refresh jobs when the dashboard build lock is busy", async 
 
   expect(acked).toBe(false);
   expect(retryDelaySeconds).toBe(60);
-  const updated = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
+  const updated = ((await storedRefreshJob(job.id)) ?? {}) as RefreshJob;
   expect(updated.status).toBe("queued");
   expect(updated.startedAt).toBe(null);
   expect(updated.finishedAt).toBe(null);
@@ -446,9 +431,9 @@ test("worker stops and retries stalled progressive dashboard scans", async () =>
   };
   const cache = kvStore({
     [key]: JSON.stringify(dashboard),
-    [`refresh:target:v1:${key}`]: JSON.stringify(target),
-    [`refresh:job:v1:${job.id}`]: JSON.stringify(job),
   });
+  await storeRefreshTarget(target);
+  await storeRefreshJob(job);
   await env.BUILD_COORDINATOR.getByName(key).putProgress({
     scannedRepos: projects.map((project) => project.fullName.toLowerCase()),
     projects,
@@ -522,7 +507,7 @@ test("worker stops and retries stalled progressive dashboard scans", async () =>
 
   expect(repoPages).toBe(2);
   expect(retryDelaySeconds).toBe(60);
-  const updated = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
+  const updated = ((await storedRefreshJob(job.id)) ?? {}) as RefreshJob;
   expect(updated.status).toBe("queued");
   expect(updated.error).toBe("dashboard stalled");
 });
@@ -574,9 +559,9 @@ test("worker aborts Queue hydration at the delivery deadline", async () => {
   };
   const cache = kvStore({
     [key]: JSON.stringify(cached),
-    [`refresh:target:v1:${key}`]: JSON.stringify(target),
-    [`refresh:job:v1:${job.id}`]: JSON.stringify(job),
   });
+  await storeRefreshTarget(target);
+  await storeRefreshJob(job);
   const originalFetch = globalThis.fetch;
   const originalSetTimeout = globalThis.setTimeout;
   let aborted = false;
@@ -646,7 +631,7 @@ test("worker aborts Queue hydration at the delivery deadline", async () => {
 
   expect(aborted).toBe(true);
   expect(retryDelaySeconds).toBe(60);
-  const updated = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
+  const updated = ((await storedRefreshJob(job.id)) ?? {}) as RefreshJob;
   expect(updated.status).toBe("queued");
   expect(updated.error).toBe("dashboard deadline reached");
   expect(updated.finishedAt).toBe(null);
@@ -693,10 +678,9 @@ test("worker aborts Queue GitHub App token lookup at the delivery deadline", asy
     attempts: 0,
     durationMs: null,
   };
-  const cache = kvStore({
-    [`refresh:target:v1:${key}`]: JSON.stringify(target),
-    [`refresh:job:v1:${job.id}`]: JSON.stringify(job),
-  });
+  const cache = kvStore({});
+  await storeRefreshTarget(target);
+  await storeRefreshJob(job);
   const originalFetch = globalThis.fetch;
   const originalSetTimeout = globalThis.setTimeout;
   let credentialAborted = false;
@@ -770,7 +754,7 @@ test("worker aborts Queue GitHub App token lookup at the delivery deadline", asy
 
   expect(credentialAborted).toBe(true);
   expect(retryDelaySeconds).toBe(60);
-  const updated = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
+  const updated = ((await storedRefreshJob(job.id)) ?? {}) as RefreshJob;
   expect(updated.status).toBe("queued");
   expect(updated.error).toBe("dashboard deadline reached");
 });
