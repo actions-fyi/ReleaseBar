@@ -9,6 +9,7 @@ import {
   testDashboard,
   testProject,
   worker,
+  seedOwnerMetadata,
 } from "./dashboard-test-harness.ts";
 
 test("worker rejects POST to reserved read-only owner-like APIs", async () => {
@@ -526,6 +527,16 @@ test("worker serves partial cached sources while combined dashboard rebuilds", a
   });
 
   try {
+    await seedOwnerMetadata(
+      "alpha",
+      JSON.stringify({
+        owner: "alpha",
+        generatedAt: now,
+        metadataUpdatedAt: now,
+        countsUpdatedAt: now,
+        projects: [alphaMetadata],
+      }),
+    );
     const response = await worker.fetch(
       new Request("https://release.bar/api/alpha?owners=beta"),
       {
@@ -534,13 +545,6 @@ test("worker serves partial cached sources while combined dashboard rebuilds", a
           [betaKey]: JSON.stringify(
             testDashboard("beta", [testProject({ owner: "beta", name: "two" })]),
           ),
-          "owner-metadata:v1:alpha": JSON.stringify({
-            owner: "alpha",
-            generatedAt: now,
-            metadataUpdatedAt: now,
-            countsUpdatedAt: now,
-            projects: [alphaMetadata],
-          }),
         }),
         GITHUB_TOKEN: "shared-token",
       },

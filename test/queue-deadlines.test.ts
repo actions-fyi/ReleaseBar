@@ -14,6 +14,7 @@ import {
   testProject,
   testQueue,
   worker,
+  seedInstallation,
 } from "./dashboard-test-harness.ts";
 
 test("worker terminalizes exhausted refresh retries before dead-lettering", async () => {
@@ -638,8 +639,8 @@ test("worker serves cache-only cold dashboard status to crawlers", async () => {
     includeReleaseData: true,
     schemaVersion: 6,
   });
-  const baseCache = kvStore({
-    "auth:installation:v1:coldbot": JSON.stringify({
+  await seedInstallation(
+    JSON.stringify({
       id: 42,
       accountLogin: "coldbot",
       accountType: "org",
@@ -649,7 +650,8 @@ test("worker serves cache-only cold dashboard status to crawlers", async () => {
       repositories: [],
       updatedAt: "2026-05-15T12:00:00Z",
     }),
-  });
+  );
+  const baseCache = kvStore({});
   let installationTokenReads = 0;
   const cache = {
     ...baseCache,
@@ -778,6 +780,18 @@ test("worker refreshes stale installation coverage before using its cached token
   const accountLogin = "cacheorg";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
+  await seedInstallation(
+    JSON.stringify({
+      id: 1,
+      accountLogin,
+      accountType: "org",
+      accountUrl: `https://github.com/${accountLogin}`,
+      avatarUrl: "https://avatars.githubusercontent.com/u/2",
+      repositorySelection: "all",
+      repositories: [],
+      updatedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    }),
+  );
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
     DASHBOARD_CACHE: kvStore({
@@ -792,16 +806,6 @@ test("worker refreshes stale installation coverage before using its cached token
         accessToken: "user-token",
         iat: exp - 600,
         exp,
-      }),
-      [`auth:installation:v1:${accountLogin}`]: JSON.stringify({
-        id: 1,
-        accountLogin,
-        accountType: "org",
-        accountUrl: `https://github.com/${accountLogin}`,
-        avatarUrl: "https://avatars.githubusercontent.com/u/2",
-        repositorySelection: "all",
-        repositories: [],
-        updatedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
       }),
       "auth:installation-token:1": "installation-token",
     }),

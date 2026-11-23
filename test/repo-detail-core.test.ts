@@ -1,6 +1,11 @@
 import { assert, expect, test } from "vitest";
 import type { RepoDetailPayload } from "../src/types.ts";
-import { githubAccessRouteRecords, kvStore, worker } from "./dashboard-test-harness.ts";
+import {
+  githubAccessRouteRecords,
+  kvStore,
+  worker,
+  seedInstallation,
+} from "./dashboard-test-harness.ts";
 
 test("worker builds cached repository detail with releases and stats", async () => {
   const originalFetch = globalThis.fetch;
@@ -299,18 +304,20 @@ test("worker revalidates stale repository metadata with ETags", async () => {
 
 test("worker bundles App-backed repository core data through GraphQL", async () => {
   const account = "acme";
+  await seedInstallation(
+    JSON.stringify({
+      id: 1,
+      accountLogin: account,
+      accountType: "org",
+      accountUrl: `https://github.com/${account}`,
+      avatarUrl: "https://avatars.githubusercontent.com/u/1",
+      repositorySelection: "all",
+      repositories: [],
+      updatedAt: new Date().toISOString(),
+    }),
+  );
   const env = {
     DASHBOARD_CACHE: kvStore({
-      [`auth:installation:v1:${account}`]: JSON.stringify({
-        id: 1,
-        accountLogin: account,
-        accountType: "org",
-        accountUrl: `https://github.com/${account}`,
-        avatarUrl: "https://avatars.githubusercontent.com/u/1",
-        repositorySelection: "all",
-        repositories: [],
-        updatedAt: new Date().toISOString(),
-      }),
       "auth:installation-token:1": "installation-token",
     }),
     GITHUB_APP_ID: "123",
@@ -440,8 +447,8 @@ test("worker bundles App-backed repository core data through GraphQL", async () 
 
 test("worker does not cache private App-backed repository core data", async () => {
   const account = "acme";
-  const cache = kvStore({
-    [`auth:installation:v1:${account}`]: JSON.stringify({
+  await seedInstallation(
+    JSON.stringify({
       id: 1,
       accountLogin: account,
       accountType: "org",
@@ -451,6 +458,8 @@ test("worker does not cache private App-backed repository core data", async () =
       repositories: [],
       updatedAt: new Date().toISOString(),
     }),
+  );
+  const cache = kvStore({
     "auth:installation-token:1": "installation-token",
   });
   const originalFetch = globalThis.fetch;

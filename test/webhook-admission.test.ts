@@ -12,6 +12,7 @@ import {
   testProject,
   webhookSignature,
   worker,
+  seedOwnerMetadata,
 } from "./dashboard-test-harness.ts";
 
 test("GitHub push webhooks prioritize recent targets beyond the durable hot-cache limit", async () => {
@@ -552,12 +553,9 @@ test("archive webhooks invalidate caches when owner snapshots omit the repositor
     nextDueAt: "2999-01-01T00:00:00Z",
     failureCount: 0,
   };
-  const cache = kvStore({
-    [key]: JSON.stringify(dashboard),
-    [`refresh:target:v1:${key}`]: JSON.stringify(target),
-    [`repo-detail:aux:v2:${encodeURIComponent(`${owner}/repo`)}:repository:${encodeURIComponent(`/repos/${owner}/repo`)}`]:
-      JSON.stringify({ generatedAt: now, data: { name: "repo" } }),
-    [`owner-metadata:v1:${owner}`]: JSON.stringify({
+  await seedOwnerMetadata(
+    owner,
+    JSON.stringify({
       owner,
       generatedAt: now,
       metadataUpdatedAt: now,
@@ -565,6 +563,12 @@ test("archive webhooks invalidate caches when owner snapshots omit the repositor
       releaseDataComplete: true,
       projects: [testProject({ owner, name: "sibling" })],
     }),
+  );
+  const cache = kvStore({
+    [key]: JSON.stringify(dashboard),
+    [`refresh:target:v1:${key}`]: JSON.stringify(target),
+    [`repo-detail:aux:v2:${encodeURIComponent(`${owner}/repo`)}:repository:${encodeURIComponent(`/repos/${owner}/repo`)}`]:
+      JSON.stringify({ generatedAt: now, data: { name: "repo" } }),
   });
   const queued: unknown[] = [];
   const env: TestEnv = {
