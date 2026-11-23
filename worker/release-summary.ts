@@ -14,7 +14,6 @@ import {
   gitHubContributorSchema,
   gitHubReleaseSchema,
   gitHubRepositorySchema,
-  tryJsonParse,
 } from "./schemas.ts";
 import type { InferOutput } from "valibot";
 import { cachedUserTrustSignals } from "./audience-data.ts";
@@ -32,6 +31,7 @@ import { errorMessage, isGitHubRateLimit } from "./dashboard-cache.ts";
 import { detailGitHubJson } from "./repo-github.ts";
 import { releaseSummaryLimits } from "./summary-limits.ts";
 import type { SummaryReservation } from "./summary-quota.ts";
+import { readCacheEntry, writeCacheEntry } from "./store/cache.ts";
 
 export function repoDetailCacheKey(owner: string, repo: string): string {
   return `repo-detail:v4:${slugOwner(owner)}/${repo.toLowerCase()}`;
@@ -55,8 +55,7 @@ export function releaseSummaryCacheKey(project: Project, model: string): string 
 }
 
 export async function readRepoDetail(env: Env, key: string): Promise<RepoDetailPayload | null> {
-  const raw = await env.DASHBOARD_CACHE.get(key);
-  return raw ? tryJsonParse<RepoDetailPayload>(raw, `repo detail ${key}`) : null;
+  return readCacheEntry<RepoDetailPayload>(env, key, `repo detail ${key}`);
 }
 
 export async function writeRepoDetail(
@@ -64,9 +63,7 @@ export async function writeRepoDetail(
   key: string,
   payload: RepoDetailPayload,
 ): Promise<void> {
-  await env.DASHBOARD_CACHE.put(key, JSON.stringify(payload), {
-    expirationTtl: dashboardStorageTtlSeconds,
-  });
+  await writeCacheEntry(env, key, payload, dashboardStorageTtlSeconds);
 }
 
 export async function readReleaseSummary(
@@ -74,8 +71,7 @@ export async function readReleaseSummary(
   key: string | null,
 ): Promise<RepoDetailReleaseSummary | null> {
   if (!key) return null;
-  const raw = await env.DASHBOARD_CACHE.get(key);
-  return raw ? tryJsonParse<RepoDetailReleaseSummary>(raw, `release summary ${key}`) : null;
+  return readCacheEntry<RepoDetailReleaseSummary>(env, key, `release summary ${key}`);
 }
 
 export async function writeReleaseSummary(
@@ -83,9 +79,7 @@ export async function writeReleaseSummary(
   key: string,
   summary: RepoDetailReleaseSummary,
 ): Promise<void> {
-  await env.DASHBOARD_CACHE.put(key, JSON.stringify(summary), {
-    expirationTtl: dashboardStorageTtlSeconds,
-  });
+  await writeCacheEntry(env, key, summary, dashboardStorageTtlSeconds);
 }
 
 export function repoDetailAgeMs(payload: RepoDetailPayload | null): number {

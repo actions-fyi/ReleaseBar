@@ -14,7 +14,7 @@ import {
   responseRateLimitSignal,
 } from "./github-audit.ts";
 import { workerFetch } from "./http.ts";
-import { gitHubSearchCountSchema, parseGitHubResponse, tryJsonParse } from "./schemas.ts";
+import { gitHubSearchCountSchema, parseGitHubResponse } from "./schemas.ts";
 import type { GenericSchema, InferOutput } from "valibot";
 import { lastPageFromLink } from "./audience-data.ts";
 import {
@@ -27,6 +27,7 @@ import {
   repoDetailStatsBackoffTtlSeconds,
   repoDetailStatsCacheTtlMs,
 } from "./config.ts";
+import { readCacheEntry, writeCacheEntry } from "./store/cache.ts";
 
 export type DiscoverPeriod = "day" | "week" | "month" | "year";
 
@@ -188,9 +189,8 @@ export async function readRepoDetailAuxRecord<T>(
   env: Env | undefined,
   key: string,
 ): Promise<RepoDetailAuxCacheRecord<T> | null> {
-  const raw = await env?.DASHBOARD_CACHE.get(key);
-  if (!raw) return null;
-  return tryJsonParse<RepoDetailAuxCacheRecord<T>>(raw, `repo detail aux ${key}`);
+  if (!env) return null;
+  return readCacheEntry<RepoDetailAuxCacheRecord<T>>(env, key, `repo detail aux ${key}`);
 }
 
 export async function readRepoDetailAux<T>(
@@ -211,10 +211,12 @@ export async function writeRepoDetailAux<T>(
   ttlSeconds = repoDetailAuxTtlSeconds,
   etag?: string | null,
 ): Promise<void> {
-  await env?.DASHBOARD_CACHE.put(
+  if (!env) return;
+  await writeCacheEntry(
+    env,
     key,
-    JSON.stringify({ generatedAt: new Date().toISOString(), data, ...(etag ? { etag } : {}) }),
-    { expirationTtl: ttlSeconds },
+    { generatedAt: new Date().toISOString(), data, ...(etag ? { etag } : {}) },
+    ttlSeconds,
   );
 }
 
