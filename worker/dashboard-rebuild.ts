@@ -651,29 +651,20 @@ export function scheduleProgressiveBuild(
   context: BackgroundContext,
   reason: string,
   target: RefreshTarget | null,
-  initialBuild?: Promise<DashboardPayload | null>,
   queueDelaySeconds = refreshQueueDeliveryDelaySeconds,
 ): void {
-  const task = env.REFRESH_QUEUE
-    ? (async () => {
-        if (!target) {
-          await auditSyncEvent(env, {
-            event: "dashboard_refresh_schedule_failed",
-            targetKey: dashboard.key,
-            status: "missing-target",
-            reason,
-          });
-          return;
-        }
-        await enqueueRefreshJob(env, context, target, reason, queueDelaySeconds);
-      })()
-    : initialBuild
-      ? initialBuild.then((payload) =>
-          payload && payload.cache?.progress?.done !== false
-            ? payload
-            : continueProgressiveBuild(dashboard, env, progressiveBuildBudgetMs),
-        )
-      : continueProgressiveBuild(dashboard, env, progressiveBuildBudgetMs);
+  const task = (async () => {
+    if (!target) {
+      await auditSyncEvent(env, {
+        event: "dashboard_refresh_schedule_failed",
+        targetKey: dashboard.key,
+        status: "missing-target",
+        reason,
+      });
+      return;
+    }
+    await enqueueRefreshJob(env, context, target, reason, queueDelaySeconds);
+  })();
   context.waitUntil(
     task.catch((error) =>
       auditSyncEvent(env, {

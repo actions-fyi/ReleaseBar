@@ -51,6 +51,7 @@ import {
 } from "./refresh-targets.ts";
 import { repoDetailResponse } from "./repo-detail-response.ts";
 import { failExhaustedRefreshJob, processRefreshJob } from "./scheduler.ts";
+import { sendQueueMessage } from "./store/queue.ts";
 import { processWebhookJob } from "./store/webhooks.ts";
 import { socialCardForLabel, socialImage, socialPng, socialRouteLabel } from "./social-card.ts";
 import {
@@ -204,8 +205,8 @@ export default {
             continue;
           }
           try {
-            if (!env.REFRESH_QUEUE) throw new Error("webhook queue unavailable");
-            await env.REFRESH_QUEUE.send(
+            await sendQueueMessage(
+              env,
               {
                 ...webhookJob,
                 id: webhookJob.id,

@@ -48,9 +48,9 @@ import {
   takeLocalRefreshDirty,
   writeRefreshJob,
 } from "./refresh-targets.ts";
-import { processRefreshJobFallback } from "./scheduler.ts";
 import { invalidateDashboardTargets } from "./webhook-targets.ts";
 import type { BackgroundContext } from "./runtime.ts";
+import { sendQueueMessage } from "./store/queue.ts";
 import { releaseCoordinatedJob, reserveCoordinatedJob } from "./store/build-coordinator.ts";
 import {
   readOwnerCountCursor,
@@ -184,23 +184,9 @@ export async function enqueueRefreshJob(
       jobId: job.id,
       reason,
     });
-    if (env.REFRESH_QUEUE) {
-      await env.REFRESH_QUEUE.send(refreshQueueMessage(job), {
-        delaySeconds,
-      });
-    } else {
-      context.waitUntil(
-        processRefreshJobFallback(job, env).then(
-          async (result) => {
-            await finishRefreshJobReservation(env, context, result);
-          },
-          async (error) => {
-            await finishRefreshJobReservation(env, context, job);
-            throw error;
-          },
-        ),
-      );
-    }
+    await sendQueueMessage(env, refreshQueueMessage(job), {
+      delaySeconds,
+    });
   } catch (error) {
     const now = new Date().toISOString();
     await writeRefreshJob(env, {

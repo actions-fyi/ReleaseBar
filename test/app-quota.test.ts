@@ -4,6 +4,7 @@ import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, RefreshJob } from "../src/types.ts";
 import {
   kvStore,
+  testQueue,
   signedJson,
   testDashboard,
   testProject,
@@ -382,6 +383,7 @@ test("worker uses GitHub App installation token for cold owner dashboards", asyn
   const sessionId = "session-3";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
+  const queue = testQueue();
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
     DASHBOARD_CACHE: kvStore({
@@ -403,6 +405,7 @@ test("worker uses GitHub App installation token for cold owner dashboards", asyn
     GITHUB_APP_ID: "123",
     GITHUB_APP_PRIVATE_KEY: privateKey,
     GITHUB_APP_SLUG: "releasebar-app",
+    REFRESH_QUEUE: queue,
   };
   const originalFetch = globalThis.fetch;
   const waits: Promise<unknown>[] = [];
@@ -491,6 +494,9 @@ test("worker uses GitHub App installation token for cold owner dashboards", asyn
     expect(response.status).toBe(200);
     expect(ownerResolvedWithInstallationToken).toBe(true);
     const body = (await response.json()) as DashboardPayload;
+    await Promise.all(waits);
+    // The release data is hydrated by the refresh job the response put on the queue.
+    await queue.deliver(env, { waitUntil: (promise) => waits.push(promise) });
     await Promise.all(waits);
     expect(body.cache?.quota?.source).toBe("app");
     expect(body.cache?.quota?.account).toBe("openclaw");

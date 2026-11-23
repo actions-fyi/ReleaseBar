@@ -132,6 +132,9 @@ function objectBinding<Binding extends ObjectBinding>(binding: Binding, env: obj
 // object it passed.
 export function testEnv(env: TestEnv): Env {
   const bindings = env as Record<string, unknown>;
+  // The queue binding is required. A test that gives none gets the local queue of the Workers
+  // runtime; its messages reach the Worker's queue handler with the runtime's own env.
+  bindings.REFRESH_QUEUE ??= runtimeEnv.REFRESH_QUEUE;
   for (const binding of durableObjectBindings) {
     bindings[binding] ??= objectBinding(binding, env);
   }
@@ -235,6 +238,36 @@ export const worker = {
       context as ExecutionContext,
     ),
 };
+
+// A queue for a test that needs the Worker's queue handler to run with the test's own env. The
+// local queue of the Workers runtime can't do that: it delivers with the runtime's env, whose KV
+// namespace is not the one the test reads. `deliver` hands the handler every message sent so
+// far and the ones it sends meanwhile, one batch each, until none is left or `limit` is reached.
+// A message the handler asks to retry is delivered again.
+export function testQueue() {
+  const pending: WorkerQueueMessage[] = [];
+  const sent: Array<{ body: WorkerQueueMessage; delaySeconds?: number }> = [];
+  return {
+    sent,
+    async send(body: WorkerQueueMessage, options?: { delaySeconds?: number }): Promise<void> {
+      sent.push({ body, delaySeconds: options?.delaySeconds });
+      pending.push(body);
+    },
+    async deliver(env: TestEnv, context: TestContext, limit = 20): Promise<number> {
+      let delivered = 0;
+      for (; delivered < limit; delivered += 1) {
+        const body = pending.shift();
+        if (!body) break;
+        await worker.queue(
+          { messages: [{ body, attempts: 1, ack() {}, retry: () => void pending.push(body) }] },
+          env,
+          context,
+        );
+      }
+      return delivered;
+    },
+  };
+}
 
 const systemDate = Date;
 

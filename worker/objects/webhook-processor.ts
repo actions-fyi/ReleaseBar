@@ -11,6 +11,7 @@ import { sleep } from "../dashboard-rebuild.ts";
 import { safeIso } from "../owner-metadata-write.ts";
 import type { GitHubWebhookJob, StoredWebhookPending } from "../runtime.ts";
 import { withLockJurisdiction } from "../store/bindings.ts";
+import { sendQueueMessage } from "../store/queue.ts";
 import { processGitHubWebhook } from "../webhook.ts";
 import {
   mergePendingWebhook,
@@ -221,10 +222,9 @@ export class WebhookProcessor extends DurableObject<Env> {
   async #sendNextPending(): Promise<boolean> {
     const pending = this.#pending();
     if (pending.length === 0) return false;
-    if (!this.env.REFRESH_QUEUE) throw new Error("webhook queue unavailable");
     const next = pendingWebhookBatch(pending, "")[0];
     if (!next) throw new Error("webhook batch unavailable");
-    await this.env.REFRESH_QUEUE.send({ ...next.job, id: randomNonce(), attempts: 0 });
+    await sendQueueMessage(this.env, { ...next.job, id: randomNonce(), attempts: 0 });
     return true;
   }
 

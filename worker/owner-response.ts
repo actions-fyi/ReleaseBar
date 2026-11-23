@@ -188,7 +188,7 @@ export async function ownerResponse(
       );
     }
   }
-  const coldBuildStartedAt = allowRefresh && env.REFRESH_QUEUE ? Date.now() : null;
+  const coldBuildStartedAt = allowRefresh ? Date.now() : null;
   const credentialController = coldBuildStartedAt === null ? null : new AbortController();
   const credentialTimer = credentialController
     ? globalThis.setTimeout(() => credentialController.abort(), coldBuildWaitMs)
@@ -508,7 +508,7 @@ export async function ownerResponse(
     });
   }
 
-  const coldBuildController = env.REFRESH_QUEUE ? new AbortController() : null;
+  const coldBuildController = new AbortController();
   const coldBuildRemainingMs =
     coldBuildStartedAt === null
       ? coldBuildWaitMs
@@ -516,7 +516,7 @@ export async function ownerResponse(
   let coldWaitTimer: ReturnType<typeof setTimeout> | undefined;
   const coldDeadline = new Promise<typeof buildPending>((resolve) => {
     coldWaitTimer = setTimeout(() => {
-      coldBuildController?.abort();
+      coldBuildController.abort();
       resolve(buildPending);
     }, coldBuildRemainingMs);
   });
@@ -528,14 +528,14 @@ export async function ownerResponse(
       token?.token,
       token?.quotaSource,
       token?.quotaAccount ?? null,
-      coldBuildController?.signal,
+      coldBuildController.signal,
       context,
     );
   } catch (error) {
     if (coldWaitTimer) {
       clearTimeout(coldWaitTimer);
     }
-    if (coldBuildController && isAbortError(error)) {
+    if (isAbortError(error)) {
       const dashboard = unresolvedDashboardRequest(
         ownerSlugs,
         includeRepos,
@@ -600,12 +600,12 @@ export async function ownerResponse(
     ? refreshDashboardMetadataFirst(
         dashboard,
         env,
-        coldBuildController?.signal,
+        coldBuildController.signal,
         false,
         true,
         context,
       )
-    : rebuildWithBuildLock(dashboard, env, coldBuildController?.signal);
+    : rebuildWithBuildLock(dashboard, env, coldBuildController.signal);
   const buildReason = metadataFirst ? "cold-metadata" : "cold-build";
   try {
     const payload = await Promise.race([build, coldDeadline]);
@@ -621,33 +621,31 @@ export async function ownerResponse(
         detail: `waitMs=${coldBuildWaitMs} phase=${metadataFirst ? "metadata" : "hydrate"}`,
       });
       let queueDelaySeconds = refreshQueueDeliveryDelaySeconds;
-      if (env.REFRESH_QUEUE) {
-        const settled = build.then(
-          () => true,
-          async (error) => {
-            if (!isAbortError(error)) {
-              await auditSyncEvent(env, {
-                event: "dashboard_cold_build_abandoned",
-                targetKey: key,
-                status: "failed",
-                reason: errorMessage(error),
-              });
-            }
-            return true;
-          },
-        );
-        coldBuildController?.abort();
-        const stopped = await Promise.race([settled, sleep(250).then(() => false)]);
-        if (!stopped) {
-          queueDelaySeconds = Math.ceil(buildLockTtlMs / 1000);
-          await auditSyncEvent(env, {
-            event: "dashboard_cold_build_abort_pending",
-            targetKey: key,
-            status: "queued",
-            reason: buildReason,
-            detail: `queueDelaySeconds=${queueDelaySeconds}`,
-          }).catch(() => undefined);
-        }
+      const settled = build.then(
+        () => true,
+        async (error) => {
+          if (!isAbortError(error)) {
+            await auditSyncEvent(env, {
+              event: "dashboard_cold_build_abandoned",
+              targetKey: key,
+              status: "failed",
+              reason: errorMessage(error),
+            });
+          }
+          return true;
+        },
+      );
+      coldBuildController.abort();
+      const stopped = await Promise.race([settled, sleep(250).then(() => false)]);
+      if (!stopped) {
+        queueDelaySeconds = Math.ceil(buildLockTtlMs / 1000);
+        await auditSyncEvent(env, {
+          event: "dashboard_cold_build_abort_pending",
+          targetKey: key,
+          status: "queued",
+          reason: buildReason,
+          detail: `queueDelaySeconds=${queueDelaySeconds}`,
+        }).catch(() => undefined);
       }
       scheduleProgressiveBuild(
         dashboard,
@@ -655,7 +653,6 @@ export async function ownerResponse(
         context,
         buildReason,
         refreshTarget,
-        env.REFRESH_QUEUE ? undefined : build,
         queueDelaySeconds,
       );
       const progressive = await readCachedWithOwnerMetadata(env, key);

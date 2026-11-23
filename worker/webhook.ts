@@ -49,6 +49,7 @@ import {
 } from "./webhook-targets.ts";
 import { coordinatedJobActive } from "./store/build-coordinator.ts";
 import { deleteCacheEntry } from "./store/cache.ts";
+import { sendQueueMessage } from "./store/queue.ts";
 import {
   admitWebhookDelivery,
   forgetWebhookAdmission,
@@ -251,8 +252,7 @@ export async function enqueueWebhookFanout(
   priorityBatchStartedAt?: string,
 ): Promise<void> {
   if (!next) return;
-  if (!env.REFRESH_QUEUE) throw new Error("webhook queue unavailable");
-  await env.REFRESH_QUEUE.send({
+  await sendQueueMessage(env, {
     kind: "github-webhook-fanout",
     id: randomNonce(),
     event,
@@ -494,11 +494,6 @@ export async function githubWebhookResponse(
       delivery,
       compactGitHubWebhookPayload(event, payload),
     );
-    if (admission === "unavailable") {
-      return jsonResponse({ error: "webhook queue unavailable" }, 503, {
-        "cache-control": "no-store",
-      });
-    }
     return jsonResponse(
       admission === "duplicate" ? { ok: true, duplicate: true } : { ok: true },
       202,

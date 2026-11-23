@@ -13,9 +13,8 @@ ReleaseBar keeps public dashboard data warm with a small scheduler on the Cloudf
   - `WEBHOOK_ADMISSION` (`WebhookAdmission`), a single one: the GitHub deliveries already put on the queue.
   - `WEBHOOK_PROCESSOR` (`WebhookProcessor`), one per owner: pending and processed deliveries, and the lease of the job that drains them.
   - `SUMMARY_QUOTA` (`SummaryQuota`), a single one: the AI summary counters.
-- `REFRESH_QUEUE` receives background rebuild jobs in production.
+- `REFRESH_QUEUE` receives background rebuild jobs and GitHub webhook jobs. The binding is required: the Worker has no path without it.
 - User requests return cheap repository metadata first, bounded by the same 15-second cold-response deadline, then enqueue release hydration instead of keeping long scans inside HTTP `waitUntil()`.
-- If the queue binding is missing, scheduler jobs run one bounded `waitUntil()` attempt and record retryable work as failed so a later tick can schedule it again.
 - The admin UI at `/_admin` reads `/api/admin/scheduler` and can trigger `/api/admin/scheduler/run`.
 
 ## Refresh Targets
@@ -84,7 +83,6 @@ This means popular or installed accounts can refresh without burning the shared 
 - target count and due target count
 - queued, running, and failed job counts
 - last scheduler tick and next due target
-- queue-backed vs direct fallback mode
 - sharded GitHub token-use counters from the last 24 hours, also available at `/api/admin/github-access`
 - recent targets, jobs, and audit events
 

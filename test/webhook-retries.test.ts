@@ -609,6 +609,12 @@ test("terminal webhook fanout clears admission and processing deduplication", as
     },
     {
       DASHBOARD_CACHE: cache,
+      // The fanout fails when it sends the job for its next page.
+      REFRESH_QUEUE: {
+        async send() {
+          throw new Error("queue send failed");
+        },
+      },
     },
     { waitUntil: () => undefined },
   );

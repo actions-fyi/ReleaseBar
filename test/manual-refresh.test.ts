@@ -6,6 +6,7 @@ import {
   ownerMetadataMutator,
   type TestEnv,
   testDashboard,
+  testQueue,
   testProject,
   worker,
 } from "./dashboard-test-harness.ts";
@@ -87,7 +88,8 @@ test("worker manual dashboard refresh returns metadata before release hydration"
     }
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
-  const env = { DASHBOARD_CACHE: kvStore(), GITHUB_TOKEN: "shared-token" };
+  const queue = testQueue();
+  const env = { DASHBOARD_CACHE: kvStore(), GITHUB_TOKEN: "shared-token", REFRESH_QUEUE: queue };
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/owner", { method: "POST" }),
@@ -113,6 +115,9 @@ test("worker manual dashboard refresh returns metadata before release hydration"
     expect(repeatedBody.cache?.message ?? "").toMatch(/manual refresh recently started/);
     expect(repeatedBody.projects[0]?.openIssues).toBe(9);
 
+    await Promise.all(waits);
+    // The refresh job the first request put on the queue hydrates the release data.
+    await queue.deliver(env, { waitUntil: (promise) => waits.push(promise) });
     await Promise.all(waits);
     const cached = await worker.fetch(new Request("https://release.bar/api/owner"), env, {
       waitUntil: () => undefined,
@@ -605,9 +610,11 @@ test("worker manual dashboard refresh preserves released-only cache while rebuil
   if (dashboard.cache) {
     dashboard.cache.generatedAt = dashboard.generatedAt;
   }
+  const queue = testQueue();
   const env = {
     DASHBOARD_CACHE: kvStore({ [key]: JSON.stringify(dashboard) }),
     GITHUB_TOKEN: "shared-token",
+    REFRESH_QUEUE: queue,
   };
   try {
     const response = await worker.fetch(
@@ -621,6 +628,9 @@ test("worker manual dashboard refresh preserves released-only cache while rebuil
     expect(body.projects[0]?.version).toBe("v1.0.0");
     expect(body.cache?.message ?? "").toMatch(/release data updating/);
 
+    await Promise.all(waits);
+    // The refresh job the request put on the queue rebuilds the dashboard.
+    await queue.deliver(env, { waitUntil: (promise) => waits.push(promise) });
     await Promise.all(waits);
     const cached = await worker.fetch(
       new Request("https://release.bar/api/owner?unreleased=false"),

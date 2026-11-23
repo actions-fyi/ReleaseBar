@@ -12,6 +12,7 @@ import {
   signedJson,
   testDashboard,
   testProject,
+  testQueue,
   worker,
 } from "./dashboard-test-harness.ts";
 
@@ -522,17 +523,21 @@ test("worker skips request-triggered progressive rebuilds while shared quota is 
   globalThis.fetch = async () => {
     throw new Error("shared quota pause should skip progressive GitHub fetches");
   };
+  const queue = testQueue();
+  const env = { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", REFRESH_QUEUE: queue };
+  const context = { waitUntil: (promise: Promise<unknown>) => void waits.push(promise) };
   try {
-    const response = await worker.fetch(
-      new Request("https://release.bar/api/owner"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
-      { waitUntil: (promise) => waits.push(promise) },
-    );
+    const response = await worker.fetch(new Request("https://release.bar/api/owner"), env, context);
     expect(response.status).toBe(200);
     expect(waits.length > 0).toBe(true);
     await Promise.all(waits);
+    // The rebuild is a refresh job on the queue, and the pause skips that job.
+    expect(await queue.deliver(env, context)).toBe(1);
+    await Promise.all(waits);
     const events = await refreshAuditEvents(cache);
-    expect(events.some((event) => event.event === "dashboard_progressive_skip")).toBe(true);
+    expect(
+      events.some((event) => event.event === "job_skipped" && event.reason === "shared-quota"),
+    ).toBe(true);
   } finally {
     globalThis.fetch = originalFetch;
   }
