@@ -15,10 +15,7 @@ const base: RawWranglerConfig = {
 };
 
 test("deploy config refuses to deploy without any setting unless allowed", () => {
-  assert.throws(
-    () => deployConfig(base, {}),
-    (error) => error instanceof Error && error.message.includes("RELEASEBAR_ALLOW_GENERIC"),
-  );
+  expect(() => deployConfig(base, {})).toThrow("RELEASEBAR_ALLOW_GENERIC");
 });
 
 test("deploy config without settings is the generic wrangler.jsonc when allowed", () => {
@@ -59,29 +56,29 @@ test("deploy config sets the release summary limits from their build variables",
     RELEASE_SUMMARY_TITLE_CHARS: "80",
   });
   for (const value of ["999", "400001", "48,000", "-1", "4.8e4"]) {
-    assert.throws(
-      () => deployConfig(base, { RELEASEBAR_SUMMARY_INPUT_CHARS: value }),
-      (error) => error instanceof Error && error.message.includes("from 1000 to 400000"),
-      value,
+    expect(() => deployConfig(base, { RELEASEBAR_SUMMARY_INPUT_CHARS: value }), value).toThrow(
+      "from 1000 to 400000",
     );
   }
 });
 
 test("deploy config refuses a jurisdiction without a pre-created KV namespace", () => {
-  assert.throws(
-    () => deployConfig(base, { RELEASEBAR_DO_JURISDICTION: "eu" }),
-    (error) =>
-      error instanceof Error && error.message.includes("RELEASEBAR_KV_NAMESPACE_ID is not"),
+  expect(() => deployConfig(base, { RELEASEBAR_DO_JURISDICTION: "eu" })).toThrow(
+    "RELEASEBAR_KV_NAMESPACE_ID is not",
   );
 });
 
 test("deploy config rejects malformed settings", () => {
-  assert.throws(() => deployConfig(base, { RELEASEBAR_DOMAIN: "https://x.example.com/" }));
-  assert.throws(() => deployConfig(base, { RELEASEBAR_KV_NAMESPACE_ID: "my-namespace" }));
-  assert.throws(() => deployConfig(base, { RELEASEBAR_ADMIN_LOGINS: "octocat;hubot" }));
-  assert.throws(() => deployConfig(base, { RELEASEBAR_WORKERS_DEV: "yes" }));
-  assert.throws(() => deployConfig(base, { RELEASEBAR_ANTHROPIC_BASE_URL: "gateway.example.com" }));
-  assert.throws(() => deployConfig(base, { RELEASEBAR_ANTHROPIC_BASE_URL: "http://gateway.test" }));
+  expect(() => deployConfig(base, { RELEASEBAR_DOMAIN: "https://x.example.com/" })).toThrow();
+  expect(() => deployConfig(base, { RELEASEBAR_KV_NAMESPACE_ID: "my-namespace" })).toThrow();
+  expect(() => deployConfig(base, { RELEASEBAR_ADMIN_LOGINS: "octocat;hubot" })).toThrow();
+  expect(() => deployConfig(base, { RELEASEBAR_WORKERS_DEV: "yes" })).toThrow();
+  expect(() =>
+    deployConfig(base, { RELEASEBAR_ANTHROPIC_BASE_URL: "gateway.example.com" }),
+  ).toThrow();
+  expect(() =>
+    deployConfig(base, { RELEASEBAR_ANTHROPIC_BASE_URL: "http://gateway.test" }),
+  ).toThrow();
 });
 
 test("Claude summaries go to ANTHROPIC_BASE_URL when it is set", async () => {
@@ -147,7 +144,7 @@ test("lock jurisdiction fails loudly on a binding without jurisdictions", () => 
     idFromName: (name) => name,
     get: () => ({ fetch: async () => new Response(null) }),
   };
-  assert.throws(() =>
+  expect(() =>
     withLockJurisdiction(testEnv({ DASHBOARD_LOCKS: locks, RELEASEBAR_DO_JURISDICTION: "eu" })),
-  );
+  ).toThrow();
 });

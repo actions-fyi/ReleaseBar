@@ -20,7 +20,7 @@ test("dashboard build uses GraphQL owner metadata when token is available", asyn
       requested.push(`${path}${parsed.search}`);
       if (path === "/graphql") {
         expect(init?.method).toBe("POST");
-        const body = JSON.parse(String(init.body ?? "{}")) as { query?: string };
+        const body = JSON.parse(String(init?.body ?? "{}")) as { query?: string };
         if (body.query?.includes("ReleaseBarRepoDetails")) {
           return Response.json({
             data: {
@@ -157,7 +157,7 @@ test("dashboard released-only build uses GraphQL detail hydration for CI", async
       requested.push(`${path}${parsed.search}`);
       if (path === "/graphql") {
         expect(init?.method).toBe("POST");
-        const body = JSON.parse(String(init.body ?? "{}")) as { query?: string };
+        const body = JSON.parse(String(init?.body ?? "{}")) as { query?: string };
         if (body.query?.includes("ReleaseBarRepoDetails")) {
           return Response.json({
             data: {

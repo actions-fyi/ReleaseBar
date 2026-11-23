@@ -404,7 +404,7 @@ test("dashboard build falls back when GraphQL returns an empty success body", as
 });
 
 test("dashboard build treats ignored 403 check-run rate limits as quota errors", async () => {
-  await assert.rejects(
+  await expect(
     buildDashboard({
       title: "ReleaseBar",
       subtitle: "test",
@@ -476,8 +476,7 @@ test("dashboard build treats ignored 403 check-run rate limits as quota errors",
         throw new Error(`unexpected ${path}`);
       },
     }),
-    GitHubRateLimitError,
-  );
+  ).rejects.toBeInstanceOf(GitHubRateLimitError);
 });
 
 test("dashboard build can add explicit public repositories without an owner scan", async () => {

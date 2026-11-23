@@ -173,8 +173,7 @@ test("worker clears fallback reservations after active-job scans fail", async ()
       headers: { cookie: `rd_session=${authCookie}` },
     });
 
-  await assert.rejects(
-    worker.fetch(request(), env, { waitUntil: () => undefined }),
+  await expect(worker.fetch(request(), env, { waitUntil: () => undefined })).rejects.toThrow(
     /active job scan failed/,
   );
   expect(sentJobs.length).toBe(0);
@@ -689,7 +688,7 @@ test("worker scheduler marks jobs failed when queue delivery fails", async () =>
     [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
   });
 
-  await assert.rejects(
+  await expect(
     worker.fetch(
       new Request("https://release.bar/api/admin/scheduler/run", {
         method: "POST",
@@ -707,8 +706,7 @@ test("worker scheduler marks jobs failed when queue delivery fails", async () =>
       },
       { waitUntil: () => undefined },
     ),
-    /queue unavailable/,
-  );
+  ).rejects.toThrow(/queue unavailable/);
 
   const indexedJobs = await cache.list({ prefix: "refresh:jobs:v2:" });
   expect(indexedJobs.keys.length).toBe(1);

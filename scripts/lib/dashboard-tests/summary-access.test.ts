@@ -359,11 +359,9 @@ test("deploy config sets the summary rate limits and rejects values out of bound
     SUMMARY_GLOBAL_DAILY_LIMIT: "200",
   });
   for (const value of ["0", "1001", "1,000", "-1", "1e2"]) {
-    assert.throws(
-      () => deployConfig({}, { RELEASEBAR_SUMMARY_USER_HOURLY_LIMIT: value }),
-      (error) => error instanceof Error && error.message.includes("from 1 to 1000"),
-      value,
+    expect(() => deployConfig({}, { RELEASEBAR_SUMMARY_USER_HOURLY_LIMIT: value }), value).toThrow(
+      "from 1 to 1000",
     );
   }
-  assert.throws(() => deployConfig({}, { RELEASEBAR_SUMMARY_GLOBAL_DAILY_LIMIT: "100001" }));
+  expect(() => deployConfig({}, { RELEASEBAR_SUMMARY_GLOBAL_DAILY_LIMIT: "100001" })).toThrow();
 });

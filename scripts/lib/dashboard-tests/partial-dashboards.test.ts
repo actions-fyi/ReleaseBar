@@ -348,8 +348,13 @@ test("worker bounds cold owner resolution by the response deadline", async () =>
   let ownerStarted = false;
   const cache = kvStore();
 
+  // The owner deadline is the cold-build wait minus the time the request has already taken, so
+  // it is 15 seconds or a few milliseconds less.
   globalThis.setTimeout = ((callback: () => void, delay?: number) =>
-    originalSetTimeout(callback, delay === 15_000 ? 0 : delay)) as typeof setTimeout;
+    originalSetTimeout(
+      callback,
+      delay !== undefined && delay > 14_000 && delay <= 15_000 ? 0 : delay,
+    )) as typeof setTimeout;
   globalThis.fetch = async (input, init) => {
     const path = new URL(String(input)).pathname;
     if (path === "/users/slowmeta") {
