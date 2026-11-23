@@ -107,7 +107,6 @@ export const githubGraphqlRepoStargazersOperation = "ReleaseBarRepoStargazers";
 export const githubGraphqlRepoWorkTrendOperation = "ReleaseBarRepoWorkTrend";
 export const crawlerUserAgentPattern =
   /(ahrefsbot|applebot|baiduspider|bingbot|bot|bytespider|ccbot|claudebot|crawler|duckduckbot|facebookexternalhit|googlebot|googleother|gptbot|linkedinbot|mediapartners|perplexitybot|preview|semrushbot|slackbot|slurp|spider|telegrambot|twitterbot|yandexbot)/i;
-export const ownerMetadataPrefix = "owner-metadata:v1:";
 export const ownerMetadataTtlSeconds = 90 * 24 * 60 * 60;
 export const githubWebhookDeliveryTtlMs = 24 * 60 * 60 * 1000;
 export const githubWebhookDeliveryLimit = 2000;

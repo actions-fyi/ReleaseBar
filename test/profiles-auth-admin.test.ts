@@ -18,6 +18,9 @@ import {
   storeRefreshTargets,
   testDashboard,
   worker,
+  storedInstallationJson,
+  seedInstallation,
+  observedDatabase,
 } from "./dashboard-test-harness.ts";
 
 test("worker discovers and stores source-owned app installs for anonymous dashboards", async () => {
@@ -90,7 +93,7 @@ test("worker discovers and stores source-owned app installs for anonymous dashbo
     await Promise.all(waits);
     expect(body.cache?.quota?.source).toBe("app");
     expect(body.cache?.quota?.account).toBe("openclaw");
-    const stored = JSON.parse((await cache.get("auth:installation:v1:openclaw")) ?? "{}");
+    const stored = JSON.parse((await storedInstallationJson("openclaw")) ?? "{}");
     expect(stored.id).toBe(7);
     expect(stored.repositorySelection).toBe("all");
   } finally {
@@ -496,7 +499,7 @@ test("worker admin installation summary bounds record and counter reads", async 
   };
   for (let index = 0; index < 121; index += 1) {
     const account = `account-${String(index).padStart(3, "0")}`;
-    entries[`auth:installation:v1:${account}`] = JSON.stringify({
+    await seedInstallation({
       id: index + 1,
       accountLogin: account,
       accountType: "user",
@@ -515,15 +518,8 @@ test("worker admin installation summary bounds record and counter reads", async 
       insertCount.bind("2026-06-13", `event-${String(index).padStart(3, "0")}`, index + 1),
     ),
   );
-  const baseCache = kvStore(entries);
-  let installationReads = 0;
-  const cache = {
-    ...baseCache,
-    async get(key: string) {
-      if (key.startsWith("auth:installation:v1:")) installationReads += 1;
-      return baseCache.get(key);
-    },
-  };
+  const cache = kvStore(entries);
+  const observed = observedDatabase();
 
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/installations", {
@@ -533,6 +529,7 @@ test("worker admin installation summary bounds record and counter reads", async 
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
+      DB: observed.database,
     },
     { waitUntil: () => undefined },
   );
@@ -546,7 +543,10 @@ test("worker admin installation summary bounds record and counter reads", async 
   // The counts are the last 80 by key, as before, highest first.
   expect(body.counts[0]).toStrictEqual({ key: "2026-06-13:event-120:_:ok", count: 121 });
   expect(body.counts.at(-1)).toStrictEqual({ key: "2026-06-13:event-041:_:ok", count: 42 });
-  expect(installationReads).toBe(80);
+  // The newest 80 installations of the 121, read with one count and one bounded query.
+  expect(body.installations[0]?.accountLogin).toBe("account-120");
+  expect(body.installations.at(-1)?.accountLogin).toBe("account-041");
+  expect(observed.counts.sql.filter((sql) => sql.includes("FROM installations")).length).toBe(2);
 });
 
 test("worker scheduler rotates bounded current-schema target pages", async () => {

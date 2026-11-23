@@ -6,10 +6,10 @@ ReleaseBar keeps public dashboard data warm with a small scheduler on the Cloudf
 
 - Cloudflare cron runs every 15 minutes from `wrangler.jsonc`.
 - The D1 database `DB` stores the refresh targets with the index of the owners and repositories each one shows, the refresh jobs with their immutable snapshots and delivery records, the immutable profile snapshots, and the scheduler state (`migrations/0001_refresh.sql`, `docs/data-model.md`).
-- `DASHBOARD_CACHE` stores shared owner metadata/count snapshots, and visible dashboard snapshots. Audit events are rows of the D1 table `refresh_audit_events`.
+- It also stores the shared owner metadata/count snapshots, one row per owner, including repositories that turned private or were removed (`migrations/0003_registry.sql`); a change is written only if the row is still the one that was read.
+- `DASHBOARD_CACHE` stores visible dashboard snapshots. Audit events are rows of the D1 table `refresh_audit_events`.
 - Durable Objects hold what must be checked and changed in one step. Each is a class with typed RPC methods and SQLite storage, under `worker/objects/`:
   - `BUILD_COORDINATOR` (`BuildCoordinator`), one per dashboard: the build lock, the active job reservation with its dirty marker, the refresh-target failure state, and the strongly consistent progressive-scan checkpoint.
-  - `OWNER_METADATA` (`OwnerMetadata`), one per owner: the owner's metadata snapshot, including repositories that turned private or were removed.
   - `WEBHOOK_ADMISSION` (`WebhookAdmission`), a single one: the GitHub deliveries already put on the queue.
   - `WEBHOOK_PROCESSOR` (`WebhookProcessor`), one per owner: pending and processed deliveries, and the lease of the job that drains them.
   - `SUMMARY_QUOTA` (`SummaryQuota`), a single one: the AI summary counters.

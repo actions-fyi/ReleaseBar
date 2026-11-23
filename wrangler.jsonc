@@ -86,7 +86,6 @@
   "durable_objects": {
     "bindings": [
       { "name": "BUILD_COORDINATOR", "class_name": "BuildCoordinator" },
-      { "name": "OWNER_METADATA", "class_name": "OwnerMetadata" },
       { "name": "RATE_LIMITER", "class_name": "RateLimiter" },
       { "name": "SUMMARY_QUOTA", "class_name": "SummaryQuota" },
       { "name": "WEBHOOK_ADMISSION", "class_name": "WebhookAdmission" },
@@ -95,7 +94,8 @@
   },
 
   // A migration is applied once and never edited afterwards: a change to the classes is a new
-  // entry with a new tag, at the end. v2 deleted DashboardBuildLock with everything it stored.
+  // entry with a new tag, at the end. v2 deleted DashboardBuildLock with everything it stored;
+  // 7c-registry deleted OwnerMetadata the same way, when owner metadata moved to D1.
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["DashboardBuildLock"] },
     {
@@ -113,5 +113,7 @@
     // The index of refresh targets is a D1 table: migrations/0001_refresh.sql.
     { "tag": "7a-refresh", "deleted_classes": ["RefreshTargetIndex"] },
     { "tag": "7b-rate-limits", "new_sqlite_classes": ["RateLimiter"] },
+    // Owner metadata is a D1 table: migrations/0003_registry.sql.
+    { "tag": "7c-registry", "deleted_classes": ["OwnerMetadata"] },
   ],
 }

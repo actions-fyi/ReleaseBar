@@ -9,6 +9,8 @@ import {
   type TestEnv,
   testProject,
   worker,
+  seedOwnerMetadata,
+  storedOwnerMetadataJson,
 } from "./dashboard-test-harness.ts";
 
 test("worker serves fresh dashboard cache before GitHub App token discovery", async () => {
@@ -58,9 +60,9 @@ test("worker serves fresh dashboard cache before GitHub App token discovery", as
     knownRepos: [project.fullName.toLowerCase()],
     projects: [{ ...project, description: "stale description", archived: false, openIssues: 9 }],
   };
+  await seedOwnerMetadata("owner", JSON.stringify(ownerSnapshot));
   const cache = kvStore({
     [metadataKey]: JSON.stringify(cached),
-    "owner-metadata:v1:owner": JSON.stringify(ownerSnapshot),
   });
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => {
@@ -115,9 +117,9 @@ test("owner metadata does not overwrite newer dashboard counts", async () => {
       countsUpdatedAt: now,
     },
   };
-  const cache = kvStore({
-    [key]: JSON.stringify(cached),
-    "owner-metadata:v1:owner": JSON.stringify({
+  await seedOwnerMetadata(
+    "owner",
+    JSON.stringify({
       owner: "owner",
       generatedAt: newerMetadataAt,
       metadataUpdatedAt: newerMetadataAt,
@@ -126,6 +128,9 @@ test("owner metadata does not overwrite newer dashboard counts", async () => {
       knownRepos: [project.fullName.toLowerCase()],
       projects: [{ ...project, description: "new metadata", openIssues: 9 }],
     }),
+  );
+  const cache = kvStore({
+    [key]: JSON.stringify(cached),
   });
 
   const response = await worker.fetch(
@@ -151,6 +156,21 @@ test("owner metadata compares count snapshots against count freshness", async ()
     schemaVersion: 6,
   });
   const project = testProject({ owner: "owner", name: "repo", openIssues: 1 });
+  await seedOwnerMetadata(
+    "owner",
+    JSON.stringify({
+      owner: "owner",
+      generatedAt: snapshotAt,
+      metadataUpdatedAt: snapshotAt,
+      countsUpdatedAt: snapshotAt,
+      releaseDataComplete: true,
+      knownRepos: ["owner/repo"],
+      removedRepos: {},
+      projectMetadataUpdatedAt: { "owner/repo": snapshotAt },
+      projectCountsUpdatedAt: { "owner/repo": snapshotAt },
+      projects: [{ ...project, openIssues: 9 }],
+    }),
+  );
   const cache = kvStore({
     [key]: JSON.stringify({
       ...testDashboard("owner", [project]),
@@ -164,18 +184,6 @@ test("owner metadata compares count snapshots against count freshness", async ()
         countsUpdatedAt: countsAt,
       },
     } satisfies DashboardPayload),
-    "owner-metadata:v1:owner": JSON.stringify({
-      owner: "owner",
-      generatedAt: snapshotAt,
-      metadataUpdatedAt: snapshotAt,
-      countsUpdatedAt: snapshotAt,
-      releaseDataComplete: true,
-      knownRepos: ["owner/repo"],
-      removedRepos: {},
-      projectMetadataUpdatedAt: { "owner/repo": snapshotAt },
-      projectCountsUpdatedAt: { "owner/repo": snapshotAt },
-      projects: [{ ...project, openIssues: 9 }],
-    }),
   });
 
   const response = await worker.fetch(
@@ -206,6 +214,21 @@ test("owner count overlays update repositories absent from a narrow metadata sna
     openIssues: 1,
   });
   const narrowProject = testProject({ owner: "owner", name: "inside-filter" });
+  await seedOwnerMetadata(
+    "owner",
+    JSON.stringify({
+      owner: "owner",
+      generatedAt: cachedAt,
+      metadataUpdatedAt: cachedAt,
+      countsUpdatedAt: cachedAt,
+      releaseDataComplete: true,
+      knownRepos: null,
+      removedRepos: {},
+      projectMetadataUpdatedAt: { "owner/inside-filter": cachedAt },
+      projectCountsUpdatedAt: { "owner/inside-filter": cachedAt },
+      projects: [narrowProject],
+    }),
+  );
   const cache = kvStore({
     [key]: JSON.stringify({
       ...testDashboard("owner", [cachedProject]),
@@ -219,18 +242,6 @@ test("owner count overlays update repositories absent from a narrow metadata sna
         countsUpdatedAt: cachedAt,
       },
     } satisfies DashboardPayload),
-    "owner-metadata:v1:owner": JSON.stringify({
-      owner: "owner",
-      generatedAt: cachedAt,
-      metadataUpdatedAt: cachedAt,
-      countsUpdatedAt: cachedAt,
-      releaseDataComplete: true,
-      knownRepos: null,
-      removedRepos: {},
-      projectMetadataUpdatedAt: { "owner/inside-filter": cachedAt },
-      projectCountsUpdatedAt: { "owner/inside-filter": cachedAt },
-      projects: [narrowProject],
-    }),
   });
   const env: TestEnv = {
     DASHBOARD_CACHE: cache,
@@ -272,7 +283,7 @@ test("owner count overlays update repositories absent from a narrow metadata sna
   });
   expect(dashboard.status).toBe(200);
   expect(((await dashboard.json()) as DashboardPayload).projects.length).toBe(0);
-  const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  const snapshot = JSON.parse((await storedOwnerMetadataJson("owner")) ?? "{}") as {
     countOverlays?: Record<string, { archived?: boolean; openIssues?: number }>;
   };
   expect(snapshot.countOverlays?.["owner/outside-filter"]?.archived).toBe(true);
@@ -290,6 +301,20 @@ test("owner snapshots only advance count freshness when they cover every display
   });
   const repo = testProject({ owner: "owner", name: "repo", openIssues: 1 });
   const sibling = testProject({ owner: "owner", name: "sibling", openIssues: 2 });
+  await seedOwnerMetadata(
+    "owner",
+    JSON.stringify({
+      owner: "owner",
+      generatedAt: snapshotAt,
+      metadataUpdatedAt: cachedAt,
+      countsUpdatedAt: snapshotAt,
+      releaseDataComplete: true,
+      knownRepos: null,
+      removedRepos: {},
+      projectMetadataUpdatedAt: { "owner/repo": cachedAt },
+      projects: [{ ...repo, openIssues: 9 }],
+    }),
+  );
   const cache = kvStore({
     [key]: JSON.stringify({
       ...testDashboard("owner", [repo, sibling]),
@@ -303,17 +328,6 @@ test("owner snapshots only advance count freshness when they cover every display
         countsUpdatedAt: cachedAt,
       },
     } satisfies DashboardPayload),
-    "owner-metadata:v1:owner": JSON.stringify({
-      owner: "owner",
-      generatedAt: snapshotAt,
-      metadataUpdatedAt: cachedAt,
-      countsUpdatedAt: snapshotAt,
-      releaseDataComplete: true,
-      knownRepos: null,
-      removedRepos: {},
-      projectMetadataUpdatedAt: { "owner/repo": cachedAt },
-      projects: [{ ...repo, openIssues: 9 }],
-    }),
   });
 
   const response = await worker.fetch(
@@ -340,20 +354,9 @@ test("partial owner count scans expose matched repository counts without advanci
   });
   const repo = testProject({ owner: "owner", name: "repo", openIssues: 1 });
   const sibling = testProject({ owner: "owner", name: "sibling", openIssues: 2 });
-  const cache = kvStore({
-    [key]: JSON.stringify({
-      ...testDashboard("owner", [repo, sibling]),
-      generatedAt: dashboardAt,
-      cache: {
-        state: "fresh",
-        stale: false,
-        capped: false,
-        repoLimit: 200,
-        generatedAt: dashboardAt,
-        countsUpdatedAt: initialAt,
-      },
-    } satisfies DashboardPayload),
-    "owner-metadata:v1:owner": JSON.stringify({
+  await seedOwnerMetadata(
+    "owner",
+    JSON.stringify({
       owner: "owner",
       generatedAt: initialAt,
       metadataUpdatedAt: initialAt,
@@ -371,6 +374,20 @@ test("partial owner count scans expose matched repository counts without advanci
       },
       projects: [repo, sibling],
     }),
+  );
+  const cache = kvStore({
+    [key]: JSON.stringify({
+      ...testDashboard("owner", [repo, sibling]),
+      generatedAt: dashboardAt,
+      cache: {
+        state: "fresh",
+        stale: false,
+        capped: false,
+        repoLimit: 200,
+        generatedAt: dashboardAt,
+        countsUpdatedAt: initialAt,
+      },
+    } satisfies DashboardPayload),
   });
   const env: TestEnv = {
     DASHBOARD_CACHE: cache,
@@ -417,8 +434,9 @@ test("stale archive observations do not override newer count observations", asyn
   const archiveAt = "2026-06-11T02:00:00Z";
   const countsAt = "2026-06-11T03:00:00Z";
   const project = testProject({ owner: "owner", name: "repo", archived: false });
-  const cache = kvStore({
-    "owner-metadata:v1:owner": JSON.stringify({
+  await seedOwnerMetadata(
+    "owner",
+    JSON.stringify({
       owner: "owner",
       generatedAt: countsAt,
       metadataUpdatedAt: metadataAt,
@@ -430,7 +448,8 @@ test("stale archive observations do not override newer count observations", asyn
       projectCountsUpdatedAt: { "owner/repo": countsAt },
       projects: [project],
     }),
-  });
+  );
+  const cache = kvStore({});
   const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
@@ -454,8 +473,9 @@ test("partial owner count scans cannot make an incomplete repository set authori
   const partialAt = "2026-06-11T02:00:00Z";
   const repo = testProject({ owner: "owner", name: "repo" });
   const newlyDiscovered = testProject({ owner: "owner", name: "new" });
-  const cache = kvStore({
-    "owner-metadata:v1:owner": JSON.stringify({
+  await seedOwnerMetadata(
+    "owner",
+    JSON.stringify({
       owner: "owner",
       generatedAt: initialAt,
       metadataUpdatedAt: initialAt,
@@ -473,7 +493,8 @@ test("partial owner count scans cannot make an incomplete repository set authori
       },
       projects: [repo, newlyDiscovered],
     }),
-  });
+  );
+  const cache = kvStore({});
   const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
@@ -515,6 +536,20 @@ test("combined dashboards do not merge counts using another owner's oldest times
   });
   const ownerProject = testProject({ owner: "owner", name: "repo", openIssues: 10 });
   const otherProject = testProject({ owner: "other", name: "repo", openIssues: 2 });
+  await seedOwnerMetadata(
+    "owner",
+    JSON.stringify({
+      owner: "owner",
+      generatedAt: intermediateCountAt,
+      metadataUpdatedAt: intermediateCountAt,
+      countsUpdatedAt: intermediateCountAt,
+      releaseDataComplete: true,
+      knownRepos: ["owner/repo"],
+      removedRepos: {},
+      projectMetadataUpdatedAt: { "owner/repo": intermediateCountAt },
+      projects: [{ ...ownerProject, openIssues: 3 }],
+    }),
+  );
   const cache = kvStore({
     "owner:v1:owner": JSON.stringify({ type: "user", login: "owner" }),
     "owner:v1:other": JSON.stringify({ type: "user", login: "other" }),
@@ -534,17 +569,6 @@ test("combined dashboards do not merge counts using another owner's oldest times
         countsUpdatedAt: oldestOwnerCountAt,
       },
     } satisfies DashboardPayload),
-    "owner-metadata:v1:owner": JSON.stringify({
-      owner: "owner",
-      generatedAt: intermediateCountAt,
-      metadataUpdatedAt: intermediateCountAt,
-      countsUpdatedAt: intermediateCountAt,
-      releaseDataComplete: true,
-      knownRepos: ["owner/repo"],
-      removedRepos: {},
-      projectMetadataUpdatedAt: { "owner/repo": intermediateCountAt },
-      projects: [{ ...ownerProject, openIssues: 3 }],
-    }),
   });
 
   const response = await worker.fetch(
@@ -568,20 +592,9 @@ test("older owner snapshots do not overwrite newer dashboard fields", async () =
     schemaVersion: 6,
   });
   const project = testProject({ owner: "owner", name: "repo", openIssues: 1 });
-  const cache = kvStore({
-    [key]: JSON.stringify({
-      ...testDashboard("owner", [project]),
-      generatedAt: now,
-      cache: {
-        state: "fresh",
-        stale: false,
-        capped: false,
-        repoLimit: 200,
-        generatedAt: now,
-        countsUpdatedAt: now,
-      },
-    } satisfies DashboardPayload),
-    "owner-metadata:v1:owner": JSON.stringify({
+  await seedOwnerMetadata(
+    "owner",
+    JSON.stringify({
       owner: "owner",
       generatedAt: olderAt,
       metadataUpdatedAt: olderAt,
@@ -597,6 +610,20 @@ test("older owner snapshots do not overwrite newer dashboard fields", async () =
         },
       ],
     }),
+  );
+  const cache = kvStore({
+    [key]: JSON.stringify({
+      ...testDashboard("owner", [project]),
+      generatedAt: now,
+      cache: {
+        state: "fresh",
+        stale: false,
+        capped: false,
+        repoLimit: 200,
+        generatedAt: now,
+        countsUpdatedAt: now,
+      },
+    } satisfies DashboardPayload),
   });
 
   const response = await worker.fetch(
@@ -624,19 +651,9 @@ test("targeted owner metadata updates do not refresh sibling repositories", asyn
     includeReleaseData: true,
     schemaVersion: 6,
   });
-  const cache = kvStore({
-    [key]: JSON.stringify({
-      ...testDashboard("owner", [repo, sibling]),
-      generatedAt: dashboardAt,
-      cache: {
-        state: "fresh",
-        stale: false,
-        capped: false,
-        repoLimit: 200,
-        generatedAt: dashboardAt,
-      },
-    } satisfies DashboardPayload),
-    "owner-metadata:v1:owner": JSON.stringify({
+  await seedOwnerMetadata(
+    "owner",
+    JSON.stringify({
       owner: "owner",
       generatedAt: eventAt,
       metadataUpdatedAt: eventAt,
@@ -651,6 +668,19 @@ test("targeted owner metadata updates do not refresh sibling repositories", asyn
         { ...sibling, description: "stale sibling" },
       ],
     }),
+  );
+  const cache = kvStore({
+    [key]: JSON.stringify({
+      ...testDashboard("owner", [repo, sibling]),
+      generatedAt: dashboardAt,
+      cache: {
+        state: "fresh",
+        stale: false,
+        capped: false,
+        repoLimit: 200,
+        generatedAt: dashboardAt,
+      },
+    } satisfies DashboardPayload),
   });
 
   const response = await worker.fetch(
@@ -695,19 +725,19 @@ test("owner removal tombstones survive older refresh observations", async () => 
     ],
   });
   await mutate({ kind: "restore", fullName: "owner/repo", observedAt: olderAt });
-  let snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  let snapshot = JSON.parse((await storedOwnerMetadataJson("owner")) ?? "{}") as {
     removedRepos?: Record<string, string>;
   };
   expect(snapshot.removedRepos?.["owner/repo"]).toBe(removedAt);
 
   await mutate({ kind: "restore", fullName: "owner/repo", observedAt: newerAt });
-  snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  snapshot = JSON.parse((await storedOwnerMetadataJson("owner")) ?? "{}") as {
     removedRepos?: Record<string, string>;
   };
   expect(snapshot.removedRepos?.["owner/repo"]).toBe(undefined);
 });
 
-test("owner mutations reconcile newer KV fallback state before updating durable storage", async () => {
+test("owner mutations apply to the snapshot as another writer left it", async () => {
   const initialAt = "2026-06-11T01:00:00Z";
   const removedAt = "2026-06-11T02:00:00Z";
   const followUpAt = "2026-06-11T03:00:00Z";
@@ -729,11 +759,12 @@ test("owner mutations reconcile newer KV fallback state before updating durable 
     projects: [project],
     removedRepos: [],
   });
-  const fallbackSnapshot = JSON.parse(
-    (await cache.get("owner-metadata:v1:owner")) ?? "{}",
-  ) as Record<string, unknown>;
-  await cache.put(
-    "owner-metadata:v1:owner",
+  const fallbackSnapshot = JSON.parse((await storedOwnerMetadataJson("owner")) ?? "{}") as Record<
+    string,
+    unknown
+  >;
+  await seedOwnerMetadata(
+    "owner",
     JSON.stringify({
       ...fallbackSnapshot,
       generatedAt: removedAt,

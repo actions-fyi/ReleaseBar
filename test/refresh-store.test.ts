@@ -234,13 +234,14 @@ test("a scheduler tick sends D1 a bounded number of statements", async () => {
   // records, the page of targets, the owner count cursor. Writes: one insert per enqueued job,
   // the tick's state, and the five deletions of expired rows, four of them in two batches. The
   // audit log is in D1 too: an event per enqueued job and one for the tick, and the four
-  // deletions of expired audit rows.
-  expect(await measured()).toStrictEqual({ statements: 5 + 20 + 1 + 5 + 21 + 4, batches: 2 });
+  // deletions of expired audit rows. The registry adds two deletions: expired installations and
+  // expired owner metadata.
+  expect(await measured()).toStrictEqual({ statements: 5 + 20 + 1 + 5 + 21 + 4 + 2, batches: 2 });
   expect(sent.length).toBe(20);
   expect((await storedSchedulerState())?.due).toBe(20);
 
   // The same page with the 20 jobs active: nothing is enqueued.
-  expect(await measured()).toStrictEqual({ statements: 5 + 1 + 5 + 1 + 4, batches: 2 });
+  expect(await measured()).toStrictEqual({ statements: 5 + 1 + 5 + 1 + 4 + 2, batches: 2 });
   expect(sent.length).toBe(20);
 });
 

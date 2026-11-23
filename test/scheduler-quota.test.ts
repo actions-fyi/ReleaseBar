@@ -13,6 +13,7 @@ import {
   testDashboard,
   testProject,
   worker,
+  seedInstallation,
 } from "./dashboard-test-harness.ts";
 
 test("worker scheduler preserves queued backlog jobs until reservation expiry", async () => {
@@ -433,6 +434,18 @@ test("worker admin scheduler lets app-token targets bypass shared quota pauses",
     message: "shared GitHub quota paused until 2999-01-01T00:00:00Z",
   };
   const sentJobs: RefreshJob[] = [];
+  await seedInstallation(
+    JSON.stringify({
+      id: 42,
+      accountLogin: "openclaw",
+      accountType: "org",
+      accountUrl: "https://github.com/openclaw",
+      avatarUrl: "https://avatars.githubusercontent.com/u/2",
+      repositorySelection: "all",
+      repositories: [],
+      updatedAt: new Date().toISOString(),
+    }),
+  );
   const cache = kvStore({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
@@ -445,16 +458,6 @@ test("worker admin scheduler lets app-token targets bypass shared quota pauses",
       accessToken: "user-token",
       iat: exp - 600,
       exp,
-    }),
-    "auth:installation:v1:openclaw": JSON.stringify({
-      id: 42,
-      accountLogin: "openclaw",
-      accountType: "org",
-      accountUrl: "https://github.com/openclaw",
-      avatarUrl: "https://avatars.githubusercontent.com/u/2",
-      repositorySelection: "all",
-      repositories: [],
-      updatedAt: new Date().toISOString(),
     }),
     "auth:installation-token:42": "installation-token",
   });
@@ -508,6 +511,18 @@ test("worker admin scheduler uses app registry coverage without minting tokens",
     message: "shared GitHub quota paused until 2999-01-01T00:00:00Z",
   };
   const sentJobs: RefreshJob[] = [];
+  await seedInstallation(
+    JSON.stringify({
+      id: 42,
+      accountLogin: "openclaw",
+      accountType: "org",
+      accountUrl: "https://github.com/openclaw",
+      avatarUrl: "https://avatars.githubusercontent.com/u/2",
+      repositorySelection: "all",
+      repositories: [],
+      updatedAt: new Date().toISOString(),
+    }),
+  );
   const cache = kvStore({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
@@ -520,16 +535,6 @@ test("worker admin scheduler uses app registry coverage without minting tokens",
       accessToken: "user-token",
       iat: exp - 600,
       exp,
-    }),
-    "auth:installation:v1:openclaw": JSON.stringify({
-      id: 42,
-      accountLogin: "openclaw",
-      accountType: "org",
-      accountUrl: "https://github.com/openclaw",
-      avatarUrl: "https://avatars.githubusercontent.com/u/2",
-      repositorySelection: "all",
-      repositories: [],
-      updatedAt: new Date().toISOString(),
     }),
   });
   await storeRefreshTarget(target);
@@ -588,6 +593,18 @@ test("worker admin scheduler bypasses shared quota defer time with app coverage"
     message: "shared GitHub quota paused until 2999-01-01T00:00:00Z",
   };
   const sentJobs: RefreshJob[] = [];
+  await seedInstallation(
+    JSON.stringify({
+      id: 42,
+      accountLogin: "openclaw",
+      accountType: "org",
+      accountUrl: "https://github.com/openclaw",
+      avatarUrl: "https://avatars.githubusercontent.com/u/2",
+      repositorySelection: "all",
+      repositories: [],
+      updatedAt: new Date().toISOString(),
+    }),
+  );
   const cache = kvStore({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
@@ -600,16 +617,6 @@ test("worker admin scheduler bypasses shared quota defer time with app coverage"
       accessToken: "user-token",
       iat: exp - 600,
       exp,
-    }),
-    "auth:installation:v1:openclaw": JSON.stringify({
-      id: 42,
-      accountLogin: "openclaw",
-      accountType: "org",
-      accountUrl: "https://github.com/openclaw",
-      avatarUrl: "https://avatars.githubusercontent.com/u/2",
-      repositorySelection: "all",
-      repositories: [],
-      updatedAt: new Date().toISOString(),
     }),
     [key]: JSON.stringify(
       testDashboard("openclaw", [testProject({ owner: "openclaw", name: "repo" })]),

@@ -10,7 +10,6 @@ type DurableObjectBinding = {
 // Every Durable Object binding of wrangler.jsonc: the type fails when one is missing here.
 const durableObjectBindingNames: Record<DurableObjectBinding, true> = {
   BUILD_COORDINATOR: true,
-  OWNER_METADATA: true,
   RATE_LIMITER: true,
   SUMMARY_QUOTA: true,
   WEBHOOK_ADMISSION: true,
