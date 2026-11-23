@@ -38,7 +38,7 @@ export function userDashboards(auth: AuthPayload | null): UserDashboard[] {
       repositories: (installation?.repositories ?? [])
         .map((repo) => repo.toLowerCase())
         .filter((repo) => repo.startsWith(`${login}/`))
-        .sort(),
+        .sort((left, right) => left.localeCompare(right)),
     };
   };
   return [
