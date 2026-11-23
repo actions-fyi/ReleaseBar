@@ -10,17 +10,18 @@ import type {
   DashboardProfile,
   RefreshTarget,
 } from "../src/types.ts";
-import { type StoredInstallationRecord, storedInstallationSchema } from "./auth-observability.ts";
-import { type GitHubInstallationRepository, safeJsonParse } from "./schemas.ts";
+import {
+  installationMissKey,
+  installationRegistryKey,
+  readStoredInstallation,
+  type StoredInstallationRecord,
+  writeStoredInstallation,
+} from "./store/installations.ts";
+import { type GitHubInstallationRepository } from "./schemas.ts";
 import { uniqueSorted } from "./app-shell.ts";
 import { appTokenConfigured } from "./auth-oauth.ts";
 import { sourceInstallationRegistryCovers } from "./auth-tokens.ts";
-import {
-  dashboardSchemaVersion,
-  dashboardStorageTtlSeconds,
-  fullTtlMs,
-  maxCustomSources,
-} from "./config.ts";
+import { dashboardSchemaVersion, fullTtlMs, maxCustomSources } from "./config.ts";
 import {
   cacheAgeMs,
   canDisplayCached,
@@ -40,13 +41,7 @@ export function isPublicInstallationRepository(repo: GitHubInstallationRepositor
   return repo.private === false || repo.visibility === "public";
 }
 
-export function installationRegistryKey(accountLogin: string): string {
-  return `auth:installation:v1:${slugOwner(accountLogin)}`;
-}
-
-export function installationMissKey(accountLogin: string): string {
-  return `auth:installation-miss:v1:${slugOwner(accountLogin)}`;
-}
+export { installationMissKey, installationRegistryKey };
 
 export function normalizedInstallation(installation: AuthInstallation): StoredInstallationRecord {
   return {
@@ -130,7 +125,6 @@ export async function writeInstallationRegistry(
   env: Env,
   installations: AuthInstallation[],
 ): Promise<void> {
-  const cache = env.DASHBOARD_CACHE;
   const normalized = installations.map(normalizedInstallation);
   const stale = (
     await Promise.all(
@@ -141,11 +135,7 @@ export async function writeInstallationRegistry(
   ).filter((installation): installation is StoredInstallationRecord => installation !== null);
   await Promise.all(
     stale.map((installation) => {
-      return cache.put(
-        installationRegistryKey(installation.accountLogin),
-        JSON.stringify(installation),
-        { expirationTtl: dashboardStorageTtlSeconds },
-      );
+      return writeStoredInstallation(env, installation);
     }),
   );
   await Promise.all(
@@ -225,7 +215,5 @@ export async function readInstallationRegistry(
 ): Promise<StoredInstallationRecord | null> {
   const account = slugOwner(accountLogin);
   if (!validOwnerSlug(account)) return null;
-  const raw = await env.DASHBOARD_CACHE.get(installationRegistryKey(account));
-  if (!raw) return null;
-  return safeJsonParse(storedInstallationSchema, raw, `app installation ${account}`);
+  return readStoredInstallation(env, account);
 }

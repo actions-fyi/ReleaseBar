@@ -1,11 +1,20 @@
 import type { ApiQuota, GitHubAccessRouteSummary, GitHubAccessSummary } from "../src/types.ts";
 import { jsonResponse, workerFetch } from "./http.ts";
 import { tryJsonParse } from "./schemas.ts";
+import {
+  deleteCacheEntry,
+  listAllCacheKeys,
+  readCacheEntry,
+  readCacheText,
+  writeCacheEntry,
+} from "./store/cache.ts";
+import {
+  countGitHubAccess,
+  listGitHubAccessCounts,
+  type StoredGitHubAccessCounter,
+} from "./store/github-access.ts";
 import type { BackgroundContext } from "./runtime.ts";
 
-const githubAccessPrefix = "github:access:v1:";
-const githubAccessTtlSeconds = 14 * 24 * 60 * 60;
-const githubAccessShardCount = 16;
 export const githubAccessAdminHours = 24;
 const githubAccessAdminRouteLimit = 30;
 const githubSharedBudgetPrefix = "github:budget:v1:shared:";
@@ -29,12 +38,6 @@ const sharedQuotaEnrichmentMinimumRemaining: Record<string, number> = {
 };
 
 const githubAccessWriteChains = new WeakMap<BackgroundContext, Promise<void>>();
-
-type StoredGitHubAccessShard = {
-  count?: number;
-  lastAt?: string | null;
-  routes?: Record<string, GitHubAccessRouteSummary>;
-};
 
 export type GitHubAuditArea =
   | "dashboard"
@@ -124,11 +127,6 @@ function githubPathBucket(path: string): string {
   return url.pathname;
 }
 
-function githubAccessCounterKey(shard: number): string {
-  const hour = new Date().toISOString().slice(0, 13);
-  return `${githubAccessPrefix}${hour}:${shard}`;
-}
-
 export type SharedQuotaCooldown = {
   active: boolean;
   level?: "conserve" | "critical";
@@ -182,12 +180,8 @@ async function markSharedQuotaCooldown(
   };
   const ttl = sharedQuotaCooldownTtlSeconds(resetAt);
   await Promise.all([
-    env.DASHBOARD_CACHE.put(sharedQuotaBudgetKey(null), JSON.stringify(item), {
-      expirationTtl: ttl,
-    }),
-    env.DASHBOARD_CACHE.put(sharedQuotaBudgetKey(quota.resource), JSON.stringify(item), {
-      expirationTtl: ttl,
-    }),
+    writeCacheEntry(env, sharedQuotaBudgetKey(null), item, ttl),
+    writeCacheEntry(env, sharedQuotaBudgetKey(quota.resource), item, ttl),
   ]);
 }
 
@@ -224,28 +218,21 @@ async function sharedQuotaState(
       : [sharedQuotaBudgetKey(null)],
   );
   if (!resource) {
-    let cursor: string | undefined;
-    do {
-      const page = await env.DASHBOARD_CACHE.list({
-        prefix: githubSharedBudgetPrefix,
-        limit: 1000,
-        ...(cursor ? { cursor } : {}),
-      });
-      for (const key of page.keys) keys.add(key.name);
-      cursor = page.list_complete ? undefined : page.cursor;
-    } while (cursor);
+    for (const key of await listAllCacheKeys(env, githubSharedBudgetPrefix)) keys.add(key);
   }
   let selected: SharedQuotaCooldown | null = null;
   let selectedUntil = 0;
   for (const key of keys) {
-    const raw = await env.DASHBOARD_CACHE.get(key);
-    if (!raw) continue;
-    const parsed = tryJsonParse<SharedQuotaCooldown>(raw, `shared quota cooldown ${key}`);
+    const parsed = await readCacheEntry<SharedQuotaCooldown>(
+      env,
+      key,
+      `shared quota cooldown ${key}`,
+    );
     if (!parsed?.active) continue;
     if (!includeConserve && parsed.level === "conserve") continue;
     const reset = parsed.resetAt ? Date.parse(parsed.resetAt) : 0;
     if (Number.isFinite(reset) && reset > 0 && reset <= Date.now()) {
-      await env.DASHBOARD_CACHE.delete(key).catch(() => undefined);
+      await deleteCacheEntry(env, key).catch(() => undefined);
       continue;
     }
     const until = Date.parse(sharedQuotaDeferUntil(parsed));
@@ -299,7 +286,7 @@ export async function graphqlBackoffActive(
   operation: string,
 ): Promise<boolean> {
   return Boolean(
-    await env?.DASHBOARD_CACHE.get(githubGraphqlBackoffKey(source, account, operation)),
+    env && (await readCacheText(env, githubGraphqlBackoffKey(source, account, operation))),
   );
 }
 
@@ -310,17 +297,19 @@ export async function markGraphqlBackoff(
   operation: string,
   status: number,
 ): Promise<void> {
-  await env?.DASHBOARD_CACHE.put(
+  if (!env) return;
+  await writeCacheEntry(
+    env,
     githubGraphqlBackoffKey(source, account, operation),
-    JSON.stringify({
+    {
       active: true,
       status,
       source,
       account,
       operation,
       at: new Date().toISOString(),
-    }),
-    { expirationTtl: githubGraphqlBackoffSeconds },
+    },
+    githubGraphqlBackoffSeconds,
   );
 }
 
@@ -338,13 +327,7 @@ async function recordGitHubAccessCounter(
   if (!env) return;
   const route = githubPathBucket(path);
   const routeKey = `${area}:${status}:${quota.source}:${quota.account ?? "_"}:${quota.resource ?? "_"}:${route}`;
-  const key = githubAccessCounterKey(Math.floor(Math.random() * githubAccessShardCount));
-  const raw = await env.DASHBOARD_CACHE.get(key);
-  const current = raw ? tryJsonParse<StoredGitHubAccessShard>(raw, `github access ${key}`) : null;
-  const routes = { ...current?.routes };
-  const existing = routes[routeKey];
-  const lastAt = new Date().toISOString();
-  routes[routeKey] = {
+  await countGitHubAccess(env, {
     key: routeKey,
     area,
     route,
@@ -352,19 +335,8 @@ async function recordGitHubAccessCounter(
     source: quota.source,
     account: quota.account,
     resource: quota.resource,
-    count: (existing?.count ?? 0) + 1,
     lastPath: path.slice(0, 240),
-    lastAt,
-  };
-  await env.DASHBOARD_CACHE.put(
-    key,
-    JSON.stringify({
-      count: (current?.count ?? 0) + 1,
-      lastAt,
-      routes,
-    }),
-    { expirationTtl: githubAccessTtlSeconds },
-  );
+  });
 }
 
 function sharedQuotaPressure(status: number, quota: ApiQuota, rateLimited = false): boolean {
@@ -585,12 +557,6 @@ function safeIso(value: string | null | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-type StoredGitHubAccessCounter = GitHubAccessRouteSummary & {
-  remaining?: number | null;
-  limit?: number | null;
-  resetAt?: string | null;
-};
-
 function githubAccessHours(hours: number): string[] {
   const result: string[] = [];
   const seen = new Set<string>();
@@ -619,50 +585,31 @@ export async function githubAccessSummary(
   hours = githubAccessAdminHours,
 ): Promise<GitHubAccessSummary> {
   const cooldown = await sharedQuotaCooldown(env);
-  const cache = env.DASHBOARD_CACHE;
-  const list = cache.list.bind(cache);
-  const pages = await Promise.all(
-    githubAccessHours(hours).map((hour) =>
-      list({
-        prefix: `${githubAccessPrefix}${hour}:`,
-        limit: 1000,
-      }),
-    ),
-  );
-  const keys = pages.flatMap((page) => page.keys.map((key) => key.name));
-
-  const counters = await Promise.all(
-    keys.map(async (key): Promise<GitHubAccessRouteSummary[]> => {
-      const raw = await cache.get(key);
-      if (!raw) return [];
-      const parsed = tryJsonParse<StoredGitHubAccessShard | StoredGitHubAccessCounter>(
-        raw,
-        `github access ${key}`,
-      );
-      if (!parsed) return [];
-      if ("routes" in parsed && parsed.routes) {
-        return Object.values(parsed.routes).map((route) => ({
-          ...route,
-          account: route.account ?? null,
-          resource: route.resource ?? null,
-          lastAt: route.lastAt ?? null,
-          lastPath: route.lastPath ?? null,
-        }));
-      }
-      const counter = parsed as StoredGitHubAccessCounter;
-      if (typeof counter.count !== "number" || !counter.route) return [];
-      return [
-        {
-          ...counter,
-          key,
-          account: counter.account ?? null,
-          resource: counter.resource ?? null,
-          lastAt: counter.lastAt ?? null,
-          lastPath: counter.lastPath ?? null,
-        },
-      ];
-    }),
-  );
+  const stored = await listGitHubAccessCounts(env, githubAccessHours(hours));
+  const counters = stored.map(({ key, stored: parsed }): GitHubAccessRouteSummary[] => {
+    if (!parsed) return [];
+    if ("routes" in parsed && parsed.routes) {
+      return Object.values(parsed.routes).map((route) => ({
+        ...route,
+        account: route.account ?? null,
+        resource: route.resource ?? null,
+        lastAt: route.lastAt ?? null,
+        lastPath: route.lastPath ?? null,
+      }));
+    }
+    const counter = parsed as StoredGitHubAccessCounter;
+    if (typeof counter.count !== "number" || !counter.route) return [];
+    return [
+      {
+        ...counter,
+        key,
+        account: counter.account ?? null,
+        resource: counter.resource ?? null,
+        lastAt: counter.lastAt ?? null,
+        lastPath: counter.lastPath ?? null,
+      },
+    ];
+  });
 
   const byArea = new Map<string, number>();
   const bySource = new Map<string, number>();
@@ -704,7 +651,7 @@ export async function githubAccessSummary(
   return {
     generatedAt: new Date().toISOString(),
     hours,
-    buckets: keys.length,
+    buckets: stored.length,
     total,
     cooldown,
     byArea: summaryRows(byArea),

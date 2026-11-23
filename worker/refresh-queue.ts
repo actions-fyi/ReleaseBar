@@ -12,17 +12,13 @@ import {
   graphqlBackoffActive,
   sharedQuotaCooldown,
 } from "./github-audit.ts";
-import { tryJsonParse } from "./schemas.ts";
 import { sourceInstallationRegistryCovers, sourceInstallationToken } from "./auth-tokens.ts";
 import { markHotCacheStale } from "./build-progress.ts";
 import {
-  dashboardStorageTtlSeconds,
   githubGraphqlOwnerCountsOperation,
   githubGraphqlRepoDetailsOperation,
   refreshJobReservationTtlMs,
-  refreshOwnerCountCursorKey,
   refreshQueueDeliveryDelaySeconds,
-  refreshStateKey,
   schedulerBatchLimit,
   schedulerCountConcurrency,
   schedulerCountOwnerLimit,
@@ -52,9 +48,16 @@ import {
   takeLocalRefreshDirty,
   writeRefreshJob,
 } from "./refresh-targets.ts";
-import { processRefreshJobFallback } from "./scheduler.ts";
 import { invalidateDashboardTargets } from "./webhook-targets.ts";
 import type { BackgroundContext } from "./runtime.ts";
+import { sendQueueMessage } from "./store/queue.ts";
+import { releaseCoordinatedJob, reserveCoordinatedJob } from "./store/build-coordinator.ts";
+import {
+  readOwnerCountCursor,
+  readSchedulerState,
+  writeOwnerCountCursor,
+  writeSchedulerState,
+} from "./store/scheduler-state.ts";
 
 export function refreshQueueMessage(job: RefreshJob): RefreshJob {
   const { target: _target, ...message } = job;
@@ -97,7 +100,7 @@ export async function reserveRefreshJob(
     }
   };
   try {
-    return await env.BUILD_COORDINATOR.getByName(targetKey).reserveJob(jobId, dirtyOnConflict);
+    return await reserveCoordinatedJob(env, targetKey, jobId, dirtyOnConflict);
   } catch (error) {
     await auditSyncEvent(env, {
       event: "job_reservation_fallback",
@@ -125,7 +128,7 @@ export async function releaseRefreshJobReservation(
     }
   }
   try {
-    const dirty = await env.BUILD_COORDINATOR.getByName(targetKey).releaseJob(jobId, consumeDirty);
+    const dirty = await releaseCoordinatedJob(env, targetKey, jobId, consumeDirty);
     return dirty ?? localDirty;
   } catch (error) {
     await auditSyncEvent(env, {
@@ -181,23 +184,9 @@ export async function enqueueRefreshJob(
       jobId: job.id,
       reason,
     });
-    if (env.REFRESH_QUEUE) {
-      await env.REFRESH_QUEUE.send(refreshQueueMessage(job), {
-        delaySeconds,
-      });
-    } else {
-      context.waitUntil(
-        processRefreshJobFallback(job, env).then(
-          async (result) => {
-            await finishRefreshJobReservation(env, context, result);
-          },
-          async (error) => {
-            await finishRefreshJobReservation(env, context, job);
-            throw error;
-          },
-        ),
-      );
-    }
+    await sendQueueMessage(env, refreshQueueMessage(job), {
+      delaySeconds,
+    });
   } catch (error) {
     const now = new Date().toISOString();
     await writeRefreshJob(env, {
@@ -440,7 +429,7 @@ export async function refreshDueOwnerCounts(
         .filter(validOwnerSlug),
     ),
   ];
-  const cursor = await env.DASHBOARD_CACHE.get(refreshOwnerCountCursorKey);
+  const cursor = await readOwnerCountCursor(env);
   const cursorIndex = cursor ? owners.indexOf(cursor) : -1;
   const rotatedOwners =
     cursorIndex >= 0
@@ -460,7 +449,7 @@ export async function refreshDueOwnerCounts(
   }
   const lastDueOwner = due.at(-1);
   if (lastDueOwner !== undefined) {
-    await env.DASHBOARD_CACHE.put(refreshOwnerCountCursorKey, lastDueOwner);
+    await writeOwnerCountCursor(env, lastDueOwner);
   }
   let refreshed = 0;
   let deferred = 0;
@@ -489,16 +478,11 @@ export async function schedulerTick(
   cause: string,
   limit = schedulerBatchLimit,
 ): Promise<{ enqueued: number; considered: number; due: number }> {
-  const [stateRaw, jobs, dueOptions] = await Promise.all([
-    env.DASHBOARD_CACHE.get(refreshStateKey),
+  const [previousState, jobs, dueOptions] = await Promise.all([
+    readSchedulerState(env),
     listRefreshJobs(env),
     schedulerDueOptions(env),
   ]);
-  const previousState = stateRaw
-    ? tryJsonParse<{
-        targetCursor?: string;
-      }>(stateRaw, "refresh state")
-    : null;
   const page = await listRefreshTargets(env, schedulerTargetPageLimit, previousState?.targetCursor);
   const targets = page.targets;
   await backfillRefreshTargetIndexes(env, targets);
@@ -529,24 +513,20 @@ export async function schedulerTick(
       enqueued += 1;
     }
   }
-  await env.DASHBOARD_CACHE.put(
-    refreshStateKey,
-    JSON.stringify({
-      lastTickAt: new Date().toISOString(),
-      cause,
-      considered: targets.length,
-      due: due.length,
-      enqueued,
-      targetCursor: page.nextCursor,
-      nextDueAt:
-        targets
-          .map((target) => target.nextDueAt)
-          .filter((value) => safeIso(value) > 0)
-          .sort()[0] ?? null,
-      countRefresh,
-    }),
-    { expirationTtl: dashboardStorageTtlSeconds },
-  );
+  await writeSchedulerState(env, {
+    lastTickAt: new Date().toISOString(),
+    cause,
+    considered: targets.length,
+    due: due.length,
+    enqueued,
+    targetCursor: page.nextCursor,
+    nextDueAt:
+      targets
+        .map((target) => target.nextDueAt)
+        .filter((value) => safeIso(value) > 0)
+        .sort()[0] ?? null,
+    countRefresh,
+  });
   await auditScheduler(env, {
     event: "scheduler_tick",
     status: "ok",

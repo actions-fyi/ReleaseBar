@@ -602,7 +602,6 @@ export type SchedulerAdminPayload = {
     failedJobs: number;
     lastTickAt: string | null;
     nextDueAt: string | null;
-    queueConfigured: boolean;
   };
   targets: RefreshTarget[];
   jobs: RefreshJob[];

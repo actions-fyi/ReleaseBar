@@ -2,12 +2,7 @@ import { slugOwner, validOwnerSlug, validRepoSlug } from "../shared/dashboard.ts
 import type { ApiQuota, Project } from "../src/types.ts";
 import { workerFetch } from "./http.ts";
 import { type BackgroundContext, canonicalDomain } from "./runtime.ts";
-import {
-  gitHubCompareSchema,
-  gitHubReleaseSchema,
-  gitHubRepositorySchema,
-  tryJsonParse,
-} from "./schemas.ts";
+import { gitHubCompareSchema, gitHubReleaseSchema, gitHubRepositorySchema } from "./schemas.ts";
 import { initWasm, Resvg } from "@resvg/resvg-wasm";
 import * as v from "valibot";
 import {
@@ -36,6 +31,8 @@ import {
 } from "./release-summary.ts";
 import { freshnessForDetail, refreshRepoDetail } from "./repo-detail.ts";
 import { detailGitHubJson } from "./repo-github.ts";
+import { fetchAsset } from "./store/assets.ts";
+import { readCacheEntry, writeCacheEntry } from "./store/cache.ts";
 
 export function socialLabel(url: URL): string {
   if (url.pathname === "/_admin") return "ReleaseBar Admin";
@@ -158,21 +155,25 @@ export async function readSocialRepo(
   owner: string,
   repo: string,
 ): Promise<StoredSocialRepo | null> {
-  const raw = await env.DASHBOARD_CACHE.get(socialRepoCacheKey(owner, repo));
-  const parsed = raw ? tryJsonParse<StoredSocialRepo>(raw, `social repo ${owner}/${repo}`) : null;
+  const parsed = await readCacheEntry<StoredSocialRepo>(
+    env,
+    socialRepoCacheKey(owner, repo),
+    `social repo ${owner}/${repo}`,
+  );
   return parsed?.project?.fullName?.toLowerCase() === `${slugOwner(owner)}/${repo.toLowerCase()}`
     ? parsed
     : null;
 }
 
 export async function writeSocialRepo(env: Env, project: Project): Promise<void> {
-  await env.DASHBOARD_CACHE.put(
+  await writeCacheEntry(
+    env,
     socialRepoCacheKey(project.owner, project.name),
-    JSON.stringify({
+    {
       generatedAt: new Date().toISOString(),
       project,
-    } satisfies StoredSocialRepo),
-    { expirationTtl: dashboardStorageTtlSeconds },
+    } satisfies StoredSocialRepo,
+    dashboardStorageTtlSeconds,
   );
 }
 
@@ -356,19 +357,18 @@ export async function socialImage(card: SocialCard): Promise<Response> {
 }
 
 export async function socialRendererBytes(request: Request, env: Env): Promise<Uint8Array[]> {
-  const assets = env.ASSETS;
   if (socialRendererReady) return socialRendererReady;
   socialRendererReady = (async () => {
-    const fetchAsset = async (pathname: string) => {
+    const assetBytes = async (pathname: string) => {
       const url = new URL(request.url);
       url.pathname = pathname;
       url.search = "";
-      const response = await assets.fetch(new Request(url, request));
+      const response = await fetchAsset(env, new Request(url, request));
       if (!response.ok) throw new Error(`missing social renderer asset ${pathname}`);
       return new Uint8Array(await response.arrayBuffer());
     };
     const wasm = (await import("@resvg/resvg-wasm/index_bg.wasm")).default;
-    const fontBuffers = await Promise.all(socialRendererFontAssets.map(fetchAsset));
+    const fontBuffers = await Promise.all(socialRendererFontAssets.map(assetBytes));
     await initWasm(wasm);
     return fontBuffers;
   })().catch((error) => {

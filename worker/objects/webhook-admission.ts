@@ -1,9 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
 import { githubWebhookDeliveryLimit, githubWebhookDeliveryTtlMs } from "../config.ts";
 import { randomNonce } from "../crypto.ts";
+import { sendQueueMessage } from "../store/queue.ts";
 import { SerialQueue } from "./serial.ts";
 
-export type WebhookAdmissionResult = "queued" | "duplicate" | "unavailable";
+export type WebhookAdmissionResult = "queued" | "duplicate";
 
 // Admits each GitHub webhook delivery once: the single instance named by
 // `webhookAdmissionObjectName` remembers the deliveries it put on the queue, so a delivery GitHub
@@ -22,8 +23,7 @@ export class WebhookAdmission extends DurableObject<Env> {
     `);
   }
 
-  // Puts the delivery on the queue unless it is already there. "unavailable" when the Worker has
-  // no queue.
+  // Puts the delivery on the queue unless it is already there.
   //
   // The delivery is recorded only once the queue has it, so a failed send leaves it open to
   // GitHub's next attempt. Sending waits on the queue, which would let another call for the same
@@ -33,8 +33,6 @@ export class WebhookAdmission extends DurableObject<Env> {
     delivery: string,
     payload: Record<string, unknown>,
   ): Promise<WebhookAdmissionResult> {
-    const queue = this.env.REFRESH_QUEUE;
-    if (!queue) return Promise.resolve("unavailable");
     return this.#calls.run(async () => {
       const sql = this.ctx.storage.sql;
       const now = Date.now();
@@ -45,7 +43,7 @@ export class WebhookAdmission extends DurableObject<Env> {
       if (sql.exec("SELECT 1 FROM accepted_deliveries WHERE id = ?", delivery).toArray().length) {
         return "duplicate";
       }
-      await queue.send({
+      await sendQueueMessage(this.env, {
         kind: "github-webhook",
         id: randomNonce(),
         event,

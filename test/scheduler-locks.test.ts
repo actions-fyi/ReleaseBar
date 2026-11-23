@@ -1,6 +1,6 @@
 import { runInDurableObject } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { assert, expect, test, vi } from "vitest";
+import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
@@ -11,7 +11,6 @@ import {
 import { mutateRefreshTargetState } from "../worker/refresh-targets.ts";
 import {
   BuildCoordinator,
-  buildLocksHeld,
   kvStore,
   objectsUnavailable,
   RefreshTargetIndex,
@@ -238,83 +237,6 @@ test("owner count scheduling throttles recent incomplete scans", async () => {
   }
   expect(graphqlRequests).toBe(0);
   expect(await cache.get("refresh:owner-count-cursor:v1")).toBe(null);
-});
-
-test("worker scheduler terminalizes retryable refreshes when Queue is unavailable", async () => {
-  const key = dashboardCacheKey({
-    owner: "owner",
-    includeUnreleased: true,
-    includeReleaseData: true,
-    schemaVersion: 6,
-  });
-  const target: RefreshTarget = {
-    key,
-    kind: "dashboard",
-    owner: "owner",
-    owners: ["owner"],
-    repos: [],
-    includeReleaseData: true,
-    path: "/owner",
-    priority: 100,
-    lastSeenAt: "2026-06-11T06:00:00Z",
-    lastAttemptAt: null,
-    lastSuccessAt: null,
-    nextDueAt: "2026-06-11T06:00:00Z",
-    failureCount: 0,
-  };
-  const cached: DashboardPayload = {
-    ...testDashboard("owner", [testProject({ owner: "owner", name: "repo" })]),
-    cache: {
-      state: "partial",
-      stale: true,
-      capped: false,
-      repoLimit: 200,
-      generatedAt: new Date().toISOString(),
-      progress: {
-        scanned: 12,
-        limit: 200,
-        done: false,
-      },
-    },
-  };
-  const cache = kvStore({
-    [key]: JSON.stringify(cached),
-    [`refresh:target:v1:${key}`]: JSON.stringify(target),
-  });
-  buildLocksHeld();
-  const releases = vi.spyOn(BuildCoordinator.prototype, "releaseJob");
-  const waits: Promise<unknown>[] = [];
-  await (
-    worker as unknown as {
-      scheduled(
-        event: { cron: string },
-        env: unknown,
-        context: { waitUntil(promise: Promise<unknown>): void },
-      ): Promise<void>;
-    }
-  ).scheduled(
-    { cron: "*/15 * * * *" },
-    {
-      DASHBOARD_CACHE: cache,
-    },
-    { waitUntil: (promise) => waits.push(promise) },
-  );
-
-  while (waits.length > 0) {
-    await Promise.all(waits.splice(0));
-  }
-
-  const indexedJobs = await cache.list({ prefix: "refresh:jobs:v2:" });
-  expect(indexedJobs.keys.length).toBe(1);
-  const indexed = JSON.parse(
-    (await cache.get(indexedJobs.keys[0]?.name ?? "")) ?? "{}",
-  ) as RefreshJob;
-  const stored = JSON.parse(
-    (await cache.get(`refresh:job:v1:${indexed.id}`)) ?? "{}",
-  ) as RefreshJob;
-  expect(stored.status).toBe("failed");
-  expect(stored.error ?? "").toMatch(/Queue continuation unavailable/);
-  expect(releases).toHaveBeenCalled();
 });
 
 // Runs `check` with the clock moved forward.

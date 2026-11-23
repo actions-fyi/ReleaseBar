@@ -10,6 +10,7 @@ import {
   testDashboard,
   testEnv,
   testProject,
+  testQueue,
   worker,
 } from "./dashboard-test-harness.ts";
 
@@ -252,7 +253,8 @@ test("worker progressively resumes large owner dashboard builds from partial cac
       waitUntil.push(promise);
     },
   };
-  const env = { DASHBOARD_CACHE: kvStore() };
+  const queue = testQueue();
+  const env = { DASHBOARD_CACHE: kvStore(), REFRESH_QUEUE: queue };
 
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
@@ -307,7 +309,10 @@ test("worker progressively resumes large owner dashboard builds from partial cac
       25,
     );
 
-    await Promise.all(waitUntil.splice(0));
+    // The refresh jobs on the queue resume the build until it is done.
+    do {
+      await Promise.all(waitUntil.splice(0));
+    } while ((await queue.deliver(env, context)) > 0 || waitUntil.length > 0);
 
     const second = await worker.fetch(new Request("https://release.bar/api/big"), env, context);
     const secondBody = (await second.json()) as DashboardPayload;
@@ -521,7 +526,7 @@ test("worker resumes durable progress on cold metadata cache misses", async () =
   }
 });
 
-test("worker chains direct progressive continuation after a cold build timeout", async () => {
+test("worker continues a cold build through the queue after a cold build timeout", async () => {
   const originalFetch = globalThis.fetch;
   const originalSetTimeout = globalThis.setTimeout;
   const repos = Array.from({ length: 13 }, (_, index) => {
@@ -610,17 +615,20 @@ test("worker chains direct progressive continuation after a cold build timeout",
   };
 
   try {
+    const queue = testQueue();
+    const env = { DASHBOARD_CACHE: cache, REFRESH_QUEUE: queue };
+    const context = { waitUntil: (promise: Promise<unknown>) => void waits.push(promise) };
     const response = await worker.fetch(
       new Request("https://release.bar/api/slow?unreleased=false"),
-      { DASHBOARD_CACHE: cache },
-      { waitUntil: (promise) => waits.push(promise) },
+      env,
+      context,
     );
     expect(response.status).toBe(202);
     await firstRepoFetch;
     releaseFirstRepo?.();
-    while (waits.length > 0) {
+    do {
       await Promise.all(waits.splice(0));
-    }
+    } while ((await queue.deliver(env, context)) > 0 || waits.length > 0);
 
     const stored = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
     expect(stored.cache?.state).toBe("fresh");

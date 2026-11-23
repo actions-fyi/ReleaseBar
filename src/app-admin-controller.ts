@@ -106,7 +106,6 @@ export function createAdminController(context: AdminControllerContext) {
           generatedDetail: [
             `${numberFormat.format(body.status.dueTargets)} due in ${numberFormat.format(body.status.scannedTargets)}-target scan`,
             `${numberFormat.format(body.status.runningJobs)} running`,
-            body.status.queueConfigured ? "queue configured" : "direct fallback",
             unavailable.length > 0 ? `${unavailable.join(" and ")} data unavailable` : "",
           ]
             .filter(Boolean)

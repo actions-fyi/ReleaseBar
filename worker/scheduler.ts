@@ -7,15 +7,9 @@ import {
   sharedQuotaDeferUntil,
 } from "./github-audit.ts";
 import { canonicalDomain } from "./runtime.ts";
-import { tryJsonParse } from "./schemas.ts";
 import { resolveOwners } from "./app-shell.ts";
 import { sourceInstallationToken } from "./auth-tokens.ts";
-import {
-  adminTargetListLimit,
-  progressiveBuildBudgetMs,
-  queuedProgressiveBuildBudgetMs,
-  refreshStateKey,
-} from "./config.ts";
+import { adminTargetListLimit, queuedProgressiveBuildBudgetMs } from "./config.ts";
 import { errorMessage, isAbortError, readCached } from "./dashboard-cache.ts";
 import { continueProgressiveBuild } from "./dashboard-rebuild.ts";
 import { safeIso } from "./owner-metadata-write.ts";
@@ -42,6 +36,7 @@ import {
   writeRefreshJobDelivery,
 } from "./refresh-targets.ts";
 import { dashboardRequest } from "./request-lock.ts";
+import { readSchedulerState } from "./store/scheduler-state.ts";
 
 export async function processRefreshJob(
   input: RefreshJob,
@@ -443,45 +438,14 @@ export async function failExhaustedRefreshJob(
   return failed;
 }
 
-export async function processRefreshJobFallback(input: RefreshJob, env: Env): Promise<RefreshJob> {
-  const result = await processRefreshJob(input, env, false, progressiveBuildBudgetMs);
-  if (result.status !== "queued") return result;
-  const now = new Date().toISOString();
-  const failed = {
-    ...result,
-    status: "failed" as const,
-    finishedAt: now,
-    updatedAt: now,
-    durationMs: null,
-    error: `${result.error ?? "refresh incomplete"}; Queue continuation unavailable`,
-  };
-  await writeRefreshJob(env, failed);
-  await auditSyncEvent(env, {
-    event: "job_failed",
-    targetKey: failed.targetKey,
-    jobId: failed.id,
-    status: "failed",
-    reason: failed.error,
-  });
-  return failed;
-}
-
 export async function schedulerAdminPayload(env: Env): Promise<SchedulerAdminPayload> {
-  const [inventory, jobs, events, stateRaw, dueOptions] = await Promise.all([
+  const [inventory, jobs, events, state, dueOptions] = await Promise.all([
     refreshTargetInventory(env),
     listRefreshJobs(env),
     listAuditEvents(env),
-    env.DASHBOARD_CACHE.get(refreshStateKey),
+    readSchedulerState(env),
     schedulerDueOptions(env),
   ]);
-  const state = stateRaw
-    ? tryJsonParse<{
-        lastTickAt?: string;
-        considered?: number;
-        due?: number;
-        nextDueAt?: string | null;
-      }>(stateRaw, "refresh state")
-    : null;
   const targets = inventory.targets;
   const activeTargetKeys = new Set(
     jobs.filter((job) => refreshJobActive(job)).map((job) => job.targetKey),
@@ -521,7 +485,6 @@ export async function schedulerAdminPayload(env: Env): Promise<SchedulerAdminPay
       failedJobs: jobs.filter((job) => job.status === "failed").length,
       lastTickAt: state?.lastTickAt ?? null,
       nextDueAt,
-      queueConfigured: Boolean(env.REFRESH_QUEUE),
     },
     targets: targets.sort((a, b) => safeIso(a.nextDueAt) - safeIso(b.nextDueAt)).slice(0, 120),
     jobs,

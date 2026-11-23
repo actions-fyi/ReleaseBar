@@ -13,31 +13,22 @@ import {
   type BackgroundContext,
   type GitHubWebhookFanoutJob,
   type GitHubWebhookJob,
-  refreshTargetIndexName,
 } from "./runtime.ts";
 import { tryJsonParse } from "./schemas.ts";
 import {
   adminTargetListLimit,
   dashboardCachePrefix,
-  dashboardStorageTtlSeconds,
   durableRefreshTargetEntryLimitBytes,
-  legacyRefreshJobIndexKey,
   localRefreshDirtyMarkers,
   localRefreshJobReservations,
   localRefreshReservationFallbackScope,
   refreshAuditListLimit,
-  refreshAuditPrefix,
   refreshJobActiveGraceMs,
-  refreshJobDeliveryPrefix,
-  refreshJobIndexPrefix,
   refreshJobListLimit,
-  refreshJobPrefix,
   refreshJobReservationTtlMs,
   refreshTargetIndexBackfillLimit,
-  refreshTargetIndexPrefix,
   refreshTargetIndexVersion,
   type RefreshTargetMutation,
-  refreshTargetPrefix,
   schedulerActiveRefreshMs,
   schedulerDormantRefreshMs,
   schedulerRecentViewMs,
@@ -54,14 +45,45 @@ import {
   readProfileSnapshot,
 } from "./dashboard-cache.ts";
 import { safeIso } from "./owner-metadata-write.ts";
+import { mutateCoordinatedTarget } from "./store/build-coordinator.ts";
+import { cacheIdentity } from "./store/cache.ts";
+import { rateLimitReached } from "./store/rate-limits.ts";
+import {
+  appendRefreshAuditEvent,
+  isAuditEvent,
+  listRefreshAuditEvents,
+  refreshAuditStorageKey,
+} from "./store/refresh-audit.ts";
+import {
+  indexRefreshJob,
+  listStoredRefreshJobDeliveries,
+  listStoredRefreshJobSnapshots,
+  readLegacyRefreshJobIds,
+  readStoredRefreshJob,
+  readStoredRefreshJobSnapshot,
+  refreshJobDeliveryStorageKey,
+  refreshJobIndexStorageKey,
+  refreshJobStorageKey,
+  writeRefreshJob,
+  writeRefreshJobDelivery,
+} from "./store/refresh-jobs.ts";
+import {
+  countStoredRefreshTargets,
+  deleteRefreshTarget,
+  listStoredRefreshTargets,
+  readStoredRefreshTarget,
+  refreshTargetIndexSource,
+  refreshTargetStorageKey,
+  removeIndexedRefreshTarget,
+  upsertIndexedRefreshTarget,
+  writeRefreshTarget,
+  writeRefreshTargetKeyIndex,
+} from "./store/refresh-targets.ts";
 
-export function refreshTargetStorageKey(key: string): string {
-  return `${refreshTargetPrefix}${key}`;
-}
-
-export function refreshTargetIndexSource(kind: "owner" | "repo", source: string): string {
-  return `${refreshTargetIndexPrefix}${kind}:${encodeURIComponent(source.toLowerCase())}:`;
-}
+export { refreshTargetIndexSource, refreshTargetStorageKey, writeRefreshTarget };
+export { indexRefreshJob, writeRefreshJob, writeRefreshJobDelivery };
+export { refreshJobDeliveryStorageKey, refreshJobIndexStorageKey, refreshJobStorageKey };
+export { isAuditEvent, refreshAuditStorageKey };
 
 export function refreshTargetSources(target: RefreshTarget): Array<{
   kind: "owner" | "repo";
@@ -90,12 +112,11 @@ export async function writeDurableRefreshTargetIndexes(
 ): Promise<RefreshTargetIndexWrite> {
   try {
     const writes = await Promise.all(
-      refreshTargetSources(target).map(async ({ kind, value }) => {
-        const index = env.REFRESH_TARGET_INDEX.getByName(refreshTargetIndexName(kind, value));
+      refreshTargetSources(target).map(async (source) => {
         try {
-          return { index, result: await index.upsert(target) };
+          return { source, result: await upsertIndexedRefreshTarget(env, source, target) };
         } catch {
-          return { index, result: null };
+          return { source, result: null };
         }
       }),
     );
@@ -106,8 +127,8 @@ export async function writeDurableRefreshTargetIndexes(
     await Promise.allSettled(
       writes
         .filter(({ result }) => result === "created")
-        .map(async ({ index }) => {
-          await index.remove(target.key);
+        .map(async ({ source }) => {
+          await removeIndexedRefreshTarget(env, source, target.key);
         }),
     );
     return writes.some(({ result }) => result === "full") ? "rejected" : "unavailable";
@@ -121,18 +142,9 @@ export async function writeRefreshTargetIndexes(
   target: RefreshTarget,
 ): Promise<RefreshTargetIndexWrite> {
   const sources = refreshTargetSources(target);
-  const hash = (await sha256Base64Url(target.key)).slice(0, 32);
   const durableIndex = await writeDurableRefreshTargetIndexes(env, target);
   if (durableIndex === "rejected") return durableIndex;
-  await Promise.all(
-    sources.map(({ kind, value }) =>
-      env.DASHBOARD_CACHE.put(
-        `${refreshTargetIndexSource(kind, value)}${hash}`,
-        JSON.stringify(target.key),
-        { expirationTtl: dashboardStorageTtlSeconds },
-      ),
-    ),
-  );
+  await writeRefreshTargetKeyIndex(env, sources, target.key);
   return durableIndex;
 }
 
@@ -147,7 +159,7 @@ export async function persistRefreshTargetWithIndexes(
     indexWrite === "rejected" ||
     (options.requireAdmission === true && indexWrite === "unavailable");
   if (admissionFailed) {
-    await env.DASHBOARD_CACHE.delete(refreshTargetStorageKey(target.key));
+    await deleteRefreshTarget(env, target.key);
     return { target: { ...target, indexVersion: undefined }, persisted: false };
   }
   const persisted = indexWrite === "accepted" ? indexed : { ...target, indexVersion: undefined };
@@ -157,22 +169,6 @@ export async function persistRefreshTargetWithIndexes(
 
 export function currentDashboardCacheKey(key: string): boolean {
   return key.startsWith(dashboardCachePrefix);
-}
-
-export function refreshJobStorageKey(id: string): string {
-  return `${refreshJobPrefix}${id}`;
-}
-
-export function refreshJobIndexStorageKey(job: Pick<RefreshJob, "id" | "createdAt">): string {
-  const timestamp = safeIso(job.createdAt) || Date.now();
-  const reverseTimestamp = String(Number.MAX_SAFE_INTEGER - timestamp).padStart(16, "0");
-  return `${refreshJobIndexPrefix}${reverseTimestamp}:${job.id}`;
-}
-
-export function refreshJobDeliveryStorageKey(job: RefreshJob): string {
-  const timestamp = safeIso(job.updatedAt) || Date.now();
-  const reverseTimestamp = String(Number.MAX_SAFE_INTEGER - timestamp).padStart(16, "0");
-  return `${refreshJobDeliveryPrefix}${reverseTimestamp}:${job.id}:${job.attempts}`;
 }
 
 export function jitterMs(seed: string, windowMs: number): number {
@@ -301,7 +297,7 @@ export function refreshJobActive(job: RefreshJob, now = Date.now()): boolean {
 export function localRefreshJobReservationStore(
   env: Env,
 ): Map<string, StoredRefreshJobReservation> {
-  const scope = (env.DASHBOARD_CACHE as object | undefined) ?? localRefreshReservationFallbackScope;
+  const scope = cacheIdentity(env) ?? localRefreshReservationFallbackScope;
   const existing = localRefreshJobReservations.get(scope);
   if (existing) return existing;
   const created = new Map<string, StoredRefreshJobReservation>();
@@ -310,7 +306,7 @@ export function localRefreshJobReservationStore(
 }
 
 export function localRefreshDirtyMarkerStore(env: Env): Map<string, StoredRefreshDirty> {
-  const scope = (env.DASHBOARD_CACHE as object | undefined) ?? localRefreshReservationFallbackScope;
+  const scope = cacheIdentity(env) ?? localRefreshReservationFallbackScope;
   const existing = localRefreshDirtyMarkers.get(scope);
   if (existing) return existing;
   const created = new Map<string, StoredRefreshDirty>();
@@ -338,22 +334,9 @@ export function takeLocalRefreshDirty(env: Env, targetKey: string): StoredRefres
   return dirty;
 }
 
-export function isAuditEvent(value: unknown): value is SchedulerAuditEvent {
-  const event = value as SchedulerAuditEvent | null;
-  return Boolean(event && typeof event.id === "string" && typeof event.event === "string");
-}
-
 export async function readRefreshTarget(env: Env, key: string): Promise<RefreshTarget | null> {
-  const raw = await env.DASHBOARD_CACHE.get(refreshTargetStorageKey(key));
-  if (!raw) return null;
-  const parsed = tryJsonParse<RefreshTarget>(raw, `refresh target ${key}`);
+  const parsed = await readStoredRefreshTarget(env, key);
   return isRefreshTarget(parsed) ? parsed : null;
-}
-
-export async function writeRefreshTarget(env: Env, target: RefreshTarget): Promise<void> {
-  await env.DASHBOARD_CACHE.put(refreshTargetStorageKey(target.key), JSON.stringify(target), {
-    expirationTtl: dashboardStorageTtlSeconds,
-  });
 }
 
 export function newerIso<T extends string | null>(left: T, right: T): T {
@@ -443,16 +426,17 @@ export async function mutateRefreshTargetState(
   const observedCurrent = mutation.kind === "observe" ? await readRefreshTarget(env, key) : null;
   const requireAdmission = mutation.kind === "observe" && observedCurrent === null;
   try {
-    const coordinator = env.BUILD_COORDINATOR.getByName(key);
     // The object answers null when it has no state for the target yet: it then needs what the
     // cache holds, which an observation has read already.
     const updated =
-      (await coordinator.mutateTarget(
+      (await mutateCoordinatedTarget(
+        env,
+        key,
         snapshot,
         mutation,
         mutation.kind === "observe" ? { current: observedCurrent } : undefined,
       )) ??
-      (await coordinator.mutateTarget(snapshot, mutation, {
+      (await mutateCoordinatedTarget(env, key, snapshot, mutation, {
         current: await readRefreshTarget(env, key),
       }));
     if (isRefreshTarget(updated)) {
@@ -517,20 +501,12 @@ export async function listRefreshTargets(
   limit = schedulerTargetPageLimit,
   cursor?: string,
 ): Promise<{ targets: RefreshTarget[]; nextCursor?: string }> {
-  const page = await env.DASHBOARD_CACHE.list({
-    prefix: `${refreshTargetPrefix}${dashboardCachePrefix}`,
-    limit,
-    ...(cursor ? { cursor } : {}),
-  });
-  const targets = await mapConcurrent(page.keys, 16, async (key) => {
-    const raw = await env.DASHBOARD_CACHE.get(key.name);
-    if (!raw) return null;
-    const target = tryJsonParse<RefreshTarget>(raw, `refresh target ${key.name}`);
-    return isRefreshTarget(target) && currentDashboardCacheKey(target.key) ? target : null;
-  });
+  const page = await listStoredRefreshTargets(env, "current", limit, cursor);
   return {
-    targets: targets.filter((target): target is RefreshTarget => target !== null),
-    nextCursor: page.list_complete ? undefined : page.cursor,
+    targets: page.targets.filter(
+      (target) => isRefreshTarget(target) && currentDashboardCacheKey(target.key),
+    ),
+    nextCursor: page.nextCursor,
   };
 }
 
@@ -538,31 +514,12 @@ export async function refreshTargetInventory(
   env: Env,
   sampleLimit = adminTargetListLimit,
 ): Promise<{ total: number; targets: RefreshTarget[] }> {
-  const sampleKeys: string[] = [];
-  let total = 0;
-  let cursor: string | undefined;
-  do {
-    const page = await env.DASHBOARD_CACHE.list({
-      prefix: `${refreshTargetPrefix}${dashboardCachePrefix}`,
-      limit: 1000,
-      ...(cursor ? { cursor } : {}),
-    });
-    total += page.keys.length;
-    for (const key of page.keys) {
-      if (sampleKeys.length >= sampleLimit) break;
-      sampleKeys.push(key.name);
-    }
-    cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor);
-  const targets = await mapConcurrent(sampleKeys, 16, async (key) => {
-    const raw = await env.DASHBOARD_CACHE.get(key);
-    if (!raw) return null;
-    const target = tryJsonParse<RefreshTarget>(raw, `refresh target ${key}`);
-    return isRefreshTarget(target) && currentDashboardCacheKey(target.key) ? target : null;
-  });
+  const { total, targets } = await countStoredRefreshTargets(env, sampleLimit);
   return {
     total,
-    targets: targets.filter((target): target is RefreshTarget => target !== null),
+    targets: targets.filter(
+      (target) => isRefreshTarget(target) && currentDashboardCacheKey(target.key),
+    ),
   };
 }
 
@@ -575,83 +532,37 @@ export async function backfillRefreshTargetIndexes(
   await mapConcurrent(batch, 4, (target) => persistRefreshTargetWithIndexes(env, target));
 }
 
-export async function readStringList(env: Env, key: string): Promise<string[]> {
-  const raw = await env.DASHBOARD_CACHE.get(key);
-  if (!raw) return [];
-  const parsed = tryJsonParse<string[]>(raw, key);
-  return Array.isArray(parsed)
-    ? parsed.filter((item): item is string => typeof item === "string")
-    : [];
-}
-
-export async function writeRefreshJob(env: Env, job: RefreshJob): Promise<void> {
-  await env.DASHBOARD_CACHE.put(refreshJobStorageKey(job.id), JSON.stringify(job), {
-    expirationTtl: 14 * 24 * 60 * 60,
-  });
-}
-
-export async function writeRefreshJobDelivery(env: Env, job: RefreshJob): Promise<void> {
-  await env.DASHBOARD_CACHE.put(refreshJobDeliveryStorageKey(job), JSON.stringify(job), {
-    expirationTtl: 14 * 24 * 60 * 60,
-  });
-}
-
-export async function indexRefreshJob(env: Env, job: RefreshJob): Promise<void> {
-  await env.DASHBOARD_CACHE.put(refreshJobIndexStorageKey(job), JSON.stringify(job), {
-    expirationTtl: 14 * 24 * 60 * 60,
-  });
-}
-
 export async function readRefreshJobSnapshot(env: Env, key: string): Promise<RefreshJob | null> {
-  if (!key.startsWith(refreshJobIndexPrefix)) return null;
-  const raw = await env.DASHBOARD_CACHE.get(key);
-  if (!raw) return null;
-  const parsed = tryJsonParse<RefreshJob>(raw, `refresh job snapshot ${key}`);
+  const parsed = await readStoredRefreshJobSnapshot(env, key);
   return isRefreshJob(parsed) ? parsed : null;
 }
 
 export async function readRefreshJob(env: Env, id: string): Promise<RefreshJob | null> {
-  const raw = await env.DASHBOARD_CACHE.get(refreshJobStorageKey(id));
-  if (!raw) return null;
-  const parsed = tryJsonParse<RefreshJob>(raw, `refresh job ${id}`);
+  const parsed = await readStoredRefreshJob(env, id);
   return isRefreshJob(parsed) ? parsed : null;
 }
 
 export async function listRefreshJobs(env: Env): Promise<RefreshJob[]> {
   const jobs = new Map<string, RefreshJob>();
-  const [page, deliveryPage] = await Promise.all([
-    env.DASHBOARD_CACHE.list({
-      prefix: refreshJobIndexPrefix,
-      limit: refreshJobListLimit,
-    }),
-    env.DASHBOARD_CACHE.list({
-      prefix: refreshJobDeliveryPrefix,
-      limit: refreshJobListLimit,
-    }),
+  const [snapshots, deliveries] = await Promise.all([
+    listStoredRefreshJobSnapshots(env),
+    listStoredRefreshJobDeliveries(env),
   ]);
   await Promise.all(
-    page.keys.slice(0, refreshJobListLimit).map(async (key) => {
-      const indexedRaw = await env.DASHBOARD_CACHE.get(key.name);
-      if (!indexedRaw) return;
-      const indexed = tryJsonParse<RefreshJob>(indexedRaw, `refresh job index ${key.name}`);
+    snapshots.map(async (indexed) => {
       if (!isRefreshJob(indexed)) return;
       jobs.set(indexed.id, (await readRefreshJob(env, indexed.id)) ?? indexed);
     }),
   );
-  await Promise.all(
-    deliveryPage.keys.slice(0, refreshJobListLimit).map(async (key) => {
-      const raw = await env.DASHBOARD_CACHE.get(key.name);
-      if (!raw) return;
-      const delivery = tryJsonParse<RefreshJob>(raw, `refresh job delivery ${key.name}`);
-      if (!isRefreshJob(delivery)) return;
-      const current = jobs.get(delivery.id);
-      if (!current || safeIso(delivery.updatedAt) > safeIso(current.updatedAt)) {
-        jobs.set(delivery.id, delivery);
-      }
-    }),
-  );
+  for (const delivery of deliveries) {
+    if (!isRefreshJob(delivery)) continue;
+    const current = jobs.get(delivery.id);
+    if (!current || safeIso(delivery.updatedAt) > safeIso(current.updatedAt)) {
+      jobs.set(delivery.id, delivery);
+    }
+  }
   if (jobs.size < refreshJobListLimit) {
-    const legacyIds = await readStringList(env, legacyRefreshJobIndexKey);
+    const legacyIds = await readLegacyRefreshJobIds(env);
     await Promise.all(
       legacyIds.slice(0, refreshJobListLimit - jobs.size).map(async (id) => {
         const job = await readRefreshJob(env, id);
@@ -674,9 +585,7 @@ export async function auditScheduler(
     ...event,
   };
   console.log(JSON.stringify({ area: "scheduler", ...item }));
-  await env.DASHBOARD_CACHE.put(refreshAuditStorageKey(item), JSON.stringify(item), {
-    expirationTtl: 14 * 24 * 60 * 60,
-  });
+  await appendRefreshAuditEvent(env, item);
 }
 
 export function dashboardSyncDetail(payload: DashboardPayload | null, extra = ""): string {
@@ -759,13 +668,7 @@ export async function clientTimingRateLimited(request: Request, env: Env): Promi
     "unknown";
   const minute = Math.floor(Date.now() / 60000);
   const id = (await sha256Base64Url(client)).slice(0, 16);
-  const key = `client:timing:rate:v1:${id}:${minute}`;
-  const current = Number.parseInt((await env.DASHBOARD_CACHE.get(key)) ?? "0", 10);
-  if (Number.isFinite(current) && current >= 30) return true;
-  await env.DASHBOARD_CACHE.put(key, String((Number.isFinite(current) ? current : 0) + 1), {
-    expirationTtl: 120,
-  });
-  return false;
+  return rateLimitReached(env, "client-timing", id, minute, 30);
 }
 
 export async function authInstallCallbackRateLimited(request: Request, env: Env): Promise<boolean> {
@@ -777,13 +680,7 @@ export async function authInstallCallbackRateLimited(request: Request, env: Env)
     "unknown";
   const minute = Math.floor(Date.now() / 60000);
   const id = (await sha256Base64Url(client)).slice(0, 16);
-  const key = `auth:install-callback:rate:v1:${id}:${minute}`;
-  const current = Number.parseInt((await env.DASHBOARD_CACHE.get(key)) ?? "0", 10);
-  if (Number.isFinite(current) && current >= 6) return true;
-  await env.DASHBOARD_CACHE.put(key, String((Number.isFinite(current) ? current : 0) + 1), {
-    expirationTtl: 120,
-  });
-  return false;
+  return rateLimitReached(env, "install-callback", id, minute, 6);
 }
 
 export async function clientTimingResponse(
@@ -822,31 +719,8 @@ export async function clientTimingResponse(
   return jsonResponse({ ok: true }, 202, { "cache-control": "no-store" });
 }
 
-export function refreshAuditStorageKey(event: Pick<SchedulerAuditEvent, "id" | "at">): string {
-  const timestamp = safeIso(event.at) || Date.now();
-  const reverseTimestamp = String(Number.MAX_SAFE_INTEGER - timestamp).padStart(16, "0");
-  return `${refreshAuditPrefix}${reverseTimestamp}:${event.id}`;
-}
-
-export async function listCurrentAuditEvents(env: Env): Promise<SchedulerAuditEvent[]> {
-  const events: SchedulerAuditEvent[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await env.DASHBOARD_CACHE.list({
-      prefix: refreshAuditPrefix,
-      limit: Math.min(1000, refreshAuditListLimit - events.length),
-      ...(cursor ? { cursor } : {}),
-    });
-    for (const key of page.keys) {
-      const raw = await env.DASHBOARD_CACHE.get(key.name);
-      if (!raw) continue;
-      const parsed = tryJsonParse<SchedulerAuditEvent>(raw, `refresh audit ${key.name}`);
-      if (isAuditEvent(parsed)) events.push(parsed);
-      if (events.length >= refreshAuditListLimit) break;
-    }
-    cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor && events.length < refreshAuditListLimit);
-  return events;
+export function listCurrentAuditEvents(env: Env): Promise<SchedulerAuditEvent[]> {
+  return listRefreshAuditEvents(env, refreshAuditListLimit);
 }
 
 export async function listAuditEvents(env: Env): Promise<SchedulerAuditEvent[]> {

@@ -38,7 +38,6 @@ import {
   type GitHubUserRepository,
   gitHubUserRepositoryListSchema,
   safeJsonParse,
-  tryJsonParse,
 } from "./schemas.ts";
 import type { InferOutput } from "valibot";
 import { buildTrustProfile } from "./audience.ts";
@@ -54,6 +53,7 @@ import { isGitHubRateLimit } from "./dashboard-cache.ts";
 import { acquireBuildLock } from "./dashboard-rebuild.ts";
 import { privateRepositoryNames } from "./owner-metadata-read.ts";
 import { detailGitHubJson, detailGitHubJsonWithHeaders } from "./repo-github.ts";
+import { readCacheEntry, readCacheText, writeCacheEntry } from "./store/cache.ts";
 
 export function lastPageFromLink(link: string | null): number | null {
   if (!link) return null;
@@ -135,8 +135,7 @@ export function repoAudienceAgeMs(payload: RepoAudiencePayload | null): number {
 }
 
 export async function readRepoAudience(env: Env, key: string): Promise<RepoAudiencePayload | null> {
-  const raw = await env.DASHBOARD_CACHE.get(key);
-  const payload = raw ? tryJsonParse<RepoAudiencePayload>(raw, `repo audience ${key}`) : null;
+  const payload = await readCacheEntry<RepoAudiencePayload>(env, key, `repo audience ${key}`);
   return payload ? publicRepoAudience(env, payload) : null;
 }
 
@@ -145,27 +144,23 @@ export async function writeRepoAudience(
   key: string,
   payload: RepoAudiencePayload,
 ): Promise<void> {
-  await env.DASHBOARD_CACHE.put(key, JSON.stringify(payload), {
-    expirationTtl: dashboardStorageTtlSeconds,
-  });
+  await writeCacheEntry(env, key, payload, dashboardStorageTtlSeconds);
 }
 
 export async function readAudienceUser(env: Env, login: string): Promise<GitHubUserProfile | null> {
-  const raw = await env.DASHBOARD_CACHE.get(repoAudienceUserKey(login));
+  const raw = await readCacheText(env, repoAudienceUserKey(login));
   return raw ? safeJsonParse(gitHubUserProfileSchema, raw, `audience user ${login}`) : null;
 }
 
 export async function writeAudienceUser(env: Env, user: GitHubUserProfile): Promise<void> {
-  await env.DASHBOARD_CACHE.put(repoAudienceUserKey(user.login), JSON.stringify(user), {
-    expirationTtl: repoAudienceUserTtlSeconds,
-  });
+  await writeCacheEntry(env, repoAudienceUserKey(user.login), user, repoAudienceUserTtlSeconds);
 }
 
 export async function readAudienceUserOrgs(
   env: Env,
   login: string,
 ): Promise<GitHubUserOrganization[] | null> {
-  const raw = await env.DASHBOARD_CACHE.get(repoAudienceUserOrgsKey(login));
+  const raw = await readCacheText(env, repoAudienceUserOrgsKey(login));
   return raw
     ? safeJsonParse(gitHubUserOrganizationListSchema, raw, `audience user orgs ${login}`)
     : null;
@@ -176,16 +171,14 @@ export async function writeAudienceUserOrgs(
   login: string,
   orgs: GitHubUserOrganization[],
 ): Promise<void> {
-  await env.DASHBOARD_CACHE.put(repoAudienceUserOrgsKey(login), JSON.stringify(orgs), {
-    expirationTtl: repoAudienceUserTtlSeconds,
-  });
+  await writeCacheEntry(env, repoAudienceUserOrgsKey(login), orgs, repoAudienceUserTtlSeconds);
 }
 
 export async function readAudienceUserRepos(
   env: Env,
   login: string,
 ): Promise<GitHubUserRepository[] | null> {
-  const raw = await env.DASHBOARD_CACHE.get(repoAudienceUserReposKey(login));
+  const raw = await readCacheText(env, repoAudienceUserReposKey(login));
   const repos = raw
     ? safeJsonParse(gitHubUserRepositoryListSchema, raw, `audience user repos ${login}`)
     : null;
@@ -199,9 +192,12 @@ export async function writeAudienceUserRepos(
 ): Promise<void> {
   const publicRepos = await publicAudienceRepositories(env, repos);
   if (!publicRepos) return;
-  await env.DASHBOARD_CACHE.put(repoAudienceUserReposKey(login), JSON.stringify(publicRepos), {
-    expirationTtl: repoAudienceUserTtlSeconds,
-  });
+  await writeCacheEntry(
+    env,
+    repoAudienceUserReposKey(login),
+    publicRepos,
+    repoAudienceUserTtlSeconds,
+  );
 }
 
 export async function audienceUserProfile(
@@ -707,8 +703,7 @@ export function trustProfileAgeMs(payload: TrustProfilePayload | null): number {
 }
 
 export async function readTrustProfile(env: Env, key: string): Promise<TrustProfilePayload | null> {
-  const raw = await env.DASHBOARD_CACHE.get(key);
-  const payload = raw ? tryJsonParse<TrustProfilePayload>(raw, `trust profile ${key}`) : null;
+  const payload = await readCacheEntry<TrustProfilePayload>(env, key, `trust profile ${key}`);
   return payload ? publicTrustProfile(env, payload) : null;
 }
 
@@ -809,9 +804,7 @@ export async function writeTrustProfile(
 ): Promise<void> {
   const publicPayload = await publicTrustProfile(env, payload);
   if (!publicPayload) return;
-  await env.DASHBOARD_CACHE.put(key, JSON.stringify(publicPayload), {
-    expirationTtl: dashboardStorageTtlSeconds,
-  });
+  await writeCacheEntry(env, key, publicPayload, dashboardStorageTtlSeconds);
 }
 
 export async function refreshTrustProfile(

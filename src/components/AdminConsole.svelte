@@ -84,7 +84,7 @@
     <div class="admin-toolbar">
       <div>
         <span class="panel-kicker">scheduler</span>
-        <strong>{admin.status.queueConfigured ? "queue backed" : "direct fallback"}</strong>
+        <strong>queue backed</strong>
         <small>
           last tick {adminAge(admin.status.lastTickAt)} · next due {adminAge(admin.status.nextDueAt)}
         </small>

@@ -346,18 +346,27 @@ test("summary rate limits come from Worker vars, within their bounds", () => {
 });
 
 test("deploy config sets the summary rate limits and rejects values out of bounds", () => {
+  // Every deploy names its D1 database.
+  const d1 = { RELEASEBAR_D1_DATABASE_ID: "01234567-89ab-cdef-0123-456789abcdef" };
   const config = deployConfig(
     {},
-    { RELEASEBAR_SUMMARY_USER_HOURLY_LIMIT: " 5 ", RELEASEBAR_SUMMARY_GLOBAL_DAILY_LIMIT: "200" },
+    {
+      ...d1,
+      RELEASEBAR_SUMMARY_USER_HOURLY_LIMIT: " 5 ",
+      RELEASEBAR_SUMMARY_GLOBAL_DAILY_LIMIT: "200",
+    },
   );
   expect(config.vars).toStrictEqual({
     SUMMARY_USER_HOURLY_LIMIT: "5",
     SUMMARY_GLOBAL_DAILY_LIMIT: "200",
   });
   for (const value of ["0", "1001", "1,000", "-1", "1e2"]) {
-    expect(() => deployConfig({}, { RELEASEBAR_SUMMARY_USER_HOURLY_LIMIT: value }), value).toThrow(
-      "from 1 to 1000",
-    );
+    expect(
+      () => deployConfig({}, { ...d1, RELEASEBAR_SUMMARY_USER_HOURLY_LIMIT: value }),
+      value,
+    ).toThrow("from 1 to 1000");
   }
-  expect(() => deployConfig({}, { RELEASEBAR_SUMMARY_GLOBAL_DAILY_LIMIT: "100001" })).toThrow();
+  expect(() =>
+    deployConfig({}, { ...d1, RELEASEBAR_SUMMARY_GLOBAL_DAILY_LIMIT: "100001" }),
+  ).toThrow("from 1 to 100000");
 });

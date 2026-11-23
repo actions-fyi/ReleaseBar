@@ -27,6 +27,7 @@ import {
 import { schedulerTick } from "./refresh-queue.ts";
 import { dashboardRequest } from "./request-lock.ts";
 import { schedulerAdminPayload } from "./scheduler.ts";
+import { deleteCacheEntry } from "./store/cache.ts";
 
 export function unresolvedDashboardRequest(
   ownerSlugs: string[],
@@ -165,7 +166,7 @@ export async function profileResponse(request: Request, env: Env): Promise<Respo
   }
   if (request.method === "DELETE") {
     await deleteProfile(env, owner);
-    await env.DASHBOARD_CACHE.delete(hotCacheKey);
+    await deleteCacheEntry(env, hotCacheKey);
     return jsonResponse({ profile: null, canEdit: true }, 200, { "cache-control": "no-store" });
   }
   if (request.method !== "POST") {
@@ -182,7 +183,7 @@ export async function profileResponse(request: Request, env: Env): Promise<Respo
   try {
     const profile = profileFromInput(owner, input, session.user);
     await writeProfile(env, profile);
-    await env.DASHBOARD_CACHE.delete(hotCacheKey);
+    await deleteCacheEntry(env, hotCacheKey);
     return jsonResponse({ profile, canEdit: true }, 200, { "cache-control": "no-store" });
   } catch (error) {
     return jsonResponse({ error: errorMessage(error) }, 400, { "cache-control": "no-store" });

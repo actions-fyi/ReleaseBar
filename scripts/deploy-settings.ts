@@ -6,6 +6,4 @@ import { deployConfig, deploySettingNames } from "../shared/deploy-config.ts";
 deployConfig({}, process.env);
 
 const applied = deploySettingNames.filter((name) => process.env[name]?.trim());
-console.log(
-  `deploying with ${applied.length > 0 ? applied.join(", ") : "no deployment settings (RELEASEBAR_ALLOW_GENERIC)"}`,
-);
+console.log(`deploying with ${applied.join(", ")}`);
