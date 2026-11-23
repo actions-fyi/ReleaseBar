@@ -5,10 +5,10 @@ ReleaseBar keeps public dashboard data warm with a small scheduler on the Cloudf
 ## Runtime Pieces
 
 - Cloudflare cron runs every 15 minutes from `wrangler.jsonc`.
-- `DASHBOARD_CACHE` stores compact refresh targets, shared owner metadata/count snapshots, immutable profile and per-job snapshots, latest job states, visible dashboard snapshots, audit events, and scheduler state.
+- The D1 database `DB` stores the refresh targets with the index of the owners and repositories each one shows, the refresh jobs with their immutable snapshots and delivery records, the immutable profile snapshots, and the scheduler state (`migrations/0001_refresh.sql`, `docs/data-model.md`).
+- `DASHBOARD_CACHE` stores shared owner metadata/count snapshots, visible dashboard snapshots, and audit events.
 - Durable Objects hold what must be checked and changed in one step. Each is a class with typed RPC methods and SQLite storage, under `worker/objects/`:
   - `BUILD_COORDINATOR` (`BuildCoordinator`), one per dashboard: the build lock, the active job reservation with its dirty marker, the refresh-target failure state, and the strongly consistent progressive-scan checkpoint.
-  - `REFRESH_TARGET_INDEX` (`RefreshTargetIndex`), one per owner and per repository: the dashboards that show it, which a webhook refreshes.
   - `OWNER_METADATA` (`OwnerMetadata`), one per owner: the owner's metadata snapshot, including repositories that turned private or were removed.
   - `WEBHOOK_ADMISSION` (`WebhookAdmission`), a single one: the GitHub deliveries already put on the queue.
   - `WEBHOOK_PROCESSOR` (`WebhookProcessor`), one per owner: pending and processed deliveries, and the lease of the job that drains them.
@@ -36,12 +36,15 @@ Every cron tick first refreshes lean issue, pull request, archive, and activity 
 
 The same tick schedules deep dashboard work:
 
-1. Lists one rotating page of up to 120 current-schema refresh targets, ignoring obsolete cache-schema records.
+1. Reads one rotating page of up to 120 current-schema refresh targets in key order, ignoring obsolete cache-schema records. The cursor is the last key of the page.
 2. Reads the cached dashboard payload for each target.
 3. Marks a target due when the cache is missing, expired, errored, incomplete, or past `nextDueAt`.
 4. Skips targets that already have a queued or running job.
 5. Sorts due work by target priority, then oldest due time.
 6. Enqueues up to 20 jobs per tick.
+7. Deletes up to 500 rows of each kind that are past their lifetime: targets nobody has seen for 90 days, jobs and delivery records not updated for 14 days, profile snapshots older than 90 days. D1 keeps a row until it is deleted.
+
+A tick over a full page sends D1 eleven statements, plus one insert for each job it enqueues: five reads (the last tick's state, the newest jobs, the newest delivery records, the page of targets, the owner-count cursor), the write of its state, and five deletions of expired rows.
 
 Successful targets get their next refresh time based on recent use:
 
@@ -86,7 +89,7 @@ This means popular or installed accounts can refresh without burning the shared 
 - sharded GitHub token-use counters from the last 24 hours, also available at `/api/admin/github-access`
 - recent targets, jobs, and audit events
 
-Scheduler state, GitHub access, and installation/auth summaries load through separate admin requests so a slow optional section cannot take down the console. Target and installation totals come from lightweight key listings; their detail rows and auth counters are bounded samples. Due counts describe the most recent bounded scheduler scan rather than forcing the admin request to read every target and dashboard cache.
+Scheduler state, GitHub access, and installation/auth summaries load through separate admin requests so a slow optional section cannot take down the console. The target total is a count query and the listed targets are the ones due soonest; installation totals come from lightweight key listings, and their detail rows and auth counters are bounded samples. Due counts describe the most recent bounded scheduler scan rather than forcing the admin request to read every target and dashboard cache.
 
 Audit events are stored in KV and logged to Worker logs with `area: "scheduler"`. Keep audit detail short and structured so production logs remain searchable.
 
@@ -94,7 +97,7 @@ Audit events are stored in KV and logged to Worker logs with `area: "scheduler"`
 
 `POST /api/github/webhook` accepts payloads up to 2 MiB, verifies `X-Hub-Signature-256` with `GITHUB_WEBHOOK_SECRET`, accepts GitHub setup pings, and serializes delivery admission through the `WEBHOOK_ADMISSION` Durable Object. It acknowledges event deliveries only after the payload is durably written to Cloudflare Queue. Queue consumers persist pending work in a per-owner Durable Object, elect one delivery to drain it, and deduplicate accepted and processed `X-GitHub-Delivery` values for 24 hours.
 
-Push and release deliveries eagerly invalidate and refresh release-enabled dashboard variants viewed in the last 24 hours. Up to 25 recently viewed matching candidates from the available target indexes enter an immediate batch; fanout waits for its Durable Object reservations to drain, capped at two minutes from batch creation, before remaining recent variants follow through a stable key-ordered sweep that cannot skip targets when view timestamps change. Older variants refresh when viewed. Repository privacy and archive events still fan out across every matching target so removal and visibility changes apply immediately.
+Push and release deliveries eagerly invalidate and refresh release-enabled dashboard variants viewed in the last 24 hours. Up to 25 recently viewed matching candidates from the target index (`refresh_target_sources`) enter an immediate batch; fanout waits for its Durable Object reservations to drain, capped at two minutes from batch creation, before remaining recent variants follow through a stable key-ordered sweep that cannot skip targets when view timestamps change. Older variants refresh when viewed. Repository privacy and archive events still fan out across every matching target so removal and visibility changes apply immediately.
 
 - concurrent `issues` and `pull_request` deliveries for one repository coalesce into one lean authoritative owner-count query, then patch known split counts
 - concurrent `push` and `release` deliveries for one repository coalesce into one current release-data refresh
@@ -110,11 +113,11 @@ Push and release deliveries eagerly invalidate and refresh release-enabled dashb
 - Queue delivery failures mark the job failed.
 - Request-triggered jobs are deduplicated against queued and running work for the same dashboard.
 - Queue messages carry a small immutable-target reference instead of profile settings, keeping messages below the Queue size limit even when filter lists are large.
-- Job listings merge immutable running-delivery records with the latest mutable result; mutable job state is written once per delivery to stay within Workers KV same-key write limits.
+- Job listings merge immutable running-delivery records with the latest mutable result; mutable job state is written once per delivery.
 - Cold requests and each Queue delivery use absolute abort deadlines that include GitHub App discovery and token minting; interrupted GitHub work is retried from the Durable Object checkpoint.
 - Cloudflare's Queue delivery-attempt counter controls exhaustion. With `max_retries = 10`, delivery 11 is terminal: the initial delivery plus ten retries. Exhausted retries are recorded as failed before dead-lettering and put the target on scheduler backoff, so requests and cron ticks do not immediately restart the same failed scan. Ordinary transient failures retain scheduler retry timing but remain eligible for request-triggered recovery. Stale queued records stop blocking scheduling after the Durable Object reservation expires.
 - Durable Object scan checkpoints expire after seven days so abandoned jobs cannot resume stale repository rows.
-- Job records and audit events are retained for 14 days.
-- Target records use the dashboard cache TTL.
+- Job records, delivery records and audit events are retained for 14 days.
+- A target is deleted when nobody has opened its dashboard for 90 days, the dashboard cache TTL. Refreshes do not extend that.
 - Manual `run now` uses the same batch limit and due rules as cron.
 - There is no deploy smoke test; admin state is inspected through the admin UI/API.
