@@ -24,7 +24,9 @@
     "format:check": "oxfmt --check .",
     "lint": "npm run check:size && oxlint .",
     "test": "npm run build:script && node node_modules/.cache/releasebar-build/scripts/lib/dashboard.test.js",
-    "typecheck": "tsc --noEmit && svelte-check --tsconfig ./tsconfig.svelte.json"
+    "typecheck": "npm run types:check && tsc --noEmit && svelte-check --tsconfig ./tsconfig.svelte.json",
+    "types": "wrangler types --strict-vars=false",
+    "types:check": "wrangler types --strict-vars=false --check"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",
