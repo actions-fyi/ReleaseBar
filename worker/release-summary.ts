@@ -32,6 +32,7 @@ import {
 import { errorMessage, isGitHubRateLimit } from "./dashboard-cache.js";
 import { detailGitHubJson } from "./repo-github.js";
 import { releaseSummaryLimits } from "./summary-limits.js";
+import type { SummaryReservation } from "./summary-quota.js";
 
 export function repoDetailCacheKey(owner: string, repo: string): string {
   return `repo-detail:v4:${slugOwner(owner)}/${repo.toLowerCase()}`;
@@ -305,7 +306,10 @@ export async function claudeSummaryText(
     user: string;
     schema?: Record<string, unknown>;
   },
+  reserve: SummaryReservation,
 ): Promise<string> {
+  // Every model call is counted first, so none can go around the limits.
+  await reserve();
   // ANTHROPIC_BASE_URL points the client at another Messages API endpoint, such as a gateway.
   const baseURL = env.ANTHROPIC_BASE_URL?.trim();
   const client = new Anthropic({
@@ -338,6 +342,7 @@ export async function summarizeReleaseDelta(
   path: string,
   request: Request,
   env: Env,
+  reserve: SummaryReservation,
 ): Promise<RepoDetailReleaseSummary> {
   const model = releaseSummaryModel(env);
   if (!env.ANTHROPIC_API_KEY) {
@@ -372,20 +377,24 @@ export async function summarizeReleaseDelta(
     );
   }
   const input = releaseTitlesInput(titles, releaseSummaryLimits(env).inputChars);
-  const text = await claudeSummaryText(env, {
-    model,
-    maxTokens: 450,
-    system:
-      "You summarize public GitHub commit titles for release dashboards. Write 2-4 concise sentences, past tense, no bullets, no hype, no markdown. Mention broad themes and user-visible changes when commit titles support them. Do not invent details beyond the commit titles.",
-    user: [
-      `Repository: ${project.fullName}`,
-      `Latest release: ${project.version}`,
-      `Default branch head: ${project.latestCommitSha}`,
-      `Commit titles included: ${input.titlesUsed} of ${total ?? project.commitsSinceRelease ?? titles.length}`,
-      "",
-      input.text,
-    ].join("\n"),
-  });
+  const text = await claudeSummaryText(
+    env,
+    {
+      model,
+      maxTokens: 450,
+      system:
+        "You summarize public GitHub commit titles for release dashboards. Write 2-4 concise sentences, past tense, no bullets, no hype, no markdown. Mention broad themes and user-visible changes when commit titles support them. Do not invent details beyond the commit titles.",
+      user: [
+        `Repository: ${project.fullName}`,
+        `Latest release: ${project.version}`,
+        `Default branch head: ${project.latestCommitSha}`,
+        `Commit titles included: ${input.titlesUsed} of ${total ?? project.commitsSinceRelease ?? titles.length}`,
+        "",
+        input.text,
+      ].join("\n"),
+    },
+    reserve,
+  );
   if (!text) throw new Error("Claude response did not include summary text");
   return {
     state: "ready",

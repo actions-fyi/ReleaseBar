@@ -164,6 +164,44 @@ export async function signedJson(secret: string, value: unknown): Promise<string
   return `${payload}.${base64Url(new Uint8Array(signature))}`;
 }
 
+// A signed-in user, as AI summaries need one to start: stores the session in the cache and
+// returns the env entries and request headers that carry it. `vars` reach the Durable Object,
+// for the summary limits.
+export async function signedIn(
+  cache: ReturnType<typeof kvStore>,
+  userId = 1,
+  vars: Record<string, string> = {},
+) {
+  const secret = "test-secret";
+  const sessionId = `session-${userId}`;
+  const now = Math.floor(Date.now() / 1000);
+  const exp = now + 600;
+  await cache.put(
+    `auth:session:${sessionId}`,
+    JSON.stringify({
+      user: {
+        id: userId,
+        login: `user-${userId}`,
+        name: null,
+        avatarUrl: `https://avatars.githubusercontent.com/u/${userId}`,
+        url: `https://github.com/user-${userId}`,
+      },
+      accessToken: "user-token",
+      iat: now,
+      exp,
+      installations: [],
+      installationsUpdatedAt: new Date().toISOString(),
+    }),
+  );
+  return {
+    env: {
+      AUTH_COOKIE_SECRET: secret,
+      DASHBOARD_LOCKS: durableLocks({ DASHBOARD_CACHE: cache, ...vars }),
+    },
+    headers: { cookie: `rd_session=${await signedJson(secret, { id: sessionId, exp })}` },
+  };
+}
+
 export async function webhookSignature(secret: string, body: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",

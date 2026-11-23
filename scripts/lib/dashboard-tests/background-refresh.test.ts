@@ -12,6 +12,7 @@ import {
   crawlerRequest,
   kvStore,
   testProject,
+  signedIn,
 } from "../dashboard-test-harness.js";
 
 test("worker throttles cached warming repository detail refreshes", async () => {
@@ -253,9 +254,15 @@ test("worker summarizes commits since release in the background", async () => {
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
+    const user = await signedIn(cache);
     const response = await worker.fetch(
-      new Request("https://release.bar/api/repos/acme/releasebar"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
+      new Request("https://release.bar/api/repos/acme/releasebar", { headers: user.headers }),
+      {
+        DASHBOARD_CACHE: cache,
+        GITHUB_TOKEN: "shared-token",
+        ANTHROPIC_API_KEY: "claude-key",
+        ...user.env,
+      },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -358,9 +365,17 @@ test("worker summarizes recent repository activity in the background", async () 
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
+    const user = await signedIn(cache);
     const response = await worker.fetch(
-      new Request("https://release.bar/api/repos/acme/unreleased/activity?range=month"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
+      new Request("https://release.bar/api/repos/acme/unreleased/activity?range=month", {
+        headers: user.headers,
+      }),
+      {
+        DASHBOARD_CACHE: cache,
+        GITHUB_TOKEN: "shared-token",
+        ANTHROPIC_API_KEY: "claude-key",
+        ...user.env,
+      },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -636,9 +651,15 @@ test("worker summarizes public owner activity in the background", async () => {
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
+    const user = await signedIn(cache);
     const response = await worker.fetch(
-      new Request("https://release.bar/api/acme/activity?range=week"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
+      new Request("https://release.bar/api/acme/activity?range=week", { headers: user.headers }),
+      {
+        DASHBOARD_CACHE: cache,
+        GITHUB_TOKEN: "shared-token",
+        ANTHROPIC_API_KEY: "claude-key",
+        ...user.env,
+      },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);

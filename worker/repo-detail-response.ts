@@ -25,6 +25,13 @@ import {
   writeRepoDetail,
 } from "./release-summary.js";
 import {
+  SummaryLimitError,
+  type SummaryReservation,
+  refusedSummary,
+  refusedSummaryHeaders,
+  startGatedSummary,
+} from "./summary-quota.js";
+import {
   buildRepoDetailSingleFlight,
   refreshRepoDetail,
   repoDetailCredential,
@@ -53,13 +60,14 @@ export async function refreshReleaseSummary(
   payload: RepoDetailPayload,
   request: Request,
   env: Env,
+  reserve: SummaryReservation,
 ): Promise<void> {
   if (!env.ANTHROPIC_API_KEY || !releaseSummaryNeedsRefresh(payload, env)) return;
   const lock = await acquireBuildLock(env, `${key}:release-summary`);
   if (!lock) return;
   try {
     const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-    const summary = await summarizeReleaseDelta(payload.project, path, request, env);
+    const summary = await summarizeReleaseDelta(payload.project, path, request, env, reserve);
     const summaryKey = releaseSummaryCacheKey(
       payload.project,
       summary.model ?? releaseSummaryModel(env),
@@ -79,6 +87,8 @@ export async function refreshReleaseSummary(
       releaseSummary: summary,
     });
   } catch (error) {
+    // Over the limit: the summary stays pending for a request that may start it.
+    if (error instanceof SummaryLimitError) return;
     const latest = (await readRepoDetail(env, key)) ?? payload;
     if (
       latest.project.version !== payload.project.version ||
@@ -141,31 +151,42 @@ export async function repoDetailResponse(
       repos: [fullName],
     }).catch(() => false));
   const refreshAllowed = allowRefresh && (!sharedCritical?.active || appCovered);
+  // Starts the release summary when it is due and this request may start one. A request that
+  // may not gets the pending summary marked unavailable, with the reason.
+  const withReleaseSummary = async (
+    payload: RepoDetailPayload,
+  ): Promise<{ payload: RepoDetailPayload; headers: Record<string, string> | undefined }> => {
+    const due = (refreshAllowed || !allowRefresh) && releaseSummaryNeedsRefresh(payload, env);
+    const refused = due
+      ? await startGatedSummary(request, env, context, (reserve) =>
+          refreshReleaseSummary(key, owner, repo, payload, request, env, reserve),
+        )
+      : null;
+    if (!refused) return { payload, headers: undefined };
+    return {
+      payload: { ...payload, releaseSummary: refusedSummary(payload.releaseSummary, refused) },
+      headers: refusedSummaryHeaders,
+    };
+  };
   if (cached?.cache.state === "warming" && ageMs < repoDetailWarmingRefreshMs) {
-    if (refreshAllowed && releaseSummaryNeedsRefresh(cached, env)) {
-      context.waitUntil(refreshReleaseSummary(key, owner, repo, cached, request, env));
-    }
-    return jsonResponse(await withRepoDetailContributorTrustProfiles(cached, env), 202, {
+    const { payload } = await withReleaseSummary(cached);
+    return jsonResponse(await withRepoDetailContributorTrustProfiles(payload, env), 202, {
       "cache-control": "no-store",
     });
   }
   if (cached && ageMs < repoDetailCacheTtlMs && cached.cache.state !== "warming") {
-    if (refreshAllowed && releaseSummaryNeedsRefresh(cached, env)) {
-      context.waitUntil(refreshReleaseSummary(key, owner, repo, cached, request, env));
-    }
-    return jsonResponse(await withRepoDetailContributorTrustProfiles(cached, env));
+    const { payload, headers } = await withReleaseSummary(cached);
+    return jsonResponse(await withRepoDetailContributorTrustProfiles(payload, env), 200, headers);
   }
   if (cached && ageMs <= maxDisplayStaleMs) {
     if (refreshAllowed) {
       context.waitUntil(refreshRepoDetail(key, owner, repo, request, env).catch(() => undefined));
     }
-    if (refreshAllowed && releaseSummaryNeedsRefresh(cached, env)) {
-      context.waitUntil(refreshReleaseSummary(key, owner, repo, cached, request, env));
-    }
+    const summarized = await withReleaseSummary(cached);
     return jsonResponse(
       await withRepoDetailContributorTrustProfiles(
         withRepoDetailState(
-          cached,
+          summarized.payload,
           "stale",
           refreshAllowed
             ? "refreshing repository statistics"
@@ -175,6 +196,8 @@ export async function repoDetailResponse(
         ),
         env,
       ),
+      200,
+      summarized.headers,
     );
   }
   if (!allowRefresh) {
@@ -222,13 +245,11 @@ export async function repoDetailResponse(
         { "cache-control": "no-store", "retry-after": "2" },
       );
     }
-    if (refreshAllowed && releaseSummaryNeedsRefresh(payload, env)) {
-      context.waitUntil(refreshReleaseSummary(key, owner, repo, payload, request, env));
-    }
+    const summarized = await withReleaseSummary(payload);
     return jsonResponse(
-      await withRepoDetailContributorTrustProfiles(payload, env),
+      await withRepoDetailContributorTrustProfiles(summarized.payload, env),
       payload.cache.state === "warming" ? 202 : 200,
-      {
+      summarized.headers ?? {
         "cache-control": payload.cache.state === "warming" ? "no-store" : "public, max-age=60",
       },
     );
