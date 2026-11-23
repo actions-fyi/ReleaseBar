@@ -10,8 +10,6 @@ import { jsonResponse } from "./http.ts";
 import {
   type BackgroundContext,
   type GitHubWebhookFanoutJob,
-  webhookAdmissionObjectName,
-  webhookProcessorObjectName,
   type WebhookTargetAction,
 } from "./runtime.ts";
 import { tryJsonParse } from "./schemas.ts";
@@ -49,6 +47,13 @@ import {
   type WebhookTargetPage,
   webhookTargetsForAction,
 } from "./webhook-targets.ts";
+import { coordinatedJobActive } from "./store/build-coordinator.ts";
+import { deleteCacheEntry } from "./store/cache.ts";
+import {
+  admitWebhookDelivery,
+  forgetWebhookAdmission,
+  forgetWebhookProcessing,
+} from "./store/webhooks.ts";
 
 export async function prepareGitHubWebhookEvent(
   event: string,
@@ -109,7 +114,7 @@ export async function prepareGitHubWebhookEvent(
         observedAt: repositoryObservedAt ?? updatedAt,
       }),
       invalidatePublicRepoCaches(env, repo.fullName),
-      env.DASHBOARD_CACHE.delete(hotCacheKey),
+      deleteCacheEntry(env, hotCacheKey),
     ]);
     return {
       reason: "webhook:repository-privatized",
@@ -265,7 +270,7 @@ export async function enqueueWebhookFanout(
 export async function webhookPriorityBatchActive(env: Env, targetKeys: string[]): Promise<boolean> {
   if (targetKeys.length === 0) return false;
   const active = await mapConcurrent(targetKeys, 8, (targetKey) =>
-    env.BUILD_COORDINATOR.getByName(targetKey).jobActive(),
+    coordinatedJobActive(env, targetKey),
   );
   return active.some(Boolean);
 }
@@ -398,8 +403,8 @@ export async function abandonGitHubWebhookDelivery(
 ): Promise<void> {
   const owner = webhookRepo(payload)?.owner ?? delivery;
   await Promise.all([
-    env.WEBHOOK_ADMISSION.getByName(webhookAdmissionObjectName).abandon(delivery),
-    env.WEBHOOK_PROCESSOR.getByName(webhookProcessorObjectName(owner)).abandon(delivery),
+    forgetWebhookAdmission(env, delivery),
+    forgetWebhookProcessing(env, owner, delivery),
   ]);
 }
 
@@ -483,7 +488,8 @@ export async function githubWebhookResponse(
     });
   }
   try {
-    const admission = await env.WEBHOOK_ADMISSION.getByName(webhookAdmissionObjectName).enqueue(
+    const admission = await admitWebhookDelivery(
+      env,
       event,
       delivery,
       compactGitHubWebhookPayload(event, payload),

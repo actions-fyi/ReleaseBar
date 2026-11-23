@@ -14,11 +14,7 @@ import {
   isRepoDetailApiPath,
   isTrustProfileApiPath,
 } from "./routes.ts";
-import {
-  webhookProcessorObjectName,
-  type WorkerQueueMessage,
-  withLockJurisdiction,
-} from "./runtime.ts";
+import { type WorkerQueueMessage, withLockJurisdiction } from "./runtime.ts";
 import { ownerActivityResponse, repoActivityResponse } from "./activity.ts";
 import { adminResponse, profileResponse } from "./admin.ts";
 import { assetResponse, ownerActivityPageOwner } from "./app-shell.ts";
@@ -54,6 +50,7 @@ import {
 } from "./refresh-targets.ts";
 import { repoDetailResponse } from "./repo-detail-response.ts";
 import { failExhaustedRefreshJob, processRefreshJob } from "./scheduler.ts";
+import { processWebhookJob } from "./store/webhooks.ts";
 import { socialCardForLabel, socialImage, socialPng, socialRouteLabel } from "./social-card.ts";
 import {
   abandonGitHubWebhookDelivery,
@@ -173,9 +170,7 @@ export default {
         const webhookJob = message.body;
         try {
           const owner = webhookRepo(webhookJob.payload)?.owner ?? webhookJob.delivery;
-          const result = await env.WEBHOOK_PROCESSOR.getByName(
-            webhookProcessorObjectName(owner),
-          ).process(webhookJob);
+          const result = await processWebhookJob(env, owner, webhookJob);
           if (result.state === "busy") throw new Error("webhook processor busy");
           if (result.state === "full") throw new Error("webhook coalescer full");
           message.ack();

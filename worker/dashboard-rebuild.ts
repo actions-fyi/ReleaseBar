@@ -76,6 +76,12 @@ import {
 } from "./owner-metadata-write.ts";
 import { enqueueRefreshJob } from "./refresh-queue.ts";
 import { auditSyncEvent, dashboardSyncDetail } from "./refresh-targets.ts";
+import {
+  acquireCoordinatedLock,
+  refreshCoordinatedLock,
+  releaseCoordinatedLock,
+} from "./store/build-coordinator.ts";
+import { projectCache } from "./store/cache.ts";
 
 export async function dashboardEventParts(
   request: Request,
@@ -252,19 +258,18 @@ export async function acquireBuildLock(env: Env, key: string): Promise<BuildLock
   };
   try {
     const token = randomNonce();
-    const coordinator = env.BUILD_COORDINATOR.getByName(key);
-    if (!(await coordinator.acquireLock(token))) return null;
+    if (!(await acquireCoordinatedLock(env, key, token))) return null;
     return {
       refresh: async () => {
         try {
-          await coordinator.refreshLock(token);
+          await refreshCoordinatedLock(env, key, token);
         } catch {
           // The lock expires by itself.
         }
       },
       release: async () => {
         try {
-          await coordinator.releaseLock(token);
+          await releaseCoordinatedLock(env, key, token);
         } catch {
           // The lock expires by itself.
         }
@@ -460,7 +465,7 @@ export async function rebuild(
         undefined,
         signal,
       ),
-      projectCache: env.DASHBOARD_CACHE,
+      projectCache: projectCache(env),
       onProgress: (partial, progress) => saveProgress(partial, progress),
     });
     const profiled = withProfile(payload, dashboard.profile);
@@ -765,7 +770,7 @@ export async function refreshDashboardMetadataFirst(
         context,
         signal,
       ),
-      projectCache: env.DASHBOARD_CACHE,
+      projectCache: projectCache(env),
     });
     const metadataPayload: DashboardPayload = {
       ...payload,

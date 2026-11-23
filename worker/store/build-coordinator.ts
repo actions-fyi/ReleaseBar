@@ -14,16 +14,24 @@ function coordinator(env: Env, key: string) {
 }
 
 // Takes the dashboard's build lock for `token`. False when another token holds it.
-export async function acquireBuildLock(env: Env, key: string, token: string): Promise<boolean> {
+export async function acquireCoordinatedLock(
+  env: Env,
+  key: string,
+  token: string,
+): Promise<boolean> {
   return await coordinator(env, key).acquireLock(token);
 }
 
 // Extends the lock. False when `token` no longer holds it.
-export async function refreshBuildLock(env: Env, key: string, token: string): Promise<boolean> {
+export async function refreshCoordinatedLock(
+  env: Env,
+  key: string,
+  token: string,
+): Promise<boolean> {
   return await coordinator(env, key).refreshLock(token);
 }
 
-export async function releaseBuildLock(env: Env, key: string, token: string): Promise<void> {
+export async function releaseCoordinatedLock(env: Env, key: string, token: string): Promise<void> {
   await coordinator(env, key).releaseLock(token);
 }
 
