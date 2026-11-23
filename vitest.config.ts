@@ -1,4 +1,4 @@
-import { cloudflareTest } from "@cloudflare/vitest-plugin";
+import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 
 const tests = "test";
@@ -8,6 +8,10 @@ const nodeTests = [
   // Reads Svelte component sources from disk.
   `${tests}/routing-view.test.ts`,
 ];
+
+// The SQL files of migrations/, which test/reset-storage.ts applies to the local D1 database
+// before each test.
+const d1Migrations = await readD1Migrations("migrations");
 
 export default defineConfig({
   test: {
@@ -26,7 +30,12 @@ export default defineConfig({
     },
     projects: [
       {
-        plugins: [cloudflareTest({ wrangler: { configPath: "./wrangler.jsonc" } })],
+        plugins: [
+          cloudflareTest({
+            wrangler: { configPath: "./wrangler.jsonc" },
+            miniflare: { bindings: { TEST_D1_MIGRATIONS: d1Migrations } },
+          }),
+        ],
         test: {
           name: "workers",
           include: [`${tests}/*.test.ts`],

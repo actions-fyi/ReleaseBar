@@ -7,18 +7,28 @@ export type WranglerRoute = { readonly pattern: string; readonly custom_domain?:
 
 export type WranglerKvNamespace = { readonly binding: string; readonly id?: string };
 
+export type WranglerD1Database = Readonly<Record<string, unknown>> & {
+  readonly binding: string;
+  readonly database_id?: string;
+};
+
 export type RawWranglerConfig = Readonly<Record<string, unknown>> & {
   readonly workers_dev?: boolean;
   readonly routes?: readonly WranglerRoute[];
   readonly vars?: Readonly<Record<string, string>>;
   readonly kv_namespaces?: readonly WranglerKvNamespace[];
+  readonly d1_databases?: readonly WranglerD1Database[];
 };
 
 export type DeploySettings = Readonly<Record<string, string | undefined>>;
 
+// The D1 binding of wrangler.jsonc whose database RELEASEBAR_D1_DATABASE_ID names.
+export const d1Binding = "DB";
+
 export const deploySettingNames = [
   "RELEASEBAR_DOMAIN",
   "RELEASEBAR_KV_NAMESPACE_ID",
+  "RELEASEBAR_D1_DATABASE_ID",
   "RELEASEBAR_DO_JURISDICTION",
   "RELEASEBAR_ADMIN_LOGINS",
   "RELEASEBAR_WORKERS_DEV",
@@ -36,6 +46,10 @@ const hostPattern = /^(?=.{1,253}$)(?:[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?\.)+[a-z]
 // A KV namespace ID, 32 hex digits: matches "0123456789abcdef0123456789abcdef", rejects "my-namespace".
 // https://regex101.com/?regex=%5E%5Ba-f%5Cd%5D%7B32%7D%24&flags=i&testString=0123456789abcdef0123456789abcdef
 const kvIdPattern = /^[a-f\d]{32}$/i;
+
+// A D1 database ID, a UUID: matches "01234567-89ab-cdef-0123-456789abcdef", rejects "releasebar".
+// https://regex101.com/?regex=%5E%5Ba-f%5Cd%5D%7B8%7D%28%3F%3A-%5Ba-f%5Cd%5D%7B4%7D%29%7B3%7D-%5Ba-f%5Cd%5D%7B12%7D%24&flags=i&testString=01234567-89ab-cdef-0123-456789abcdef
+const d1IdPattern = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i;
 
 // A jurisdiction name: matches "eu" and "fedramp", rejects "EU-West" and "eu;".
 // https://regex101.com/?regex=%5E%5Ba-z%5D%2B%24&testString=eu
@@ -79,15 +93,13 @@ function summaryLimitVars(settings: DeploySettings): Record<string, string> {
 
 // Whether the environment asks for a deployment's own config at all.
 export function hasDeploySettings(settings: DeploySettings): boolean {
-  return (
-    deploySettingNames.some((name) => setting(settings, name)) ||
-    settings.RELEASEBAR_ALLOW_GENERIC?.trim() === "true"
-  );
+  return deploySettingNames.some((name) => setting(settings, name));
 }
 
 export function deployConfig(base: RawWranglerConfig, settings: DeploySettings): RawWranglerConfig {
   const domain = setting(settings, "RELEASEBAR_DOMAIN").toLowerCase();
   const kvId = setting(settings, "RELEASEBAR_KV_NAMESPACE_ID").toLowerCase();
+  const d1Id = setting(settings, "RELEASEBAR_D1_DATABASE_ID").toLowerCase();
   const jurisdiction = setting(settings, "RELEASEBAR_DO_JURISDICTION").toLowerCase();
   const admins = setting(settings, "RELEASEBAR_ADMIN_LOGINS").replaceAll(" ", "");
   const workersDev = setting(settings, "RELEASEBAR_WORKERS_DEV").toLowerCase();
@@ -95,6 +107,7 @@ export function deployConfig(base: RawWranglerConfig, settings: DeploySettings):
 
   check(domain, hostPattern, `RELEASEBAR_DOMAIN must be a bare host name, not "${domain}"`);
   check(kvId, kvIdPattern, "RELEASEBAR_KV_NAMESPACE_ID must be a 32-digit hex KV namespace ID");
+  check(d1Id, d1IdPattern, "RELEASEBAR_D1_DATABASE_ID must be the UUID of a D1 database");
   check(
     jurisdiction,
     jurisdictionPattern,
@@ -106,12 +119,13 @@ export function deployConfig(base: RawWranglerConfig, settings: DeploySettings):
     throw new Error("RELEASEBAR_ANTHROPIC_BASE_URL must be an https:// URL");
   }
   const summaryLimits = summaryLimitVars(settings);
-  const anySetting = deploySettingNames.some((name) => setting(settings, name));
-  if (!anySetting && settings.RELEASEBAR_ALLOW_GENERIC?.trim() !== "true") {
+  // Every deploy names its D1 database, so a deploy that lost its build variables stops here too,
+  // before it drops the deployment's custom domain and admin logins.
+  if (!d1Id) {
     throw new Error(
-      "No RELEASEBAR_* deployment setting is set, so the deploy would drop this deployment's " +
-        "custom domain and admin logins. Set the build variables, or RELEASEBAR_ALLOW_GENERIC=true " +
-        "to deploy the generic wrangler.jsonc on purpose.",
+      "RELEASEBAR_D1_DATABASE_ID is not set, so the deploy would let Wrangler create the D1 " +
+        "database on its own, outside any jurisdiction, and a jurisdiction can't be added later. " +
+        "Create it with `wrangler d1 create <name> --jurisdiction <jurisdiction>` and set its ID.",
     );
   }
   if (jurisdiction && !kvId) {
@@ -134,11 +148,16 @@ export function deployConfig(base: RawWranglerConfig, settings: DeploySettings):
     kvId && namespace.binding === "DASHBOARD_CACHE" ? { ...namespace, id: kvId } : namespace,
   );
 
+  const d1Databases = (base.d1_databases ?? []).map((database) =>
+    database.binding === d1Binding ? { ...database, database_id: d1Id } : database,
+  );
+
   return {
     ...base,
     ...(workersDev ? { workers_dev: workersDev === "true" } : {}),
     ...(domain ? { routes: [{ pattern: domain, custom_domain: true }] } : {}),
     vars,
     kv_namespaces: kvNamespaces,
+    d1_databases: d1Databases,
   };
 }

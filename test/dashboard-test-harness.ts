@@ -135,6 +135,9 @@ export function testEnv(env: TestEnv): Env {
   // The queue binding is required. A test that gives none gets the local queue of the Workers
   // runtime; its messages reach the Worker's queue handler with the runtime's own env.
   bindings.REFRESH_QUEUE ??= runtimeEnv.REFRESH_QUEUE;
+  // The D1 database is the local one of the Workers runtime, with the SQL files of migrations/
+  // applied (test/reset-storage.ts).
+  bindings.DB ??= runtimeEnv.DB;
   for (const binding of durableObjectBindings) {
     bindings[binding] ??= objectBinding(binding, env);
   }

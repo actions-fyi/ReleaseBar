@@ -37,6 +37,14 @@
 
   "kv_namespaces": [{ "binding": "DASHBOARD_CACHE" }],
 
+  // No database ID here: a deployment sets RELEASEBAR_D1_DATABASE_ID, and `npm run deploy` refuses
+  // without it. Wrangler would otherwise create the database itself on deploy, outside any
+  // jurisdiction, and a jurisdiction can't be added to a database later. `npm run deploy` applies
+  // the SQL files of `migrations/` to the database before it deploys the Worker.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "releasebar", "migrations_dir": "migrations" },
+  ],
+
   "queues": {
     "producers": [{ "binding": "REFRESH_QUEUE", "queue": "releasebar-refresh" }],
     "consumers": [
