@@ -13,6 +13,7 @@ import "./dashboard-tests/background-refresh.test.js";
 import "./dashboard-tests/activity-summaries.test.js";
 import "./dashboard-tests/release-summary-input.test.js";
 import "./dashboard-tests/summary-failures.test.js";
+import "./dashboard-tests/summary-access.test.js";
 import "./dashboard-tests/repo-detail-failures.test.js";
 import "./dashboard-tests/manual-refresh.test.js";
 import "./dashboard-tests/rate-limits-streams.test.js";

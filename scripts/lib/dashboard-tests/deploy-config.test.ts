@@ -99,13 +99,14 @@ test("Claude summaries go to ANTHROPIC_BASE_URL when it is set", async () => {
   const maxTokens = 100;
   const request = { model: "claude-haiku-5-5", maxTokens, system: "s", user: "u" };
   try {
-    await claudeSummaryText({ ANTHROPIC_API_KEY: "claude-key" }, request);
+    await claudeSummaryText({ ANTHROPIC_API_KEY: "claude-key" }, request, async () => undefined);
     await claudeSummaryText(
       {
         ANTHROPIC_API_KEY: "claude-key",
         ANTHROPIC_BASE_URL: "https://gateway.example.com/anthropic",
       },
       request,
+      async () => undefined,
     );
   } finally {
     globalThis.fetch = originalFetch;

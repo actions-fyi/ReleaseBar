@@ -57,6 +57,14 @@ import { repositoryPublicCacheBarrier } from "./owner-metadata-read.js";
 import { allowRequestRefresh, crawlerCacheOnlyResponse } from "./owner-metadata-write.js";
 import { claudeSummaryText, summaryFailure, summaryRetryDue } from "./release-summary.js";
 import {
+  SummaryLimitError,
+  type SummaryReservation,
+  refusedSummary,
+  refusedSummaryHeaders,
+  startGatedSummary,
+  summaryGate,
+} from "./summary-quota.js";
+import {
   activityCacheTtlMs,
   activityRangeFromUrl,
   activityRangeMs,
@@ -94,48 +102,53 @@ async function prepareActivitySummary(
 export async function summarizeOwnerActivity(
   payload: OwnerActivityPayload,
   env: Env,
+  reserve: SummaryReservation,
 ): Promise<OwnerActivitySummary> {
   const prepared = await prepareActivitySummary(payload, env);
   if ("summary" in prepared) return prepared.summary;
   const { model, input, inputHash, eventsUsed } = prepared;
-  const text = await claudeSummaryText(env, {
-    model,
-    maxTokens: ownerActivitySummaryOutputTokens(payload.repositories.length),
-    system: activitySummaryInstructions(true),
-    schema: {
-      type: "object",
-      properties: {
-        summary: { type: "string" },
-        repositories: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              fullName: {
-                type: "string",
-                enum: payload.repositories
-                  .slice(0, activityRepositorySummaryLimit)
-                  .map((repository) => repository.fullName),
+  const text = await claudeSummaryText(
+    env,
+    {
+      model,
+      maxTokens: ownerActivitySummaryOutputTokens(payload.repositories.length),
+      system: activitySummaryInstructions(true),
+      schema: {
+        type: "object",
+        properties: {
+          summary: { type: "string" },
+          repositories: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                fullName: {
+                  type: "string",
+                  enum: payload.repositories
+                    .slice(0, activityRepositorySummaryLimit)
+                    .map((repository) => repository.fullName),
+                },
+                summary: { type: "string" },
               },
-              summary: { type: "string" },
+              required: ["fullName", "summary"],
+              additionalProperties: false,
             },
-            required: ["fullName", "summary"],
-            additionalProperties: false,
           },
         },
+        required: ["summary", "repositories"],
+        additionalProperties: false,
       },
-      required: ["summary", "repositories"],
-      additionalProperties: false,
+      user: [
+        `Owner: @${payload.owner.login}`,
+        `Owner type: ${payload.owner.type}`,
+        `Range: ${payload.range}`,
+        `Events included: ${eventsUsed}`,
+        "",
+        input,
+      ].join("\n"),
     },
-    user: [
-      `Owner: @${payload.owner.login}`,
-      `Owner type: ${payload.owner.type}`,
-      `Range: ${payload.range}`,
-      `Events included: ${eventsUsed}`,
-      "",
-      input,
-    ].join("\n"),
-  });
+    reserve,
+  );
   if (!text) throw new Error("Claude response did not include activity summary text");
   const parsed = parseOwnerActivitySummaryText(text, payload.repositories);
   if (!parsed) {
@@ -262,22 +275,27 @@ export async function repoActivitySummaryState(
 export async function summarizeRepoActivity(
   payload: RepoDetailActivityPayload,
   env: Env,
+  reserve: SummaryReservation,
 ): Promise<OwnerActivitySummary> {
   const prepared = await prepareActivitySummary(payload, env);
   if ("summary" in prepared) return prepared.summary;
   const { model, input, inputHash, eventsUsed } = prepared;
-  const text = await claudeSummaryText(env, {
-    model,
-    maxTokens: 420,
-    system: activitySummaryInstructions(),
-    user: [
-      `Repository: ${payload.fullName}`,
-      `Range: ${payload.range}`,
-      `Events included: ${eventsUsed}`,
-      "",
-      input,
-    ].join("\n"),
-  });
+  const text = await claudeSummaryText(
+    env,
+    {
+      model,
+      maxTokens: 420,
+      system: activitySummaryInstructions(),
+      user: [
+        `Repository: ${payload.fullName}`,
+        `Range: ${payload.range}`,
+        `Events included: ${eventsUsed}`,
+        "",
+        input,
+      ].join("\n"),
+    },
+    reserve,
+  );
   if (!text) throw new Error("Claude response did not include activity summary text");
   const summary = {
     state: "ready",
@@ -433,13 +451,14 @@ export async function refreshOwnerActivitySummary(
   key: string,
   payload: OwnerActivityPayload,
   env: Env,
+  reserve: SummaryReservation,
 ): Promise<void> {
   if (!ownerActivitySummaryNeedsRefresh(payload, env)) return;
   const payloadInputHash = (await sha256Base64Url(activitySummaryInput(payload))).slice(0, 32);
   const lock = await acquireBuildLock(env, `${key}:summary`);
   if (!lock) return;
   try {
-    const summary = await summarizeOwnerActivity(payload, env);
+    const summary = await summarizeOwnerActivity(payload, env, reserve);
     const latest = await publicOwnerActivity(env, (await readOwnerActivity(env, key)) ?? payload);
     if (!latest) return;
     const latestInputHash = (await sha256Base64Url(activitySummaryInput(latest))).slice(0, 32);
@@ -456,6 +475,8 @@ export async function refreshOwnerActivitySummary(
       summary,
     });
   } catch (error) {
+    // Over the limit: the summary stays pending for a request that may start it.
+    if (error instanceof SummaryLimitError) return;
     const latest = await publicOwnerActivity(env, (await readOwnerActivity(env, key)) ?? payload);
     if (!latest) return;
     const latestInputHash = (await sha256Base64Url(activitySummaryInput(latest))).slice(0, 32);
@@ -503,7 +524,8 @@ export async function refreshOwnerActivity(
     if (!payload) return;
     await writeOwnerActivity(env, key, payload);
     if (ownerActivitySummaryNeedsRefresh(payload, env)) {
-      await refreshOwnerActivitySummary(key, payload, env);
+      const gate = await summaryGate(request, env);
+      if (gate.allowed) await refreshOwnerActivitySummary(key, payload, env, gate.reserve);
     }
   } finally {
     await lock.release();
@@ -527,9 +549,18 @@ export async function ownerActivityResponse(
   const age = ownerActivityAgeMs(cached);
   const allowRefresh = allowRequestRefresh(request);
   if (cached && age < activityCacheTtlMs(range)) {
-    const summaryNeedsRefresh = allowRefresh && ownerActivitySummaryNeedsRefresh(cached, env);
-    if (summaryNeedsRefresh) {
-      context.waitUntil(refreshOwnerActivitySummary(key, cached, env).catch(() => undefined));
+    const summaryNeedsRefresh = ownerActivitySummaryNeedsRefresh(cached, env);
+    const refused = summaryNeedsRefresh
+      ? await startGatedSummary(request, env, context, (reserve) =>
+          refreshOwnerActivitySummary(key, cached, env, reserve),
+        )
+      : null;
+    if (refused) {
+      return jsonResponse(
+        { ...cached, summary: refusedSummary(cached.summary, refused) },
+        200,
+        refusedSummaryHeaders,
+      );
     }
     const responsePayload = summaryNeedsRefresh
       ? withPendingOwnerActivitySummary(cached, env)
@@ -567,10 +598,13 @@ export async function ownerActivityResponse(
       throw new Error("repository privacy metadata unavailable");
     }
     await writeOwnerActivity(env, key, payload);
-    if (allowRefresh && ownerActivitySummaryNeedsRefresh(payload, env)) {
-      context.waitUntil(refreshOwnerActivitySummary(key, payload, env).catch(() => undefined));
-    }
-    return jsonResponse(payload, payload.summary?.state === "warming" ? 202 : 200, {
+    const refused = ownerActivitySummaryNeedsRefresh(payload, env)
+      ? await startGatedSummary(request, env, context, (reserve) =>
+          refreshOwnerActivitySummary(key, payload, env, reserve),
+        )
+      : null;
+    const summary = refused ? refusedSummary(payload.summary, refused) : payload.summary;
+    return jsonResponse({ ...payload, summary }, summary?.state === "warming" ? 202 : 200, {
       "cache-control": "no-store",
     });
   } catch (error) {
@@ -627,13 +661,14 @@ export async function refreshRepoActivitySummary(
   key: string,
   payload: RepoDetailActivityPayload,
   env: Env,
+  reserve: SummaryReservation,
 ): Promise<void> {
   if (!repoActivitySummaryNeedsRefresh(payload, env)) return;
   const payloadInputHash = (await sha256Base64Url(activitySummaryInput(payload))).slice(0, 32);
   const lock = await acquireBuildLock(env, `${key}:summary`);
   if (!lock) return;
   try {
-    const summary = await summarizeRepoActivity(payload, env);
+    const summary = await summarizeRepoActivity(payload, env, reserve);
     const latest = await currentRepoActivity((await readRepoActivity(env, key)) ?? payload, env);
     const latestInputHash = (await sha256Base64Url(activitySummaryInput(latest))).slice(0, 32);
     if (
@@ -649,6 +684,7 @@ export async function refreshRepoActivitySummary(
       summary,
     });
   } catch (error) {
+    if (error instanceof SummaryLimitError) return;
     const latest = await currentRepoActivity((await readRepoActivity(env, key)) ?? payload, env);
     const latestInputHash = (await sha256Base64Url(activitySummaryInput(latest))).slice(0, 32);
     if (
@@ -692,7 +728,8 @@ export async function refreshRepoActivity(
     const payload = await buildRepoActivity(owner, repo, range, request, env);
     await writeRepoActivity(env, key, payload);
     if (repoActivitySummaryNeedsRefresh(payload, env)) {
-      await refreshRepoActivitySummary(key, payload, env);
+      const gate = await summaryGate(request, env);
+      if (gate.allowed) await refreshRepoActivitySummary(key, payload, env, gate.reserve);
     }
   } finally {
     await lock.release();
@@ -725,8 +762,17 @@ export async function repoActivityResponse(
   const age = repoActivityAgeMs(cached);
   const allowRefresh = allowRequestRefresh(request);
   if (cached && age < activityCacheTtlMs(range)) {
-    if (allowRefresh && repoActivitySummaryNeedsRefresh(cached, env)) {
-      context.waitUntil(refreshRepoActivitySummary(key, cached, env).catch(() => undefined));
+    const refused = repoActivitySummaryNeedsRefresh(cached, env)
+      ? await startGatedSummary(request, env, context, (reserve) =>
+          refreshRepoActivitySummary(key, cached, env, reserve),
+        )
+      : null;
+    if (refused) {
+      return jsonResponse(
+        { ...cached, summary: refusedSummary(cached.summary, refused) },
+        200,
+        refusedSummaryHeaders,
+      );
     }
     return jsonResponse(cached, cached.summary?.state === "warming" ? 202 : 200, {
       "cache-control": "public, max-age=60, stale-while-revalidate=600",
@@ -755,10 +801,13 @@ export async function repoActivityResponse(
   try {
     const payload = await buildRepoActivity(owner, repo, range, request, env);
     await writeRepoActivity(env, key, payload);
-    if (allowRefresh && repoActivitySummaryNeedsRefresh(payload, env)) {
-      context.waitUntil(refreshRepoActivitySummary(key, payload, env).catch(() => undefined));
-    }
-    return jsonResponse(payload, payload.summary?.state === "warming" ? 202 : 200, {
+    const refused = repoActivitySummaryNeedsRefresh(payload, env)
+      ? await startGatedSummary(request, env, context, (reserve) =>
+          refreshRepoActivitySummary(key, payload, env, reserve),
+        )
+      : null;
+    const summary = refused ? refusedSummary(payload.summary, refused) : payload.summary;
+    return jsonResponse({ ...payload, summary }, summary?.state === "warming" ? 202 : 200, {
       "cache-control": "no-store",
     });
   } catch (error) {

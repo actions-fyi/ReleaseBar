@@ -48,6 +48,7 @@ import {
   isRefreshTargetMutation,
   refreshTargetStorageKey,
 } from "./refresh-targets.js";
+import { summaryQuotaResponse } from "./summary-quota.js";
 import { processGitHubWebhook } from "./webhook.js";
 import {
   compareWebhookTargets,
@@ -96,6 +97,9 @@ export class DashboardBuildLock {
     }
 
     const url = new URL(request.url);
+    if (url.pathname === "/summary-quota") {
+      return summaryQuotaResponse(this.state, this.env, request);
+    }
     if (url.pathname === "/acquire") {
       const body = (await request.json().catch(() => null)) as { token?: string } | null;
       if (!body?.token) {

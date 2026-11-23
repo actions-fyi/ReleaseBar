@@ -1,11 +1,7 @@
 // Builds the Wrangler config a deployment uses from the generic wrangler.toml and the deployment's
 // own settings, so no host, account resource or login has to be committed to the repository.
 
-import {
-  type ReleaseSummaryLimit,
-  parseWholeNumber,
-  releaseSummaryLimitSettings,
-} from "../../worker/summary-limits.js";
+import { parseWholeNumber, summaryLimitSettings } from "../../worker/summary-limits.js";
 
 export type WranglerRoute = { readonly pattern: string; readonly custom_domain?: boolean };
 
@@ -29,6 +25,8 @@ export const deploySettingNames = [
   "RELEASEBAR_ANTHROPIC_BASE_URL",
   "RELEASEBAR_SUMMARY_INPUT_CHARS",
   "RELEASEBAR_SUMMARY_TITLE_CHARS",
+  "RELEASEBAR_SUMMARY_USER_HOURLY_LIMIT",
+  "RELEASEBAR_SUMMARY_GLOBAL_DAILY_LIMIT",
 ] as const;
 
 // A bare host name: matches "releasebar.example.com", rejects "https://releasebar.example.com/".
@@ -63,12 +61,11 @@ function isHttpsUrl(value: string): boolean {
   return URL.canParse(value) && new URL(value).protocol === "https:";
 }
 
-// The Worker vars for the release summary limits whose build variables are set, checked
-// against their bounds.
+// The Worker vars for the summary limits whose build variables are set, checked against
+// their bounds.
 function summaryLimitVars(settings: DeploySettings): Record<string, string> {
   const vars: Record<string, string> = {};
-  const limits: readonly ReleaseSummaryLimit[] = Object.values(releaseSummaryLimitSettings);
-  for (const { variable, buildVariable, min, max } of limits) {
+  for (const { variable, buildVariable, min, max } of summaryLimitSettings) {
     const raw = settings[buildVariable]?.trim() ?? "";
     if (!raw) continue;
     const value = parseWholeNumber(raw);

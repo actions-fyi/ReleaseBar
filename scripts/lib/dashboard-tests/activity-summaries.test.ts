@@ -6,7 +6,13 @@ import type {
   RepoDetailPayload,
 } from "../../../src/types.js";
 import worker from "../../../worker/index.js";
-import { claudeJson, claudeText, kvStore, testProject } from "../dashboard-test-harness.js";
+import {
+  claudeJson,
+  claudeText,
+  kvStore,
+  testProject,
+  signedIn,
+} from "../dashboard-test-harness.js";
 
 test("worker includes lower-ranked repositories in the overall activity summary batch", async () => {
   const generatedAt = new Date().toISOString();
@@ -102,9 +108,10 @@ test("worker includes lower-ranked repositories in the overall activity summary 
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
+    const user = await signedIn(cache);
     const response = await worker.fetch(
-      new Request("https://release.bar/api/acme/activity?range=week"),
-      { DASHBOARD_CACHE: cache, ANTHROPIC_API_KEY: "claude-key" },
+      new Request("https://release.bar/api/acme/activity?range=week", { headers: user.headers }),
+      { DASHBOARD_CACHE: cache, ANTHROPIC_API_KEY: "claude-key", ...user.env },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -375,9 +382,15 @@ test("worker skips stale public owner activity summaries when events changed", a
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
+    const user = await signedIn(cache);
     const response = await worker.fetch(
-      new Request("https://release.bar/api/acme/activity?range=week"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
+      new Request("https://release.bar/api/acme/activity?range=week", { headers: user.headers }),
+      {
+        DASHBOARD_CACHE: cache,
+        GITHUB_TOKEN: "shared-token",
+        ANTHROPIC_API_KEY: "claude-key",
+        ...user.env,
+      },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -475,9 +488,15 @@ test("worker refreshes cached owner activity summaries from older prompt version
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
+    const user = await signedIn(cache);
     const response = await worker.fetch(
-      new Request("https://release.bar/api/acme/activity?range=week"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
+      new Request("https://release.bar/api/acme/activity?range=week", { headers: user.headers }),
+      {
+        DASHBOARD_CACHE: cache,
+        GITHUB_TOKEN: "shared-token",
+        ANTHROPIC_API_KEY: "claude-key",
+        ...user.env,
+      },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -543,9 +562,15 @@ test("worker does not summarize empty owner activity", async () => {
     throw new Error(`unexpected fetch ${String(input)}`);
   };
   try {
+    const user = await signedIn(cache);
     const response = await worker.fetch(
-      new Request("https://release.bar/api/acme/activity?range=week"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
+      new Request("https://release.bar/api/acme/activity?range=week", { headers: user.headers }),
+      {
+        DASHBOARD_CACHE: cache,
+        GITHUB_TOKEN: "shared-token",
+        ANTHROPIC_API_KEY: "claude-key",
+        ...user.env,
+      },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -636,9 +661,15 @@ test("worker rejects incomplete structured owner activity summaries", async () =
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
+    const user = await signedIn(cache);
     const response = await worker.fetch(
-      new Request("https://release.bar/api/acme/activity?range=week"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
+      new Request("https://release.bar/api/acme/activity?range=week", { headers: user.headers }),
+      {
+        DASHBOARD_CACHE: cache,
+        GITHUB_TOKEN: "shared-token",
+        ANTHROPIC_API_KEY: "claude-key",
+        ...user.env,
+      },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 202);
@@ -774,9 +805,15 @@ test("worker skips stale release summaries when repository detail changed", asyn
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
+    const user = await signedIn(cache);
     const response = await worker.fetch(
-      new Request("https://release.bar/api/repos/acme/releasebar"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "claude-key" },
+      new Request("https://release.bar/api/repos/acme/releasebar", { headers: user.headers }),
+      {
+        DASHBOARD_CACHE: cache,
+        GITHUB_TOKEN: "shared-token",
+        ANTHROPIC_API_KEY: "claude-key",
+        ...user.env,
+      },
       { waitUntil: (promise) => queued.push(promise) },
     );
     assert.equal(response.status, 200);
