@@ -33,10 +33,9 @@ export type GitHubWebhookFanoutJob = {
   payload: Record<string, unknown>;
   createdAt: string;
   action: WebhookTargetAction;
-  source: "indexed" | "owner" | "repo" | "kv-owner" | "kv-repo" | "legacy";
+  source: "owner" | "repo";
   priorityBatchStartedAt?: string;
   cursor?: string;
-  backfillFailed?: boolean;
 };
 
 export type WorkerQueueMessage = RefreshJob | GitHubWebhookJob | GitHubWebhookFanoutJob;
@@ -52,8 +51,6 @@ export const webhookAdmissionObjectName = "github-webhook-admission";
 export const webhookProcessorObjectName = (owner: string): string =>
   `github-webhook-process:${owner}`;
 export const ownerMetadataObjectName = (owner: string): string => `owner-metadata:${owner}`;
-export const refreshTargetIndexName = (kind: "owner" | "repo", value: string): string =>
-  `refresh-target-index:${kind}:${value}`;
 
 // A leading http(s) scheme: matches "https://releasebar.example.com", rejects "releasebar.example.com".
 // https://regex101.com/?regex=%5Ehttps%3F%3A%5C%2F%5C%2F&flags=i&testString=https%3A%2F%2Freleasebar.example.com

@@ -87,7 +87,6 @@
     "bindings": [
       { "name": "BUILD_COORDINATOR", "class_name": "BuildCoordinator" },
       { "name": "OWNER_METADATA", "class_name": "OwnerMetadata" },
-      { "name": "REFRESH_TARGET_INDEX", "class_name": "RefreshTargetIndex" },
       { "name": "SUMMARY_QUOTA", "class_name": "SummaryQuota" },
       { "name": "WEBHOOK_ADMISSION", "class_name": "WebhookAdmission" },
       { "name": "WEBHOOK_PROCESSOR", "class_name": "WebhookProcessor" },
@@ -95,7 +94,7 @@
   },
 
   // A migration is applied once and never edited afterwards: a change to the classes is a new
-  // entry with a new tag. v2 deleted DashboardBuildLock with everything it stored.
+  // entry with a new tag, at the end. v2 deleted DashboardBuildLock with everything it stored.
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["DashboardBuildLock"] },
     {
@@ -110,5 +109,7 @@
       ],
       "deleted_classes": ["DashboardBuildLock"],
     },
+    // The index of refresh targets is a D1 table: migrations/0001_refresh.sql.
+    { "tag": "7a-refresh", "deleted_classes": ["RefreshTargetIndex"] },
   ],
 }

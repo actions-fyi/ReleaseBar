@@ -1,14 +1,8 @@
 // What the scheduler carries from one tick to the next: the summary of the last tick with the
 // cursor into the refresh targets, and the owner whose repository counts were refreshed last.
 //
-// Both are KV entries. Step 7a of the stack migration moves them to D1
-// (docs/data-model.md).
+// Each is a row of `scheduler_state` in D1, by name (migrations/0001_refresh.sql).
 
-import {
-  dashboardStorageTtlSeconds,
-  refreshOwnerCountCursorKey,
-  refreshStateKey,
-} from "../config.ts";
 import { tryJsonParse } from "../schemas.ts";
 
 export type StoredSchedulerState = {
@@ -22,22 +16,39 @@ export type StoredSchedulerState = {
   countRefresh?: { considered: number; refreshed: number; deferred: number; failed: number };
 };
 
+const lastTickName = "last-tick";
+const ownerCountCursorName = "owner-count-cursor";
+
+async function readState(env: Env, name: string): Promise<string | null> {
+  const row = await env.DB.prepare("SELECT value FROM scheduler_state WHERE name = ?")
+    .bind(name)
+    .first<{ value: string }>();
+  return row?.value ?? null;
+}
+
+async function writeState(env: Env, name: string, value: string): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO scheduler_state (name, updated_at, value) VALUES (?, ?, ?)
+     ON CONFLICT (name) DO UPDATE SET updated_at = excluded.updated_at, value = excluded.value`,
+  )
+    .bind(name, Date.now(), value)
+    .run();
+}
+
 // The state as it was stored, not validated.
 export async function readSchedulerState(env: Env): Promise<StoredSchedulerState | null> {
-  const raw = await env.DASHBOARD_CACHE.get(refreshStateKey);
+  const raw = await readState(env, lastTickName);
   return raw ? tryJsonParse<StoredSchedulerState>(raw, "refresh state") : null;
 }
 
-export async function writeSchedulerState(env: Env, state: StoredSchedulerState): Promise<void> {
-  await env.DASHBOARD_CACHE.put(refreshStateKey, JSON.stringify(state), {
-    expirationTtl: dashboardStorageTtlSeconds,
-  });
+export function writeSchedulerState(env: Env, state: StoredSchedulerState): Promise<void> {
+  return writeState(env, lastTickName, JSON.stringify(state));
 }
 
 export function readOwnerCountCursor(env: Env): Promise<string | null> {
-  return env.DASHBOARD_CACHE.get(refreshOwnerCountCursorKey);
+  return readState(env, ownerCountCursorName);
 }
 
-export async function writeOwnerCountCursor(env: Env, owner: string): Promise<void> {
-  await env.DASHBOARD_CACHE.put(refreshOwnerCountCursorKey, owner);
+export function writeOwnerCountCursor(env: Env, owner: string): Promise<void> {
+  return writeState(env, ownerCountCursorName, owner);
 }

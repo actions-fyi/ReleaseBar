@@ -536,7 +536,6 @@ export type RepoDetailPayload = {
 export type RefreshTarget = {
   key: string;
   kind: "dashboard";
-  indexVersion?: number;
   owner: string;
   owners: string[];
   repos: string[];

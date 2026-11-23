@@ -65,7 +65,6 @@ import { webhookRepo } from "./webhook-targets.ts";
 
 export { BuildCoordinator } from "./objects/build-coordinator.ts";
 export { OwnerMetadata } from "./objects/owner-metadata.ts";
-export { RefreshTargetIndex } from "./objects/refresh-target-index.ts";
 export { SummaryQuota } from "./objects/summary-quota.ts";
 export { WebhookAdmission } from "./objects/webhook-admission.ts";
 export { WebhookProcessor } from "./objects/webhook-processor.ts";

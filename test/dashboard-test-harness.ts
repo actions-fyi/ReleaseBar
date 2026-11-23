@@ -4,11 +4,15 @@ import font700 from "@fontsource/jetbrains-mono/files/jetbrains-mono-latin-700-n
 import { runInDurableObject } from "cloudflare:test";
 import { env as runtimeEnv } from "cloudflare:workers";
 import { vi } from "vitest";
-import type { SchedulerAuditEvent } from "../src/types.ts";
+import type {
+  DashboardProfile,
+  RefreshJob,
+  RefreshTarget,
+  SchedulerAuditEvent,
+} from "../src/types.ts";
 import handler, {
   BuildCoordinator,
   OwnerMetadata,
-  RefreshTargetIndex,
   SummaryQuota,
   WebhookAdmission,
   WebhookProcessor,
@@ -19,11 +23,29 @@ import {
   refreshTargetSourceLimit,
 } from "../worker/config.ts";
 import { durableObjectBindings } from "../worker/store/bindings.ts";
+import { refreshTargetSources } from "../worker/refresh-targets.ts";
+import { ownerMetadataObjectName, type WorkerQueueMessage } from "../worker/runtime.ts";
+import { ensureProfileSnapshot, readProfileSnapshot } from "../worker/store/profile-snapshots.ts";
 import {
-  ownerMetadataObjectName,
-  refreshTargetIndexName,
-  type WorkerQueueMessage,
-} from "../worker/runtime.ts";
+  indexRefreshJob,
+  listStoredRefreshJobDeliveries,
+  listStoredRefreshJobs,
+  readStoredRefreshJob,
+  readStoredRefreshJobSnapshot,
+  writeRefreshJob,
+} from "../worker/store/refresh-jobs.ts";
+import {
+  deleteRefreshTarget,
+  indexedRefreshTargets,
+  readStoredRefreshTarget,
+  type RefreshTargetWrite,
+  writeRefreshTarget,
+} from "../worker/store/refresh-targets.ts";
+import {
+  readOwnerCountCursor,
+  readSchedulerState,
+  type StoredSchedulerState,
+} from "../worker/store/scheduler-state.ts";
 
 export { testDashboard, testProject } from "./dashboard-fixtures.ts";
 
@@ -68,7 +90,6 @@ type ObjectBinding = (typeof durableObjectBindings)[number];
 const objectClasses = [
   BuildCoordinator,
   OwnerMetadata,
-  RefreshTargetIndex,
   SummaryQuota,
   WebhookAdmission,
   WebhookProcessor,
@@ -144,14 +165,7 @@ export function testEnv(env: TestEnv): Env {
   return env as unknown as Env;
 }
 
-export {
-  BuildCoordinator,
-  OwnerMetadata,
-  RefreshTargetIndex,
-  SummaryQuota,
-  WebhookAdmission,
-  WebhookProcessor,
-};
+export { BuildCoordinator, OwnerMetadata, SummaryQuota, WebhookAdmission, WebhookProcessor };
 
 // Makes every dashboard's build lock answer as held by someone else, until the test ends.
 export function buildLocksHeld(): void {
@@ -180,40 +194,144 @@ export async function forgetRefreshTargetState(key: string): Promise<void> {
   });
 }
 
-// The index of the refresh targets that show an owner or a repository.
-export function targetIndex(
-  env: TestEnv,
-  kind: "owner" | "repo",
-  value: string,
-): DurableObjectStub<RefreshTargetIndex> {
-  return testEnv(env).REFRESH_TARGET_INDEX.getByName(refreshTargetIndexName(kind, value));
+// The refresh data is in the local D1 database of the Workers runtime, which every env of a test
+// shares (`testEnv`). These helpers write and read it through the store functions, as the Worker
+// does.
+const databaseEnv = runtimeEnv;
+
+// Stores a refresh target with the index of its sources.
+export function storeRefreshTarget(target: RefreshTarget): Promise<RefreshTargetWrite> {
+  return writeRefreshTarget(databaseEnv, target, refreshTargetSources(target));
 }
 
-// Fills an index with as many targets as it takes, so that it refuses the next new one.
-export async function fillTargetIndex(
-  env: TestEnv,
-  kind: "owner" | "repo",
-  value: string,
-): Promise<void> {
-  const index = targetIndex(env, kind, value);
-  const now = new Date().toISOString();
-  for (let count = 0; count < refreshTargetSourceLimit; count += 1) {
-    await index.upsert({
-      key: `filler:${kind}:${value}:${count}`,
-      kind: "dashboard",
-      owner: "filler",
-      owners: ["filler"],
-      repos: [],
-      includeReleaseData: true,
-      path: `/filler?variant=${count}`,
-      priority: 1,
-      lastSeenAt: now,
-      lastAttemptAt: null,
-      lastSuccessAt: null,
-      nextDueAt: now,
-      failureCount: 0,
+export async function storeRefreshTargets(targets: RefreshTarget[]): Promise<void> {
+  for (const target of targets) await storeRefreshTarget(target);
+}
+
+// The stored refresh target, or null.
+export function storedRefreshTarget(key: string): Promise<RefreshTarget | null> {
+  return readStoredRefreshTarget(databaseEnv, key);
+}
+
+export function deleteStoredRefreshTarget(key: string): Promise<void> {
+  return deleteRefreshTarget(databaseEnv, key);
+}
+
+// The targets the index lists under an owner or a repository, most recently seen first.
+export function indexedTargets(kind: "owner" | "repo", value: string): Promise<RefreshTarget[]> {
+  return indexedRefreshTargets(databaseEnv, { kind, value });
+}
+
+// Stores the latest state of a refresh job.
+export function storeRefreshJob(job: RefreshJob): Promise<void> {
+  return writeRefreshJob(databaseEnv, job);
+}
+
+// The latest state a delivery stored for the job, or null.
+export function storedRefreshJob(id: string): Promise<RefreshJob | null> {
+  return readStoredRefreshJob(databaseEnv, id);
+}
+
+// Stores a job as enqueueing does: its snapshot, and no state yet.
+export function storeRefreshJobSnapshot(job: RefreshJob): Promise<void> {
+  return indexRefreshJob(databaseEnv, job);
+}
+
+// How many statements among `sql` wrote the state of a job.
+export function jobStateWrites(sql: string[]): number {
+  return sql.filter((statement) =>
+    statement.startsWith(
+      "INSERT INTO refresh_jobs (id, target_key, created_at, updated_at, value)",
+    ),
+  ).length;
+}
+
+// The job as it was enqueued, with its target: what a job's `targetSnapshotKey` names.
+export function storedRefreshJobSnapshot(key: string | undefined): Promise<RefreshJob | null> {
+  return readStoredRefreshJobSnapshot(databaseEnv, key ?? "");
+}
+
+// The newest jobs: each in its latest state, or as it was enqueued while it has none.
+export function storedRefreshJobs(): Promise<RefreshJob[]> {
+  return listStoredRefreshJobs(databaseEnv);
+}
+
+export function storedRefreshJobDeliveries(): Promise<RefreshJob[]> {
+  return listStoredRefreshJobDeliveries(databaseEnv);
+}
+
+// Stores the snapshot of a profile and returns its key: what a target carries as
+// `profileSnapshotKey`.
+export function storeProfileSnapshot(profile: DashboardProfile): Promise<string> {
+  return ensureProfileSnapshot(databaseEnv, profile);
+}
+
+export function storedProfileSnapshot(key: string): Promise<DashboardProfile | null> {
+  return readProfileSnapshot(databaseEnv, key);
+}
+
+export function storedSchedulerState(): Promise<StoredSchedulerState | null> {
+  return readSchedulerState(databaseEnv);
+}
+
+export function storedOwnerCountCursor(): Promise<string | null> {
+  return readOwnerCountCursor(databaseEnv);
+}
+
+// Lists as many targets under a source as it takes, so that the store refuses the next new one.
+export async function fillTargetSource(kind: "owner" | "repo", value: string): Promise<void> {
+  const database = databaseEnv.DB;
+  const insert = database.prepare(
+    "INSERT INTO refresh_target_sources (kind, value, target_key) VALUES (?, ?, ?)",
+  );
+  await database.batch(
+    Array.from({ length: refreshTargetSourceLimit }, (_, count) =>
+      insert.bind(kind, value, `filler:${kind}:${value}:${count}`),
+    ),
+  );
+}
+
+// A database that counts the statements the Worker sends it, and can fail one: pass it to a
+// test's env as the D1 binding. `fail` gets each statement's SQL before it runs; returning true
+// makes the statement throw. A batch counts once in `batches` and each of its statements in
+// `statements`.
+export function observedDatabase(fail: (sql: string) => boolean = () => false) {
+  const counts = { statements: 0, batches: 0, sql: [] as string[] };
+  const sqlOf = new WeakMap<object, string>();
+  const record = (sql: string): void => {
+    counts.statements += 1;
+    counts.sql.push(sql.replaceAll(/\s+/g, " ").trim());
+    if (fail(sql)) throw new Error("D1 unavailable");
+  };
+  const observe = (statement: D1PreparedStatement, sql: string): D1PreparedStatement => {
+    const proxy: D1PreparedStatement = new Proxy(statement, {
+      get(target, property) {
+        const member: unknown = Reflect.get(target, property);
+        if (typeof member !== "function") return member;
+        if (property === "bind") {
+          return (...values: unknown[]) => observe(target.bind(...values), sql);
+        }
+        return async (...parameters: unknown[]): Promise<unknown> => {
+          record(sql);
+          return Reflect.apply(member, target, parameters);
+        };
+      },
     });
-  }
+    sqlOf.set(proxy, sql);
+    rawStatements.set(proxy, statement);
+    return proxy;
+  };
+  const rawStatements = new WeakMap<object, D1PreparedStatement>();
+  const real = runtimeEnv.DB;
+  const database = {
+    prepare: (sql: string) => observe(real.prepare(sql), sql),
+    batch: async (statements: D1PreparedStatement[]) => {
+      counts.batches += 1;
+      for (const statement of statements) record(sqlOf.get(statement) ?? "");
+      return real.batch(statements.map((statement) => rawStatements.get(statement) ?? statement));
+    },
+  } as unknown as D1Database;
+  return { database, counts };
 }
 
 // Applies mutations to an owner's metadata in its Durable Object, as the Worker does.
