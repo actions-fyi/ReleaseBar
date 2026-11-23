@@ -644,10 +644,9 @@ export async function githubAppInstallationRepositories(
 
 export async function writeSessionRecord(
   env: Env,
-  id: string | null,
+  id: string,
   session: StoredAuthSession,
 ): Promise<void> {
-  if (!id) return;
   // KV rejects expirationTtl below 60s; a session that close to expiry is not worth rewriting.
   const ttl = session.exp - Math.floor(Date.now() / 1000);
   if (ttl < 60) return;
@@ -658,7 +657,7 @@ export async function writeSessionRecord(
 // restart reopening several tabs) must not turn a failed rewrite into a logged-out response.
 export async function bestEffortWriteSessionRecord(
   env: Env,
-  id: string | null,
+  id: string,
   session: StoredAuthSession,
 ): Promise<void> {
   try {
@@ -681,7 +680,7 @@ async function readStoredSession(env: Env, id: string): Promise<StoredAuthSessio
 // strand the stored session on a spent refresh token. Retry past the 1-write/sec/key limit.
 async function persistRotatedSession(
   env: Env,
-  id: string | null,
+  id: string,
   session: StoredAuthSession,
 ): Promise<void> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -705,7 +704,7 @@ async function persistRotatedSession(
 
 export async function sessionAccessToken(
   env: Env,
-  record: { id: string | null; session: StoredAuthSession },
+  record: { id: string; session: StoredAuthSession },
 ): Promise<string> {
   const session = record.session;
   const now = Math.floor(Date.now() / 1000);
@@ -721,7 +720,7 @@ export async function sessionAccessToken(
   const grant = await refreshedUserGrant(env, session.refreshToken).catch(() => null);
   if (!grant) {
     // Refresh tokens are single-use: a parallel request may have rotated first. Pick up its result.
-    const latest = record.id ? await readStoredSession(env, record.id) : null;
+    const latest = await readStoredSession(env, record.id);
     if (latest && latest.accessToken !== session.accessToken) {
       Object.assign(session, latest);
     }

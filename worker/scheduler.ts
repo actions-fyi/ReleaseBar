@@ -53,7 +53,7 @@ export async function processRefreshJob(
   let job: RefreshJob = {
     ...(snapshotJob ?? input),
     ...storedJob,
-    target: storedJob?.target ?? snapshotJob?.target ?? input.target,
+    target: storedJob?.target ?? snapshotJob?.target,
     targetSnapshotKey:
       storedJob?.targetSnapshotKey ?? snapshotJob?.targetSnapshotKey ?? input.targetSnapshotKey,
   };
@@ -72,7 +72,9 @@ export async function processRefreshJob(
     await writeRefreshJob(env, skipped);
     return skipped;
   }
-  if (input.targetSnapshotKey && !snapshotJob?.target && !storedJob?.target && !input.target) {
+  // A queue message carries no target: the job's snapshot does, and so does its stored state.
+  const targetSnapshot = job.target;
+  if (!targetSnapshot) {
     const now = new Date().toISOString();
     const retrying = {
       ...job,
@@ -127,30 +129,10 @@ export async function processRefreshJob(
     reason: job.reason,
   });
 
-  const targetSnapshot = job.target ?? input.target;
-  const storedTarget = await readRefreshTarget(env, job.targetKey);
-  const target = targetSnapshot
-    ? mergeRefreshTargetState(targetSnapshot, storedTarget)
-    : storedTarget;
-  if (!target) {
-    const skipped = {
-      ...job,
-      status: "skipped" as const,
-      finishedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      durationMs: Date.now() - startedAt,
-      error: "target missing",
-    };
-    await writeRefreshJob(env, skipped);
-    await auditSyncEvent(env, {
-      event: "job_skipped",
-      targetKey: job.targetKey,
-      jobId: job.id,
-      status: "skipped",
-      reason: "target missing",
-    });
-    return skipped;
-  }
+  const target = mergeRefreshTargetState(
+    targetSnapshot,
+    await readRefreshTarget(env, job.targetKey),
+  );
 
   const deadlineController = new AbortController();
   const deadlineTimer = globalThis.setTimeout(

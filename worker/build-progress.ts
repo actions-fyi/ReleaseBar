@@ -112,15 +112,11 @@ export function storedBuildProgressExpired(progress: StoredBuildProgress): boole
   return Date.now() - safeIso(progress.updatedAt) > progressTtlSeconds * 1000;
 }
 
-export async function readFallbackProgress(
-  env: Env,
-  key: string,
-): Promise<StoredBuildProgress | StoredBuildProgressTombstone | null> {
+// The progress the cache keeps while the dashboard's coordinator object can't be reached
+// (`writeProgress`).
+async function readFallbackProgress(env: Env, key: string): Promise<StoredBuildProgress | null> {
   const stored = await readCacheEntry<unknown>(env, progressKey(key), `progress ${key}`);
-  if (isStoredBuildProgress(stored) || isStoredBuildProgressTombstone(stored)) {
-    return stored;
-  }
-  return null;
+  return isStoredBuildProgress(stored) ? stored : null;
 }
 
 export async function readProgressTombstone(
@@ -133,16 +129,6 @@ export async function readProgressTombstone(
     `progress tombstone ${key}`,
   );
   return isStoredBuildProgressTombstone(stored) ? stored : null;
-}
-
-export function latestProgressTombstone(
-  fallback: StoredBuildProgress | StoredBuildProgressTombstone | null,
-  tombstone: StoredBuildProgressTombstone | null,
-): StoredBuildProgressTombstone | null {
-  const legacy = isStoredBuildProgressTombstone(fallback) ? fallback : null;
-  if (!legacy) return tombstone;
-  if (!tombstone) return legacy;
-  return safeIso(legacy.clearedAt) >= safeIso(tombstone.clearedAt) ? legacy : tombstone;
 }
 
 export function progressCleared(
@@ -190,21 +176,20 @@ async function deleteDurableProgress(env: Env, key: string): Promise<void> {
 }
 
 export async function readProgress(env: Env, key: string): Promise<StoredBuildProgress | null> {
-  const [durable, fallbackStored, storedTombstone] = await Promise.all([
+  const [durable, fallback, tombstone] = await Promise.all([
     readDurableProgress(env, key),
     readFallbackProgress(env, key),
     readProgressTombstone(env, key),
   ]);
-  const fallback = isStoredBuildProgress(fallbackStored) ? fallbackStored : null;
-  const tombstone = latestProgressTombstone(fallbackStored, storedTombstone);
   const durableProgress = durable?.progress ?? null;
 
-  const markedFallback = fallback?.durableFallback ? fallback : null;
+  // The cache holds progress only when it was written while the object could not be reached:
+  // the newer of the two counts.
   const progress =
     durableProgress &&
-    (!markedFallback || safeIso(durableProgress.updatedAt) >= safeIso(markedFallback.updatedAt))
+    (!fallback || safeIso(durableProgress.updatedAt) >= safeIso(fallback.updatedAt))
       ? durableProgress
-      : (markedFallback ?? (!durable ? fallback : null));
+      : fallback;
   if (!progress) return null;
   if (progressCleared(progress, tombstone)) {
     if (progress === durableProgress) {
@@ -234,14 +219,9 @@ export async function writeProgress(
     await deleteCacheEntry(env, progressKey(key)).catch(() => undefined);
     return;
   } catch {
-    // The object can't be reached: the cache keeps the progress, marked as standing in for it.
+    // The object can't be reached: the cache keeps the progress in its place.
   }
-  await writeCacheEntry(
-    env,
-    progressKey(key),
-    { ...progress, durableFallback: true } satisfies StoredBuildProgress,
-    progressTtlSeconds,
-  );
+  await writeCacheEntry(env, progressKey(key), progress, progressTtlSeconds);
 }
 
 export async function writeProgressTombstone(

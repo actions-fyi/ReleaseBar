@@ -170,24 +170,16 @@ export async function currentSession(
 export async function currentSessionRecord(
   request: Request,
   env: Env,
-): Promise<{ id: string | null; session: StoredAuthSession } | null> {
+): Promise<{ id: string; session: StoredAuthSession } | null> {
   if (!env.AUTH_COOKIE_SECRET) return null;
   const token = parseCookies(request).get(sessionCookie);
   if (!token) return null;
   const pointer = await verifySignedJson<AuthSession>(env.AUTH_COOKIE_SECRET, token);
   if (!pointer || pointer.exp < Math.floor(Date.now() / 1000)) return null;
 
-  const stored = await readStoredSession(env, pointer.id);
-  if (stored) {
-    const session = stored.session;
-    if (!session) return null;
-    return session.exp < Math.floor(Date.now() / 1000) ? null : { id: pointer.id, session };
-  }
-
-  const legacy = pointer as unknown as StoredAuthSession;
-  return legacy.user && legacy.exp >= Math.floor(Date.now() / 1000)
-    ? { id: null, session: legacy }
-    : null;
+  const session = (await readStoredSession(env, pointer.id))?.session;
+  if (!session) return null;
+  return session.exp < Math.floor(Date.now() / 1000) ? null : { id: pointer.id, session };
 }
 
 export function ownerListFromUrl(url: URL, primaryOwner?: string): string[] {

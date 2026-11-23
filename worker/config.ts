@@ -308,7 +308,6 @@ export type StoredBuildProgress = {
   releasesUpdatedAt?: string | null;
   ciUpdatedAt?: string | null;
   updatedAt: string;
-  durableFallback?: true;
 };
 
 export type StoredBuildProgressTombstone = {

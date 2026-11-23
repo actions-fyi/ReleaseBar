@@ -458,10 +458,11 @@ test("worker falls back to KV progress when the Durable Object is unavailable", 
       { waitUntil: (promise) => waits.push(promise) },
     );
     expect(response.status).toBe(200);
+    // The cache keeps the progress in the object's place.
     const fallback = JSON.parse((await cache.get(`progress:v1:${key}`)) ?? "{}") as {
-      durableFallback?: boolean;
+      updatedAt?: string;
     };
-    expect(fallback.durableFallback).toBe(true);
+    expect(typeof fallback.updatedAt).toBe("string");
     await Promise.all(waits);
   } finally {
     globalThis.fetch = originalFetch;
@@ -538,7 +539,6 @@ test("worker resumes marked KV progress after an authoritative Durable Object mi
       scannedRepos: progressProjects.map((project) => project.fullName.toLowerCase()),
       projects: progressProjects,
       updatedAt: "2026-06-11T07:00:00Z",
-      durableFallback: true,
     }),
   });
   await storeRefreshJob(job);
