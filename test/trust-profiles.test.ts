@@ -1,6 +1,6 @@
 import { assert, expect, test } from "vitest";
 import type { TrustProfilePayload } from "../src/types.ts";
-import { kvStore, worker } from "./dashboard-test-harness.ts";
+import { kvStore, worker, seedInstallation } from "./dashboard-test-harness.ts";
 
 test("worker builds bounded trust profiles for people pages", async () => {
   const originalFetch = globalThis.fetch;
@@ -175,8 +175,8 @@ test("worker preserves bot tier for typed trust profiles", async () => {
 });
 
 test("worker uses registered app quota for anonymous trust profiles", async () => {
-  const cache = kvStore({
-    "auth:installation:v1:principal": JSON.stringify({
+  await seedInstallation(
+    JSON.stringify({
       id: 42,
       accountLogin: "principal",
       accountType: "user",
@@ -186,6 +186,8 @@ test("worker uses registered app quota for anonymous trust profiles", async () =
       repositories: [],
       updatedAt: new Date().toISOString(),
     }),
+  );
+  const cache = kvStore({
     "auth:installation-token:42": "installation-token",
   });
   const originalFetch = globalThis.fetch;

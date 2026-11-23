@@ -54,6 +54,7 @@ import {
 import { repoDetailResponse } from "./repo-detail-response.ts";
 import { failExhaustedRefreshJob, processRefreshJob } from "./scheduler.ts";
 import { sendQueueMessage } from "./store/queue.ts";
+import { deleteExpiredRegistryRows } from "./registry-expiry.ts";
 import { processWebhookJob } from "./store/webhooks.ts";
 import { socialCardForLabel, socialImage, socialPng, socialRouteLabel } from "./social-card.ts";
 import {
@@ -66,7 +67,6 @@ import {
 import { webhookRepo } from "./webhook-targets.ts";
 
 export { BuildCoordinator } from "./objects/build-coordinator.ts";
-export { OwnerMetadata } from "./objects/owner-metadata.ts";
 export { RateLimiter } from "./objects/rate-limiter.ts";
 export { SummaryQuota } from "./objects/summary-quota.ts";
 export { WebhookAdmission } from "./objects/webhook-admission.ts";
@@ -131,6 +131,7 @@ export default {
       schedulerTick(audit.env, audit.context, `cron:${controller.cron}`, schedulerBatchLimit),
     );
     audit.context.waitUntil(deleteExpiredAuditRows(audit.env));
+    audit.context.waitUntil(deleteExpiredRegistryRows(audit.env));
     void audit.finish();
   },
   async queue(

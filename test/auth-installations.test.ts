@@ -10,6 +10,8 @@ import {
   testDashboard,
   testEnv,
   worker,
+  seedProfile,
+  storedInstallationJson,
 } from "./dashboard-test-harness.ts";
 
 test("worker rejects oversized custom source requests", async () => {
@@ -186,8 +188,8 @@ test("worker queues shared cache warming after login discovers an installation",
   staleDashboard.generatedAt = staleAt;
   assert.ok(staleDashboard.cache);
   staleDashboard.cache.generatedAt = staleAt;
+  await seedProfile(JSON.stringify(profile));
   const cache = kvStore({
-    "profile:v1:openclaw": JSON.stringify(profile),
     [cacheKey]: JSON.stringify(staleDashboard),
   });
   const sentJobs: RefreshJob[] = [];
@@ -336,7 +338,7 @@ test("worker remembers GitHub App installs without OAuth session", async () => {
     await Promise.all(waits);
     expect(install.status).toBe(302);
     expect(install.headers.get("location")).toBe("/openclaw");
-    const remembered = JSON.parse((await cache.get("auth:installation:v1:openclaw")) ?? "{}");
+    const remembered = JSON.parse((await storedInstallationJson("openclaw")) ?? "{}");
     expect(remembered.id).toBe(77);
     expect(remembered.accountLogin).toBe("openclaw");
     expect(remembered.repositorySelection).toBe("all");
@@ -818,7 +820,7 @@ test("worker records server-verified install callbacks without signed return sta
     );
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("/");
-    const remembered = JSON.parse((await cache.get("auth:installation:v1:outside-org")) ?? "{}");
+    const remembered = JSON.parse((await storedInstallationJson("outside-org")) ?? "{}");
     expect(remembered.id).toBe(101);
     expect(remembered.accountLogin).toBe("outside-org");
     expect(await authFunnelEventCount()).toBe(2);

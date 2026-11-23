@@ -12,7 +12,6 @@ import type {
 } from "../src/types.ts";
 import {
   installationMissKey,
-  installationRegistryKey,
   readStoredInstallation,
   type StoredInstallationRecord,
   writeStoredInstallation,
@@ -41,7 +40,7 @@ export function isPublicInstallationRepository(repo: GitHubInstallationRepositor
   return repo.private === false || repo.visibility === "public";
 }
 
-export { installationMissKey, installationRegistryKey };
+export { installationMissKey };
 
 export function normalizedInstallation(installation: AuthInstallation): StoredInstallationRecord {
   return {
@@ -103,7 +102,7 @@ export async function installationRefreshTargetInput(
 
 // Skip rewrites of registry entries that already hold the same content and were
 // refreshed recently, so bursts of /api/me calls (multiple tabs, browser restart)
-// stay under Workers KV's one-write-per-key-per-second limit.
+// do not each write the same row again.
 const installationRegistryRewriteMinAgeMs = 5 * 60 * 1000;
 
 async function installationRegistryEntryFresh(
@@ -116,9 +115,16 @@ async function installationRegistryEntryFresh(
   if (!Number.isFinite(updatedAt) || Date.now() - updatedAt > installationRegistryRewriteMinAgeMs) {
     return false;
   }
-  const { updatedAt: _existingUpdatedAt, ...existingContent } = existing;
-  const { updatedAt: _nextUpdatedAt, ...nextContent } = installation;
-  return JSON.stringify(existingContent) === JSON.stringify(nextContent);
+  return (
+    existing.id === installation.id &&
+    existing.accountLogin === installation.accountLogin &&
+    existing.accountType === installation.accountType &&
+    existing.accountUrl === installation.accountUrl &&
+    existing.avatarUrl === installation.avatarUrl &&
+    existing.repositorySelection === installation.repositorySelection &&
+    existing.repositories.length === installation.repositories.length &&
+    existing.repositories.every((repo, index) => repo === installation.repositories[index])
+  );
 }
 
 export async function writeInstallationRegistry(

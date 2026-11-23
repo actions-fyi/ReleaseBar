@@ -9,6 +9,8 @@ import {
   testProject,
   webhookSignature,
   worker,
+  seedOwnerMetadata,
+  storedOwnerMetadataJson,
 } from "./dashboard-test-harness.ts";
 
 test("older owner count refreshes cannot replace newer snapshots", async () => {
@@ -79,7 +81,7 @@ test("older owner count refreshes cannot replace newer snapshots", async () => {
     ],
   });
 
-  const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  const snapshot = JSON.parse((await storedOwnerMetadataJson("owner")) ?? "{}") as {
     countsUpdatedAt?: string;
     knownRepos?: string[];
     projects?: Project[];
@@ -122,7 +124,7 @@ test("older complete count scans preserve newer repository metadata", async () =
     counts: [],
   });
 
-  const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  const snapshot = JSON.parse((await storedOwnerMetadataJson("owner")) ?? "{}") as {
     knownRepos?: string[];
     removedRepos?: Record<string, string>;
     projects?: Project[];
@@ -182,7 +184,7 @@ test("newer metadata merges preserve counts without restoring stale repository s
     removedRepos: [],
   });
 
-  const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  const snapshot = JSON.parse((await storedOwnerMetadataJson("owner")) ?? "{}") as {
     projects?: Project[];
   };
   expect(snapshot.projects?.[0]?.archived).toBe(true);
@@ -261,7 +263,7 @@ test("older dashboard builds cannot restore repositories removed by newer counts
     removedRepos: [],
   });
 
-  const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  const snapshot = JSON.parse((await storedOwnerMetadataJson("owner")) ?? "{}") as {
     knownRepos?: string[];
     projects?: Project[];
   };
@@ -281,20 +283,9 @@ test("complete metadata scans tombstone absent repositories across cached varian
     includeReleaseData: true,
     schemaVersion: 6,
   });
-  const cache = kvStore({
-    [key]: JSON.stringify({
-      ...testDashboard("owner", [repo, sibling]),
-      generatedAt: initialAt,
-      cache: {
-        state: "fresh",
-        stale: false,
-        capped: false,
-        repoLimit: 200,
-        generatedAt: initialAt,
-        countsUpdatedAt: initialAt,
-      },
-    } satisfies DashboardPayload),
-    "owner-metadata:v1:owner": JSON.stringify({
+  await seedOwnerMetadata(
+    "owner",
+    JSON.stringify({
       owner: "owner",
       generatedAt: initialAt,
       metadataUpdatedAt: initialAt,
@@ -308,6 +299,20 @@ test("complete metadata scans tombstone absent repositories across cached varian
       },
       projects: [repo, sibling],
     }),
+  );
+  const cache = kvStore({
+    [key]: JSON.stringify({
+      ...testDashboard("owner", [repo, sibling]),
+      generatedAt: initialAt,
+      cache: {
+        state: "fresh",
+        stale: false,
+        capped: false,
+        repoLimit: 200,
+        generatedAt: initialAt,
+        countsUpdatedAt: initialAt,
+      },
+    } satisfies DashboardPayload),
   });
   const env: TestEnv = {
     DASHBOARD_CACHE: cache,
@@ -337,7 +342,7 @@ test("complete metadata scans tombstone absent repositories across cached varian
     removedRepos: [],
   });
 
-  const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  const snapshot = JSON.parse((await storedOwnerMetadataJson("owner")) ?? "{}") as {
     knownRepos?: string[];
     removedRepos?: Record<string, string>;
     projects?: Project[];
@@ -381,7 +386,7 @@ test("stale repository removals cannot hide newer public metadata", async () => 
   });
   await mutate({ kind: "remove", fullName: project.fullName.toLowerCase(), observedAt: removedAt });
 
-  const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  const snapshot = JSON.parse((await storedOwnerMetadataJson("owner")) ?? "{}") as {
     removedRepos?: Record<string, string>;
     projects?: Project[];
   };
@@ -414,7 +419,7 @@ test("newer owner metadata merges cannot clear privacy tombstones", async () => 
     removedRepos: [],
   });
 
-  const snapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+  const snapshot = JSON.parse((await storedOwnerMetadataJson("owner")) ?? "{}") as {
     removedRepos?: Record<string, string>;
     projects?: Project[];
   };
@@ -525,7 +530,7 @@ test("worker persists archived observations without showing archived repositorie
     expect(acknowledged).toBe(true);
     const dashboard = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
     expect(dashboard.projects.length).toBe(0);
-    const snapshot = JSON.parse((await cache.get(`owner-metadata:v1:${owner}`)) ?? "{}") as {
+    const snapshot = JSON.parse((await storedOwnerMetadataJson(owner)) ?? "{}") as {
       projects?: Project[];
       removedRepos?: Record<string, string>;
     };
@@ -552,19 +557,9 @@ test("worker preserves field freshness when resuming an older progress checkpoin
     schemaVersion: 6,
   });
   const project = testProject({ owner, name: "repo" });
-  const cache = kvStore({
-    [`owner:v1:${owner}`]: JSON.stringify({ type: "user", login: owner }),
-    [`progress:v1:${key}`]: JSON.stringify({
-      scannedRepos: [project.fullName.toLowerCase()],
-      projects: [project],
-      generationStartedAt,
-      countsUpdatedAt: generatedAt,
-      releasesUpdatedAt,
-      ciUpdatedAt,
-      updatedAt: generatedAt,
-      durableFallback: true,
-    }),
-    [`owner-metadata:v1:${owner}`]: JSON.stringify({
+  await seedOwnerMetadata(
+    owner,
+    JSON.stringify({
       owner,
       generatedAt: removedAt,
       metadataUpdatedAt: removedAt,
@@ -576,6 +571,19 @@ test("worker preserves field freshness when resuming an older progress checkpoin
       projectCountsUpdatedAt: {},
       countOverlays: {},
       projects: [],
+    }),
+  );
+  const cache = kvStore({
+    [`owner:v1:${owner}`]: JSON.stringify({ type: "user", login: owner }),
+    [`progress:v1:${key}`]: JSON.stringify({
+      scannedRepos: [project.fullName.toLowerCase()],
+      projects: [project],
+      generationStartedAt,
+      countsUpdatedAt: generatedAt,
+      releasesUpdatedAt,
+      ciUpdatedAt,
+      updatedAt: generatedAt,
+      durableFallback: true,
     }),
   });
   const waits: Promise<unknown>[] = [];

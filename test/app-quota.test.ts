@@ -9,6 +9,8 @@ import {
   testDashboard,
   testProject,
   worker,
+  seedInstallation,
+  storedInstallationJson,
 } from "./dashboard-test-harness.ts";
 
 test("worker only exposes public selected installation repositories", async () => {
@@ -519,8 +521,8 @@ test("worker uses registered source-owned app tokens for anonymous owner dashboa
     privateKeyEncoding: { type: "pkcs1", format: "pem" },
     publicKeyEncoding: { type: "spki", format: "pem" },
   });
-  const cache = kvStore({
-    "auth:installation:v1:openclaw": JSON.stringify({
+  await seedInstallation(
+    JSON.stringify({
       id: 1,
       accountLogin: "openclaw",
       accountType: "org",
@@ -530,7 +532,8 @@ test("worker uses registered source-owned app tokens for anonymous owner dashboa
       repositories: [],
       updatedAt: new Date().toISOString(),
     }),
-  });
+  );
+  const cache = kvStore({});
   const env = {
     DASHBOARD_CACHE: cache,
     GITHUB_APP_ID: "123",
@@ -618,8 +621,8 @@ test("worker keeps stale source installation coverage when discovery fails", asy
     privateKeyEncoding: { type: "pkcs1", format: "pem" },
     publicKeyEncoding: { type: "spki", format: "pem" },
   });
-  const cache = kvStore({
-    "auth:installation:v1:openclaw": JSON.stringify({
+  await seedInstallation(
+    JSON.stringify({
       id: 1,
       accountLogin: "openclaw",
       accountType: "org",
@@ -629,6 +632,8 @@ test("worker keeps stale source installation coverage when discovery fails", asy
       repositories: [],
       updatedAt: "2026-05-15T12:00:00Z",
     }),
+  );
+  const cache = kvStore({
     "auth:installation-token:1": "installation-token",
   });
   const env = {
@@ -679,7 +684,7 @@ test("worker keeps stale source installation coverage when discovery fails", asy
     expect(body.cache?.quota?.source).toBe("app");
     expect(body.cache?.quota?.account).toBe("openclaw");
     expect(await cache.get("auth:installation-miss:v1:openclaw")).toBe(null);
-    expect(await cache.get("auth:installation:v1:openclaw")).not.toBe(null);
+    expect(await storedInstallationJson("openclaw")).not.toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }

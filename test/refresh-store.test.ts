@@ -246,11 +246,12 @@ test("a scheduler tick sends D1 a bounded number of statements", async () => {
   // - The five deletions of expired refresh rows: two batches and a statement.
   // - The audit events, one per enqueued job and one for the tick: one batch.
   // - The deletions of expired audit rows, five rounds for each of four tables: three batches.
+  // - The deletions of expired installations and owner metadata: a statement each.
   const jobs = schedulerBatchLimit;
   expect(await measured()).toStrictEqual({
-    statements: 5 + jobs + 1 + 5 + (jobs + 1) + 20,
+    statements: 5 + jobs + 1 + 5 + (jobs + 1) + 20 + 2,
     batches: 1 + 2 + 1 + 3,
-    queries: 5 + 1 + 1 + 3 + 1 + 3,
+    queries: 5 + 1 + 1 + 3 + 1 + 3 + 2,
   });
   expect(sent.length).toBe(jobs);
   expect((await storedSchedulerState())?.due).toBe(jobs);
@@ -262,9 +263,9 @@ test("a scheduler tick sends D1 a bounded number of statements", async () => {
 
   // The same page with the jobs active: nothing is enqueued.
   expect(await measured()).toStrictEqual({
-    statements: 5 + 1 + 5 + 1 + 20,
+    statements: 5 + 1 + 5 + 1 + 20 + 2,
     batches: 2 + 1 + 3,
-    queries: 5 + 1 + 3 + 1 + 3,
+    queries: 5 + 1 + 3 + 1 + 3 + 2,
   });
   expect(sent.length).toBe(jobs);
 });

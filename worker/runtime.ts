@@ -54,7 +54,6 @@ export const rateLimiterObjectName = (endpoint: RateLimitedEndpoint): string =>
 export const webhookAdmissionObjectName = "github-webhook-admission";
 export const webhookProcessorObjectName = (owner: string): string =>
   `github-webhook-process:${owner}`;
-export const ownerMetadataObjectName = (owner: string): string => `owner-metadata:${owner}`;
 
 // A leading http(s) scheme: matches "https://releasebar.example.com", rejects "releasebar.example.com".
 // https://regex101.com/?regex=%5Ehttps%3F%3A%5C%2F%5C%2F&flags=i&testString=https%3A%2F%2Freleasebar.example.com

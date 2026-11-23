@@ -2,7 +2,6 @@ import { generateKeyPairSync } from "node:crypto";
 import { expect, test, vi } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, Project, RefreshJob } from "../src/types.ts";
-import { ownerMetadataObjectName } from "../worker/runtime.ts";
 import {
   BuildCoordinator,
   buildLocksHeld,
@@ -12,10 +11,11 @@ import {
   storedRefreshJobs,
   storedRefreshJobSnapshot,
   testDashboard,
-  testEnv,
   testProject,
   testQueue,
   worker,
+  seedOwnerMetadata,
+  ownerMetadataMutator,
 } from "./dashboard-test-harness.ts";
 
 test("worker filters shared owner snapshots for cold combined dashboards", async () => {
@@ -54,39 +54,45 @@ test("worker filters shared owner snapshots for cold combined dashboards", async
       projects,
     });
   try {
+    await seedOwnerMetadata(
+      "alpha",
+      snapshot(
+        "alpha",
+        [
+          testProject({ owner: "alpha", name: "released", fork: false }),
+          testProject({ owner: "alpha", name: "fork", fork: true }),
+          testProject({
+            owner: "alpha",
+            name: "unreleased",
+            fork: false,
+            releaseDate: null,
+            version: "unreleased",
+          }),
+          testProject({ owner: "alpha", name: "expired", fork: false }),
+        ],
+        {
+          "alpha/expired": new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+      ),
+    );
+    await seedOwnerMetadata(
+      "beta",
+      snapshot("beta", [testProject({ owner: "beta", name: "released", fork: false })]),
+    );
+    await seedOwnerMetadata(
+      "stale",
+      JSON.stringify({
+        owner: "stale",
+        generatedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
+        metadataUpdatedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
+        countsUpdatedAt: now,
+        projects: [testProject({ owner: "stale", name: "private-now", fork: false })],
+      }),
+    );
     const response = await worker.fetch(
       new Request("https://release.bar/api/alpha?owners=beta,stale&unreleased=false"),
       {
-        DASHBOARD_CACHE: kvStore({
-          "owner-metadata:v1:alpha": snapshot(
-            "alpha",
-            [
-              testProject({ owner: "alpha", name: "released", fork: false }),
-              testProject({ owner: "alpha", name: "fork", fork: true }),
-              testProject({
-                owner: "alpha",
-                name: "unreleased",
-                fork: false,
-                releaseDate: null,
-                version: "unreleased",
-              }),
-              testProject({ owner: "alpha", name: "expired", fork: false }),
-            ],
-            {
-              "alpha/expired": new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
-            },
-          ),
-          "owner-metadata:v1:beta": snapshot("beta", [
-            testProject({ owner: "beta", name: "released", fork: false }),
-          ]),
-          "owner-metadata:v1:stale": JSON.stringify({
-            owner: "stale",
-            generatedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
-            metadataUpdatedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
-            countsUpdatedAt: now,
-            projects: [testProject({ owner: "stale", name: "private-now", fork: false })],
-          }),
-        }),
+        DASHBOARD_CACHE: kvStore({}),
         GITHUB_TOKEN: "shared-token",
       },
       { waitUntil: () => undefined },
@@ -106,21 +112,23 @@ test("worker uses explicit repository owner snapshots for cold dashboards", asyn
   const now = new Date().toISOString();
   const project = testProject({ owner: "other", name: "repo" });
   buildLocksHeld();
+  await seedOwnerMetadata(
+    "other",
+    JSON.stringify({
+      owner: "other",
+      generatedAt: now,
+      metadataUpdatedAt: now,
+      countsUpdatedAt: now,
+      knownRepos: ["other/repo"],
+      projectMetadataUpdatedAt: { "other/repo": now },
+      projectCountsUpdatedAt: { "other/repo": now },
+      projects: [project],
+    }),
+  );
   const response = await worker.fetch(
     new Request("https://release.bar/api/dashboard?repos=other/repo"),
     {
-      DASHBOARD_CACHE: kvStore({
-        "owner-metadata:v1:other": JSON.stringify({
-          owner: "other",
-          generatedAt: now,
-          metadataUpdatedAt: now,
-          countsUpdatedAt: now,
-          knownRepos: ["other/repo"],
-          projectMetadataUpdatedAt: { "other/repo": now },
-          projectCountsUpdatedAt: { "other/repo": now },
-          projects: [project],
-        }),
-      }),
+      DASHBOARD_CACHE: kvStore({}),
     },
     { waitUntil: () => undefined },
   );
@@ -129,10 +137,11 @@ test("worker uses explicit repository owner snapshots for cold dashboards", asyn
   expect(body.projects.map((candidate) => candidate.fullName)).toStrictEqual(["other/repo"]);
 });
 
-test("cold partial dashboards honor durable privatization tombstones over stale KV", async () => {
+test("cold partial dashboards honor privatization tombstones over a later stale merge", async () => {
   const now = new Date().toISOString();
+  const earlier = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const project = testProject({ owner: "owner", name: "repo" });
-  const privateSnapshot = {
+  await seedOwnerMetadata("owner", {
     owner: "owner",
     generatedAt: now,
     metadataUpdatedAt: now,
@@ -146,28 +155,28 @@ test("cold partial dashboards honor durable privatization tombstones over stale 
     projectCountsUpdatedAt: {},
     countOverlays: {},
     projects: [],
-  };
-  // The owner's Durable Object learns of the privatization from a cache that has it; the cache
-  // the Worker then runs with is older.
-  await testEnv({
-    DASHBOARD_CACHE: kvStore({ "owner-metadata:v1:owner": JSON.stringify(privateSnapshot) }),
-  })
-    .OWNER_METADATA.getByName(ownerMetadataObjectName("owner"))
-    .read("owner");
+  });
+  // The privatization is stored; a build that saw the repository while it was public then
+  // stores what it has.
+  await ownerMetadataMutator(
+    { DASHBOARD_CACHE: kvStore({}) },
+    "owner",
+  )({
+    kind: "merge",
+    generatedAt: earlier,
+    observedAt: earlier,
+    countsUpdatedAt: earlier,
+    countsComplete: true,
+    releaseDataComplete: true,
+    mode: "hydrated",
+    projects: [project],
+    removedRepos: [],
+  });
   buildLocksHeld();
   const response = await worker.fetch(
     new Request("https://release.bar/api/dashboard?repos=owner/repo"),
     {
-      DASHBOARD_CACHE: kvStore({
-        "owner-metadata:v1:owner": JSON.stringify({
-          ...privateSnapshot,
-          privateRepos: {},
-          removedRepos: {},
-          knownRepos: ["owner/repo"],
-          projectCountsUpdatedAt: { "owner/repo": now },
-          projects: [project],
-        }),
-      }),
+      DASHBOARD_CACHE: kvStore({}),
     },
     { waitUntil: () => undefined },
   );
@@ -200,13 +209,12 @@ test("metadata-only partial dashboards strip hydrated release and CI fields", as
       projects: [testProject({ owner, name: "repo", ciState: "failure" })],
     });
   try {
+    await seedOwnerMetadata("alpha", snapshot("alpha"));
+    await seedOwnerMetadata("beta", snapshot("beta"));
     const response = await worker.fetch(
       new Request("https://release.bar/api/alpha?owners=beta"),
       {
-        DASHBOARD_CACHE: kvStore({
-          "owner-metadata:v1:alpha": snapshot("alpha"),
-          "owner-metadata:v1:beta": snapshot("beta"),
-        }),
+        DASHBOARD_CACHE: kvStore({}),
         GITHUB_APP_ID: "1",
         GITHUB_APP_PRIVATE_KEY: "unused",
       },

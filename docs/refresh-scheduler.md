@@ -6,10 +6,10 @@ ReleaseBar keeps public dashboard data warm with a small scheduler on the Cloudf
 
 - Cloudflare cron runs every 15 minutes from `wrangler.jsonc`.
 - The D1 database `DB` stores the refresh targets with the index of the owners and repositories each one shows, the refresh jobs with their immutable snapshots and delivery records, the immutable profile snapshots, and the scheduler state (`migrations/0001_refresh.sql`, `docs/data-model.md`).
-- `DASHBOARD_CACHE` stores shared owner metadata/count snapshots, and visible dashboard snapshots. Audit events are rows of the D1 table `refresh_audit_events`.
+- It also stores the shared owner metadata/count snapshots, one row per owner, including repositories that turned private or were removed (`migrations/0003_registry.sql`); a change is written only if the row is still the one that was read.
+- `DASHBOARD_CACHE` stores visible dashboard snapshots. Audit events are rows of the D1 table `refresh_audit_events`.
 - Durable Objects hold what must be checked and changed in one step. Each is a class with typed RPC methods and SQLite storage, under `worker/objects/`:
   - `BUILD_COORDINATOR` (`BuildCoordinator`), one per dashboard: the build lock, the active job reservation with its dirty marker, the refresh-target failure state, and the strongly consistent progressive-scan checkpoint.
-  - `OWNER_METADATA` (`OwnerMetadata`), one per owner: the owner's metadata snapshot, including repositories that turned private or were removed.
   - `WEBHOOK_ADMISSION` (`WebhookAdmission`), a single one: the GitHub deliveries already put on the queue.
   - `WEBHOOK_PROCESSOR` (`WebhookProcessor`), one per owner: pending and processed deliveries, and the lease of the job that drains them.
   - `SUMMARY_QUOTA` (`SummaryQuota`), a single one: the AI summary counters.
@@ -45,7 +45,7 @@ The same tick schedules deep dashboard work:
 6. Enqueues up to 20 jobs per tick.
 7. Deletes up to 500 rows of each kind that are past their lifetime: targets nobody has seen for 90 days, jobs and delivery records not updated for 14 days, profile snapshots older than 90 days. D1 keeps a row until it is deleted.
 
-A tick over a full page that enqueues its 20 jobs sends D1 11 queries, however many targets are due: five reads (the last tick's state, the newest jobs, the newest delivery records, the page of targets, the owner-count cursor), one batch with the jobs it enqueues, the write of its state, three for the five deletions of expired rows, and one batch with its audit events. The deletion of expired audit rows in the same invocation adds three. D1 allows an invocation 50 queries on the Workers free plan and counts a batch as one; [the data model](data-model.md) lists the other invocations.
+A tick over a full page that enqueues its 20 jobs sends D1 11 queries, however many targets are due: five reads (the last tick's state, the newest jobs, the newest delivery records, the page of targets, the owner-count cursor), one batch with the jobs it enqueues, the write of its state, three for the five deletions of expired rows, and one batch with its audit events. The deletion of expired audit and registry rows in the same invocation adds five, and the refresh of repository counts adds the registry queries of each owner it handles. D1 allows an invocation 50 queries on the Workers free plan and counts a batch as one; [the data model](data-model.md) lists the other invocations.
 
 Successful targets get their next refresh time based on recent use:
 

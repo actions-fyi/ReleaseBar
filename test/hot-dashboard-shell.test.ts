@@ -2,7 +2,13 @@ import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import { attentionReasons, needsAttention, releaseDebtText } from "../src/dashboard-view.ts";
 import type { DashboardPayload } from "../src/types.ts";
-import { kvStore, testDashboard, testProject, worker } from "./dashboard-test-harness.ts";
+import {
+  kvStore,
+  testDashboard,
+  testProject,
+  worker,
+  seedOwnerMetadata,
+} from "./dashboard-test-harness.ts";
 
 test("need attention explains release debt, stale releases, CI, and open work", () => {
   const stale = testProject({
@@ -99,6 +105,20 @@ test("worker builds root hot dashboard from cached dashboards", async () => {
   const betaKey = dashboardCacheKey({ owner: "beta", includeUnreleased: true, schemaVersion: 6 });
   const forksKey = dashboardCacheKey({ owner: "forks", includeForks: true, schemaVersion: 6 });
   const legacyKey = dashboardCacheKey({ owner: "legacy", schemaVersion: 5 });
+  await seedOwnerMetadata(
+    "alpha",
+    JSON.stringify({
+      owner: "alpha",
+      generatedAt: new Date().toISOString(),
+      metadataUpdatedAt: new Date().toISOString(),
+      countsUpdatedAt: new Date().toISOString(),
+      releaseDataComplete: true,
+      projects: [
+        testProject({ owner: "alpha", name: "hot", openIssues: 99 }),
+        testProject({ owner: "alpha", name: "second", archived: true }),
+      ],
+    }),
+  );
   const env = {
     DASHBOARD_CACHE: kvStore({
       "hot:index:v3": JSON.stringify([alphaKey, legacyKey]),
@@ -173,17 +193,6 @@ test("worker builds root hot dashboard from cached dashboards", async () => {
           }),
         ]),
       ),
-      "owner-metadata:v1:alpha": JSON.stringify({
-        owner: "alpha",
-        generatedAt: new Date().toISOString(),
-        metadataUpdatedAt: new Date().toISOString(),
-        countsUpdatedAt: new Date().toISOString(),
-        releaseDataComplete: true,
-        projects: [
-          testProject({ owner: "alpha", name: "hot", openIssues: 99 }),
-          testProject({ owner: "alpha", name: "second", archived: true }),
-        ],
-      }),
     }),
   };
 

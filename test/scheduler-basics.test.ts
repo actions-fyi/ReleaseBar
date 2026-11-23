@@ -10,6 +10,8 @@ import {
   storeRefreshTarget,
   testDashboard,
   worker,
+  seedInstallation,
+  storedInstallationJson,
 } from "./dashboard-test-harness.ts";
 
 test("worker queue skips jobs from obsolete dashboard schemas", async () => {
@@ -94,6 +96,18 @@ test("worker admin installation sync removes stale registry entries", async () =
   const sessionId = "session-admin-install-sync";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
+  await seedInstallation(
+    JSON.stringify({
+      id: 7,
+      accountLogin: "stale-org",
+      accountType: "org",
+      accountUrl: "https://github.com/stale-org",
+      avatarUrl: "https://avatars.githubusercontent.com/u/7",
+      repositorySelection: "all",
+      repositories: [],
+      updatedAt: "2026-05-15T12:00:00Z",
+    }),
+  );
   const cache = kvStore({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
@@ -106,16 +120,6 @@ test("worker admin installation sync removes stale registry entries", async () =
       accessToken: "user-token",
       iat: exp - 600,
       exp,
-    }),
-    "auth:installation:v1:stale-org": JSON.stringify({
-      id: 7,
-      accountLogin: "stale-org",
-      accountType: "org",
-      accountUrl: "https://github.com/stale-org",
-      avatarUrl: "https://avatars.githubusercontent.com/u/7",
-      repositorySelection: "all",
-      repositories: [],
-      updatedAt: "2026-05-15T12:00:00Z",
     }),
   });
   const env = {
@@ -160,8 +164,8 @@ test("worker admin installation sync removes stale registry entries", async () =
     expect(response.status).toBe(200);
     const body = (await response.json()) as { count?: number };
     expect(body.count).toBe(1);
-    expect(await cache.get("auth:installation:v1:stale-org")).toBe(null);
-    const fresh = JSON.parse((await cache.get("auth:installation:v1:fresh-org")) ?? "{}");
+    expect(await storedInstallationJson("stale-org")).toBe(null);
+    const fresh = JSON.parse((await storedInstallationJson("fresh-org")) ?? "{}");
     expect(fresh.id).toBe(11);
   } finally {
     globalThis.fetch = originalFetch;
@@ -177,6 +181,18 @@ test("worker admin installation sync keeps registry when GitHub listing fails", 
   const sessionId = "session-admin-install-sync-failed";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
+  await seedInstallation(
+    JSON.stringify({
+      id: 7,
+      accountLogin: "known-org",
+      accountType: "org",
+      accountUrl: "https://github.com/known-org",
+      avatarUrl: "https://avatars.githubusercontent.com/u/7",
+      repositorySelection: "all",
+      repositories: [],
+      updatedAt: "2026-05-15T12:00:00Z",
+    }),
+  );
   const cache = kvStore({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
@@ -189,16 +205,6 @@ test("worker admin installation sync keeps registry when GitHub listing fails", 
       accessToken: "user-token",
       iat: exp - 600,
       exp,
-    }),
-    "auth:installation:v1:known-org": JSON.stringify({
-      id: 7,
-      accountLogin: "known-org",
-      accountType: "org",
-      accountUrl: "https://github.com/known-org",
-      avatarUrl: "https://avatars.githubusercontent.com/u/7",
-      repositorySelection: "all",
-      repositories: [],
-      updatedAt: "2026-05-15T12:00:00Z",
     }),
   });
   const env = {
@@ -226,7 +232,7 @@ test("worker admin installation sync keeps registry when GitHub listing fails", 
       { waitUntil: () => undefined },
     );
     expect(response.status).toBe(400);
-    expect(await cache.get("auth:installation:v1:known-org")).not.toBe(null);
+    expect(await storedInstallationJson("known-org")).not.toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -241,6 +247,18 @@ test("worker admin installation sync keeps selected repos when repository listin
   const sessionId = "session-admin-install-sync-selected-failed";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
+  await seedInstallation(
+    JSON.stringify({
+      id: 7,
+      accountLogin: "known-org",
+      accountType: "org",
+      accountUrl: "https://github.com/known-org",
+      avatarUrl: "https://avatars.githubusercontent.com/u/7",
+      repositorySelection: "selected",
+      repositories: ["known-org/releasebar"],
+      updatedAt: "2026-05-15T12:00:00Z",
+    }),
+  );
   const cache = kvStore({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
@@ -253,16 +271,6 @@ test("worker admin installation sync keeps selected repos when repository listin
       accessToken: "user-token",
       iat: exp - 600,
       exp,
-    }),
-    "auth:installation:v1:known-org": JSON.stringify({
-      id: 7,
-      accountLogin: "known-org",
-      accountType: "org",
-      accountUrl: "https://github.com/known-org",
-      avatarUrl: "https://avatars.githubusercontent.com/u/7",
-      repositorySelection: "selected",
-      repositories: ["known-org/releasebar"],
-      updatedAt: "2026-05-15T12:00:00Z",
     }),
   });
   const env = {
@@ -312,7 +320,7 @@ test("worker admin installation sync keeps selected repos when repository listin
       { waitUntil: () => undefined },
     );
     expect(response.status).toBe(400);
-    const preserved = JSON.parse((await cache.get("auth:installation:v1:known-org")) ?? "{}");
+    const preserved = JSON.parse((await storedInstallationJson("known-org")) ?? "{}");
     expect(preserved.repositories).toStrictEqual(["known-org/releasebar"]);
   } finally {
     globalThis.fetch = originalFetch;
