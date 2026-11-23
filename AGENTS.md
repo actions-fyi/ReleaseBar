@@ -18,6 +18,7 @@ Work style: terse.
 - Prod data lives in the EU: queues and KV namespace created with `--jurisdiction eu`, `RELEASEBAR_DO_JURISDICTION=eu`.
 - Local real-data dev: `npm run dev:worker:real` uses Wrangler `--remote` on port 8787 with real secrets.
 - Static proof: `npm run check:static`.
+- Tests: `npm test` runs Vitest with coverage; `vitest.config.ts` has a `workers` project (Workers runtime, bindings from `wrangler.jsonc`) and a `node` project for the files it lists. Tests import the TypeScript sources; no build first. One file or test: `npx vitest run <file> -t <name>`.
 - Dependency updates come from Renovate, not Dependabot.
 
 ## Stack migration
@@ -28,7 +29,7 @@ Steps, one pull request each, in order; 7a to 7c may run in parallel. Tick a ste
 
 - [x] 1 Ground rules: this section.
 - [x] 2 Config and types: `wrangler.jsonc`, types from `wrangler types`, handlers `satisfies ExportedHandler<Env>`.
-- [ ] 3 Test runner: Vitest in the Workers runtime; tests import TypeScript sources, no compile step.
+- [x] 3 Test runner: Vitest in the Workers runtime; tests import TypeScript sources, no compile step.
 - [ ] 4 Single build: Cloudflare Vite plugin v1, one `vite build`, one `vite dev`; shared code moves from `scripts/lib` to `shared/`.
 - [ ] 5 Durable Objects: classes that extend `DurableObject`, typed RPC methods, SQLite tables.
 - [ ] 6 Store layer: `worker/store/` is the only code that touches a binding; D1 binding added.
