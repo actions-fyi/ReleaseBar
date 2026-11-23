@@ -1,6 +1,5 @@
-import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../../../src/types.js";
 import {
@@ -123,37 +122,37 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
     );
 
   await deliver(9);
-  assert.equal(retryDelaySeconds, 60);
-  assert.equal(released, false);
+  expect(retryDelaySeconds).toBe(60);
+  expect(released).toBe(false);
   const retrying = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
-  assert.equal(retrying.status, "queued");
-  assert.equal(retrying.error, "dashboard locked");
+  expect(retrying.status).toBe("queued");
+  expect(retrying.error).toBe("dashboard locked");
 
   await deliver(10);
-  assert.equal(retryDelaySeconds, 60);
-  assert.equal(released, false);
+  expect(retryDelaySeconds).toBe(60);
+  expect(released).toBe(false);
   const finalRetry = JSON.parse(
     (await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}",
   ) as RefreshJob;
-  assert.equal(finalRetry.status, "queued");
-  assert.equal(finalRetry.error, "dashboard locked");
+  expect(finalRetry.status).toBe("queued");
+  expect(finalRetry.error).toBe("dashboard locked");
 
   await deliver(11);
-  assert.equal(retryDelaySeconds, 60);
-  assert.equal(released, true);
+  expect(retryDelaySeconds).toBe(60);
+  expect(released).toBe(true);
   const updated = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
-  assert.equal(updated.status, "failed");
-  assert.match(updated.error ?? "", /after 11 Queue attempts/);
-  assert.equal(updated.attempts, 11);
-  assert.equal(jobWrites, 3);
+  expect(updated.status).toBe("failed");
+  expect(updated.error ?? "").toMatch(/after 11 Queue attempts/);
+  expect(updated.attempts).toBe(11);
+  expect(jobWrites).toBe(3);
 
   const failedTarget = JSON.parse(
     (await cache.get(`refresh:target:v1:${target.key}`)) ?? "{}",
   ) as RefreshTarget;
-  assert.equal(failedTarget.failureCount, 1);
-  assert.equal(Date.parse(failedTarget.nextDueAt) > Date.now(), true);
-  assert.equal(failedTarget.terminalBackoffUntil, failedTarget.nextDueAt);
-  assert.match(failedTarget.message ?? "", /after 11 Queue attempts/);
+  expect(failedTarget.failureCount).toBe(1);
+  expect(Date.parse(failedTarget.nextDueAt) > Date.now()).toBe(true);
+  expect(failedTarget.terminalBackoffUntil).toBe(failedTarget.nextDueAt);
+  expect(failedTarget.message ?? "").toMatch(/after 11 Queue attempts/);
 
   const originalFetch = globalThis.fetch;
   const waits: Promise<unknown>[] = [];
@@ -175,9 +174,9 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
       },
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(staleResponse.status, 200);
+    expect(staleResponse.status).toBe(200);
     await Promise.all(waits.splice(0));
-    assert.equal(sentJobs.length, 0);
+    expect(sentJobs.length).toBe(0);
 
     await cache.delete(key);
     const coldResponse = await worker.fetch(
@@ -193,12 +192,12 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
       },
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(coldResponse.status, 202);
+    expect(coldResponse.status).toBe(202);
     const coldBody = (await coldResponse.json()) as DashboardPayload;
-    assert.equal(coldBody.cache?.state, "rebuilding");
-    assert.match(coldBody.cache?.message ?? "", /refresh paused after repeated failures/);
+    expect(coldBody.cache?.state).toBe("rebuilding");
+    expect(coldBody.cache?.message ?? "").toMatch(/refresh paused after repeated failures/);
     await Promise.all(waits);
-    assert.equal(sentJobs.length, 0);
+    expect(sentJobs.length).toBe(0);
 
     await cache.put(
       `refresh:target:v1:${target.key}`,
@@ -221,9 +220,9 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
       },
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(transientFailureResponse.status, 200);
+    expect(transientFailureResponse.status).toBe(200);
     await Promise.all(waits.splice(0));
-    assert.equal(sentJobs.length, 1);
+    expect(sentJobs.length).toBe(1);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -330,12 +329,12 @@ test("worker terminalizes final-delivery queue handler failures", async () => {
     { waitUntil: () => undefined },
   );
 
-  assert.equal(retryDelaySeconds, 300);
-  assert.equal(released, true);
+  expect(retryDelaySeconds).toBe(300);
+  expect(released).toBe(true);
   const stored = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
-  assert.equal(stored.status, "failed");
-  assert.equal(stored.attempts, 11);
-  assert.match(stored.error ?? "", /refresh job read failed/);
+  expect(stored.status).toBe("failed");
+  expect(stored.attempts).toBe(11);
+  expect(stored.error ?? "").toMatch(/refresh job read failed/);
 });
 
 test("worker refresh jobs defer shared work while shared quota is paused", async () => {
@@ -425,14 +424,14 @@ test("worker refresh jobs defer shared work while shared quota is paused", async
   } finally {
     globalThis.fetch = originalFetch;
   }
-  assert.equal(acked, true);
+  expect(acked).toBe(true);
   const updated = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
-  assert.equal(updated.status, "skipped");
-  assert.match(updated.error ?? "", /remaining 42/);
+  expect(updated.status).toBe("skipped");
+  expect(updated.error ?? "").toMatch(/remaining 42/);
   const storedTarget = JSON.parse(
     (await cache.get(`refresh:target:v1:${key}`)) ?? "{}",
   ) as RefreshTarget;
-  assert.match(storedTarget.message ?? "", /shared GitHub quota paused/);
+  expect(storedTarget.message ?? "").toMatch(/shared GitHub quota paused/);
 });
 
 test("worker refresh jobs defer shared work while GraphQL is backed off", async () => {
@@ -521,15 +520,15 @@ test("worker refresh jobs defer shared work while GraphQL is backed off", async 
   } finally {
     globalThis.fetch = originalFetch;
   }
-  assert.equal(acked, true);
+  expect(acked).toBe(true);
   const updated = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
-  assert.equal(updated.status, "skipped");
-  assert.match(updated.error ?? "", /GraphQL temporarily paused/);
+  expect(updated.status).toBe("skipped");
+  expect(updated.error ?? "").toMatch(/GraphQL temporarily paused/);
   const storedTarget = JSON.parse(
     (await cache.get(`refresh:target:v1:${key}`)) ?? "{}",
   ) as RefreshTarget;
-  assert.equal(storedTarget.failureCount, 0);
-  assert.match(storedTarget.message ?? "", /GitHub GraphQL paused/);
+  expect(storedTarget.failureCount).toBe(0);
+  expect(storedTarget.message ?? "").toMatch(/GitHub GraphQL paused/);
 });
 
 test("worker skips request-triggered progressive rebuilds while shared quota is paused", async () => {
@@ -562,14 +561,11 @@ test("worker skips request-triggered progressive rebuilds while shared quota is 
       { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(response.status, 200);
-    assert.equal(waits.length > 0, true);
+    expect(response.status).toBe(200);
+    expect(waits.length > 0).toBe(true);
     await Promise.all(waits);
     const events = await refreshAuditEvents(cache);
-    assert.equal(
-      events.some((event) => event.event === "dashboard_progressive_skip"),
-      true,
-    );
+    expect(events.some((event) => event.event === "dashboard_progressive_skip")).toBe(true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -650,17 +646,14 @@ test("worker serves cached dashboards to crawlers without scheduling refreshes",
       },
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as DashboardPayload;
-    assert.equal(body.cache?.state, "partial");
+    expect(body.cache?.state).toBe("partial");
     await Promise.all(waits);
     const events = await refreshAuditEvents(cache);
-    assert.equal(
-      events.some((event) => event.event === "dashboard_refresh_schedule"),
-      false,
-    );
-    assert.equal(installationListCalls, 0);
-    assert.equal(await cache.get(`refresh:target:v1:${key}`), null);
+    expect(events.some((event) => event.event === "dashboard_refresh_schedule")).toBe(false);
+    expect(installationListCalls).toBe(0);
+    expect(await cache.get(`refresh:target:v1:${key}`)).toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -706,18 +699,15 @@ test("worker serves cache-only cold dashboard status to crawlers", async () => {
         waitUntil: (promise) => waits.push(promise),
       },
     );
-    assert.equal(response.status, 202);
+    expect(response.status).toBe(202);
     const body = (await response.json()) as DashboardPayload;
-    assert.equal(body.cache?.state, "rebuilding");
-    assert.equal(body.cache?.message, "cached dashboard unavailable for crawler");
-    assert.equal(await cache.get(key), null);
-    assert.equal(installationTokenReads, 0);
+    expect(body.cache?.state).toBe("rebuilding");
+    expect(body.cache?.message).toBe("cached dashboard unavailable for crawler");
+    expect(await cache.get(key)).toBe(null);
+    expect(installationTokenReads).toBe(0);
     await Promise.all(waits);
     const events = await refreshAuditEvents(cache);
-    assert.equal(
-      events.some((event) => event.event === "dashboard_refresh_schedule"),
-      false,
-    );
+    expect(events.some((event) => event.event === "dashboard_refresh_schedule")).toBe(false);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -745,8 +735,8 @@ test("worker does not pause shared quota for ordinary forbidden responses", asyn
       { waitUntil: () => undefined },
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.equal(await cache.get("github:budget:v1:shared:_"), null);
-    assert.equal(await cache.get("github:budget:v1:shared:core"), null);
+    expect(await cache.get("github:budget:v1:shared:_")).toBe(null);
+    expect(await cache.get("github:budget:v1:shared:core")).toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -769,9 +759,8 @@ test("safeReturnTo accepts the current request origin, including workers.dev", a
     env,
     ctx,
   );
-  assert.equal(workersDevLogin.status, 302);
-  assert.match(
-    workersDevLogin.headers.get("location") ?? "",
+  expect(workersDevLogin.status).toBe(302);
+  expect(workersDevLogin.headers.get("location") ?? "").toMatch(
     /redirect_uri=https%3A%2F%2Freleasedeck-api.steipete.workers.dev%2Fapi%2Fauth%2Fcallback/,
   );
 
@@ -782,7 +771,7 @@ test("safeReturnTo accepts the current request origin, including workers.dev", a
     env,
     ctx,
   );
-  assert.equal(evilOriginLogout.headers.get("location"), "/");
+  expect(evilOriginLogout.headers.get("location")).toBe("/");
 });
 
 test("safeReturnTo rejects a normalized protocol-relative path", async () => {
@@ -807,8 +796,8 @@ test("safeReturnTo rejects a normalized protocol-relative path", async () => {
       env,
       ctx,
     );
-    assert.equal(response.status, 302);
-    assert.equal(response.headers.get("location"), "/", returnTo);
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location"), returnTo).toBe("/");
   }
 });
 
@@ -880,14 +869,14 @@ test("worker refreshes stale installation coverage before using its cached token
       throw new Error("cached installation token should be reused");
     }
     if (url.pathname === `/users/${accountLogin}`) {
-      assert.equal(new Headers(init?.headers).get("authorization"), "Bearer installation-token");
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer installation-token");
       return Response.json({ login: accountLogin, type: "Organization" });
     }
     if (url.pathname === "/graphql") {
       const body = JSON.parse(String(init?.body ?? "{}")) as {
         variables?: { first?: number };
       };
-      assert.equal(body.variables?.first, 25);
+      expect(body.variables?.first).toBe(25);
       return Response.json({
         data: {
           repositoryOwner: {
@@ -914,21 +903,21 @@ test("worker refreshes stale installation coverage before using its cached token
       env,
       context,
     );
-    assert.equal(first.status, 200);
+    expect(first.status).toBe(200);
     await first.arrayBuffer();
     await Promise.all(waits);
-    assert.equal(tokenMintCalled, false);
-    assert.equal(userInstallationsCalls, 1);
+    expect(tokenMintCalled).toBe(false);
+    expect(userInstallationsCalls).toBe(1);
 
     const second = await worker.fetch(
       new Request(`https://release.bar/api/${accountLogin}`, { headers }),
       env,
       context,
     );
-    assert.equal(second.status, 200);
+    expect(second.status).toBe(200);
     await second.arrayBuffer();
     await Promise.all(waits);
-    assert.equal(userInstallationsCalls, 1);
+    expect(userInstallationsCalls).toBe(1);
   } finally {
     globalThis.fetch = originalFetch;
   }

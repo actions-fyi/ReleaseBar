@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../../../src/types.js";
 import {
@@ -77,19 +76,19 @@ test("worker Queue messages stay bounded when profile filters are large", async 
   );
   await Promise.all(waits);
 
-  assert.equal(sentJobs.length, 1);
-  assert.equal(sentJobs[0]?.target, undefined);
-  assert.equal(JSON.stringify(sentJobs[0]).length < 4096, true);
+  expect(sentJobs.length).toBe(1);
+  expect(sentJobs[0]?.target).toBe(undefined);
+  expect(JSON.stringify(sentJobs[0]).length < 4096).toBe(true);
   const snapshot = JSON.parse(
     (await cache.get(sentJobs[0]?.targetSnapshotKey ?? "")) ?? "{}",
   ) as RefreshJob;
-  assert.equal(snapshot.target?.profileSnapshotKey, profileSnapshotKey);
-  assert.equal(JSON.stringify(snapshot.target).length < 4096, true);
-  assert.equal(await cache.get("refresh:target-index:v1:ready"), null);
+  expect(snapshot.target?.profileSnapshotKey).toBe(profileSnapshotKey);
+  expect(JSON.stringify(snapshot.target).length < 4096).toBe(true);
+  expect(await cache.get("refresh:target-index:v1:ready")).toBe(null);
   const storedProfile = JSON.parse((await cache.get(profileSnapshotKey)) ?? "{}") as {
     hiddenRepos?: string[];
   };
-  assert.equal(storedProfile.hiddenRepos?.length, 5000);
+  expect(storedProfile.hiddenRepos?.length).toBe(5000);
 });
 
 test("owner count scheduling rotates beyond a deferred owner cap", async () => {
@@ -161,9 +160,9 @@ test("owner count scheduling rotates beyond a deferred owner cap", async () => {
   };
 
   await run();
-  assert.equal(await cache.get("refresh:owner-count-cursor:v1"), "owner019");
+  expect(await cache.get("refresh:owner-count-cursor:v1")).toBe("owner019");
   await run();
-  assert.equal(await cache.get("refresh:owner-count-cursor:v1"), "owner018");
+  expect(await cache.get("refresh:owner-count-cursor:v1")).toBe("owner018");
 });
 
 test("owner count scheduling throttles recent incomplete scans", async () => {
@@ -225,8 +224,8 @@ test("owner count scheduling throttles recent incomplete scans", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
-  assert.equal(graphqlRequests, 0);
-  assert.equal(await cache.get("refresh:owner-count-cursor:v1"), null);
+  expect(graphqlRequests).toBe(0);
+  expect(await cache.get("refresh:owner-count-cursor:v1")).toBe(null);
 });
 
 test("worker scheduler terminalizes retryable refreshes when Queue is unavailable", async () => {
@@ -313,16 +312,16 @@ test("worker scheduler terminalizes retryable refreshes when Queue is unavailabl
   }
 
   const indexedJobs = await cache.list({ prefix: "refresh:jobs:v2:" });
-  assert.equal(indexedJobs.keys.length, 1);
+  expect(indexedJobs.keys.length).toBe(1);
   const indexed = JSON.parse(
     (await cache.get(indexedJobs.keys[0]?.name ?? "")) ?? "{}",
   ) as RefreshJob;
   const stored = JSON.parse(
     (await cache.get(`refresh:job:v1:${indexed.id}`)) ?? "{}",
   ) as RefreshJob;
-  assert.equal(stored.status, "failed");
-  assert.match(stored.error ?? "", /Queue continuation unavailable/);
-  assert.equal(released, true);
+  expect(stored.status).toBe("failed");
+  expect(stored.error ?? "").toMatch(/Queue continuation unavailable/);
+  expect(released).toBe(true);
 });
 
 test("dashboard build lock only releases the matching lease token", async () => {
@@ -344,7 +343,7 @@ test("dashboard build lock only releases the matching lease token", async () => 
     {},
   );
 
-  assert.equal(
+  expect(
     (
       await lock.fetch(
         new Request("https://releasebar.internal/acquire", {
@@ -353,9 +352,8 @@ test("dashboard build lock only releases the matching lease token", async () => 
         }),
       )
     ).status,
-    204,
-  );
-  assert.equal(
+  ).toBe(204);
+  expect(
     (
       await lock.fetch(
         new Request("https://releasebar.internal/acquire", {
@@ -364,11 +362,10 @@ test("dashboard build lock only releases the matching lease token", async () => 
         }),
       )
     ).status,
-    409,
-  );
+  ).toBe(409);
 
   storage.set("lock", { token: "first", expiresAt: Date.now() - 1 });
-  assert.equal(
+  expect(
     (
       await lock.fetch(
         new Request("https://releasebar.internal/acquire", {
@@ -377,10 +374,9 @@ test("dashboard build lock only releases the matching lease token", async () => 
         }),
       )
     ).status,
-    204,
-  );
+  ).toBe(204);
   const secondExpiresAt = (storage.get("lock") as { expiresAt: number }).expiresAt;
-  assert.equal(
+  expect(
     (
       await lock.fetch(
         new Request("https://releasebar.internal/refresh", {
@@ -389,9 +385,8 @@ test("dashboard build lock only releases the matching lease token", async () => 
         }),
       )
     ).status,
-    409,
-  );
-  assert.equal(
+  ).toBe(409);
+  expect(
     (
       await lock.fetch(
         new Request("https://releasebar.internal/refresh", {
@@ -400,10 +395,9 @@ test("dashboard build lock only releases the matching lease token", async () => 
         }),
       )
     ).status,
-    204,
-  );
-  assert.equal((storage.get("lock") as { expiresAt: number }).expiresAt >= secondExpiresAt, true);
-  assert.equal(
+  ).toBe(204);
+  expect((storage.get("lock") as { expiresAt: number }).expiresAt >= secondExpiresAt).toBe(true);
+  expect(
     (
       await lock.fetch(
         new Request("https://releasebar.internal/release", {
@@ -412,9 +406,8 @@ test("dashboard build lock only releases the matching lease token", async () => 
         }),
       )
     ).status,
-    204,
-  );
-  assert.deepEqual(storage.get("lock"), {
+  ).toBe(204);
+  expect(storage.get("lock")).toStrictEqual({
     token: "second",
     expiresAt: (storage.get("lock") as { expiresAt: number }).expiresAt,
   });
@@ -446,13 +439,13 @@ test("dashboard build lock reserves one refresh job per dashboard", async () => 
       }),
     );
 
-  assert.equal((await request("/job/reserve", "first")).status, 204);
-  assert.equal((await request("/job/reserve", "second")).status, 409);
-  assert.equal((await request("/job/reserve", "first")).status, 204);
-  assert.equal((await request("/job/release", "second")).status, 204);
-  assert.equal((await request("/job/reserve", "second")).status, 409);
-  assert.equal((await request("/job/release", "first")).status, 204);
-  assert.equal((await request("/job/reserve", "second")).status, 204);
+  expect((await request("/job/reserve", "first")).status).toBe(204);
+  expect((await request("/job/reserve", "second")).status).toBe(409);
+  expect((await request("/job/reserve", "first")).status).toBe(204);
+  expect((await request("/job/release", "second")).status).toBe(204);
+  expect((await request("/job/reserve", "second")).status).toBe(409);
+  expect((await request("/job/release", "first")).status).toBe(204);
+  expect((await request("/job/reserve", "second")).status).toBe(204);
 });
 
 test("dashboard target mutations preserve terminal backoff across stale observations", async () => {
@@ -491,7 +484,7 @@ test("dashboard target mutations preserve terminal backoff across stale observat
         body: JSON.stringify({ snapshot, mutation }),
       }),
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     return (await response.json()) as RefreshTarget;
   };
 
@@ -514,14 +507,14 @@ test("dashboard target mutations preserve terminal backoff across stale observat
     profileProvided: false,
   });
 
-  assert.equal(observedAgain.failureCount, 1);
-  assert.equal(observedAgain.nextDueAt, failed.nextDueAt);
-  assert.equal(observedAgain.terminalBackoffUntil, failed.nextDueAt);
-  assert.equal(observedAgain.message, "terminal failure");
+  expect(observedAgain.failureCount).toBe(1);
+  expect(observedAgain.nextDueAt).toBe(failed.nextDueAt);
+  expect(observedAgain.terminalBackoffUntil).toBe(failed.nextDueAt);
+  expect(observedAgain.message).toBe("terminal failure");
   const stored = JSON.parse(
     (await cache.get(`refresh:target:v1:${input.key}`)) ?? "{}",
   ) as RefreshTarget;
-  assert.equal(stored.terminalBackoffUntil, failed.nextDueAt);
+  expect(stored.terminalBackoffUntil).toBe(failed.nextDueAt);
 });
 
 test("dashboard build lock stores strongly consistent build progress", async () => {
@@ -556,27 +549,26 @@ test("dashboard build lock stores strongly consistent build progress", async () 
   };
 
   const empty = await request("/progress/get");
-  assert.equal(empty.status, 204);
-  assert.equal(empty.headers.get("x-releasebar-progress"), "durable");
-  assert.equal((await request("/progress/put", progress)).status, 204);
+  expect(empty.status).toBe(204);
+  expect(empty.headers.get("x-releasebar-progress")).toBe("durable");
+  expect((await request("/progress/put", progress)).status).toBe(204);
   const stored = await request("/progress/get");
-  assert.equal(stored.status, 200);
-  assert.equal(stored.headers.get("x-releasebar-progress"), "durable");
-  assert.deepEqual(await stored.json(), progress);
-  assert.equal((await request("/progress/delete")).status, 204);
-  assert.equal((await request("/progress/get")).status, 204);
+  expect(stored.status).toBe(200);
+  expect(stored.headers.get("x-releasebar-progress")).toBe("durable");
+  expect(await stored.json()).toStrictEqual(progress);
+  expect((await request("/progress/delete")).status).toBe(204);
+  expect((await request("/progress/get")).status).toBe(204);
 
-  assert.equal(
+  expect(
     (
       await request("/progress/put", {
         ...progress,
         updatedAt: "2020-01-01T00:00:00Z",
       })
     ).status,
-    204,
-  );
-  assert.equal((await request("/progress/get")).status, 204);
-  assert.equal(storage.has("build-progress"), false);
+  ).toBe(204);
+  expect((await request("/progress/get")).status).toBe(204);
+  expect(storage.has("build-progress")).toBe(false);
 });
 
 test("worker falls back to KV progress when the Durable Object is unavailable", async () => {
@@ -632,11 +624,11 @@ test("worker falls back to KV progress when the Durable Object is unavailable", 
       },
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const fallback = JSON.parse((await cache.get(`progress:v1:${key}`)) ?? "{}") as {
       durableFallback?: boolean;
     };
-    assert.equal(fallback.durableFallback, true);
+    expect(fallback.durableFallback).toBe(true);
     await Promise.all(waits);
   } finally {
     globalThis.fetch = originalFetch;
@@ -805,9 +797,9 @@ test("worker resumes marked KV progress after an authoritative Durable Object mi
     globalThis.fetch = originalFetch;
   }
 
-  assert.equal(acked, true);
-  assert.deepEqual(hydratedRepos, ["repo-13"]);
+  expect(acked).toBe(true);
+  expect(hydratedRepos).toStrictEqual(["repo-13"]);
   const dashboard = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
-  assert.equal(dashboard.projects.length, 13);
-  assert.equal(dashboard.cache?.progress?.done, true);
+  expect(dashboard.projects.length).toBe(13);
+  expect(dashboard.cache?.progress?.done).toBe(true);
 });

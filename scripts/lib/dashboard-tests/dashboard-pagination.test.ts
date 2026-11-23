@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { buildDashboard, fetchOwnerRepoCounts } from "../dashboard.js";
 import { testProject } from "../dashboard-test-harness.js";
 
@@ -62,11 +61,11 @@ test("dashboard filtering does not report archived repositories as absent", asyn
     },
   });
 
-  assert.deepEqual(payload.projects, []);
-  assert.deepEqual(removed, ["owner/repo"]);
-  assert.deepEqual(absent, []);
-  assert.equal(payload.cache?.releasesUpdatedAt, previousReleasesUpdatedAt);
-  assert.equal(payload.cache?.ciUpdatedAt, previousCiUpdatedAt);
+  expect(payload.projects).toStrictEqual([]);
+  expect(removed).toStrictEqual(["owner/repo"]);
+  expect(absent).toStrictEqual([]);
+  expect(payload.cache?.releasesUpdatedAt).toBe(previousReleasesUpdatedAt);
+  expect(payload.cache?.ciUpdatedAt).toBe(previousCiUpdatedAt);
 });
 
 test("dashboard reconciliation preserves live repositories later on a short page", async () => {
@@ -143,14 +142,11 @@ test("dashboard reconciliation preserves live repositories later on a short page
     },
   });
 
-  assert.equal(payload.projects.length, 20);
-  assert.equal(
-    payload.projects.some((project) => project.fullName === "owner/repo-020"),
-    true,
-  );
-  assert.equal(removed.size, 180);
-  assert.equal(payload.cache?.progress?.scanned, 12);
-  assert.equal(payload.cache?.progress?.done, false);
+  expect(payload.projects.length).toBe(20);
+  expect(payload.projects.some((project) => project.fullName === "owner/repo-020")).toBe(true);
+  expect(removed.size).toBe(180);
+  expect(payload.cache?.progress?.scanned).toBe(12);
+  expect(payload.cache?.progress?.done).toBe(false);
 });
 
 test("dashboard reconciliation follows GraphQL pagination when a page contains null nodes", async () => {
@@ -227,8 +223,8 @@ test("dashboard reconciliation follows GraphQL pagination when a page contains n
     },
   });
 
-  assert.equal(graphqlPages, 3);
-  assert.deepEqual(payload.projects.map((project) => project.fullName).sort(), [
+  expect(graphqlPages).toBe(3);
+  expect(payload.projects.map((project) => project.fullName).sort()).toStrictEqual([
     "owner/keep",
     "owner/later",
   ]);
@@ -295,10 +291,10 @@ test("dashboard metadata scan follows GraphQL pagination past all-null pages", a
     },
   });
 
-  assert.equal(graphqlPages, 3);
-  assert.equal(payload.projects[0]?.fullName, "owner/repo");
-  assert.equal(payload.projects[0]?.openIssues, 4);
-  assert.equal(payload.projects[0]?.openPullRequests, 2);
+  expect(graphqlPages).toBe(3);
+  expect(payload.projects[0]?.fullName).toBe("owner/repo");
+  expect(payload.projects[0]?.openIssues).toBe(4);
+  expect(payload.projects[0]?.openPullRequests).toBe(2);
 });
 
 test("dashboard released-only repo cap scans past unreleased repositories", async () => {
@@ -379,13 +375,10 @@ test("dashboard released-only repo cap scans past unreleased repositories", asyn
     },
   });
 
-  assert.deepEqual(
-    payload.projects.map((project) => project.name),
-    ["one", "two"],
-  );
-  assert.equal(payload.totals.repos, 2);
-  assert.equal(payload.totals.unreleased, 0);
-  assert.equal(payload.cache?.capped, true);
+  expect(payload.projects.map((project) => project.name)).toStrictEqual(["one", "two"]);
+  expect(payload.totals.repos).toBe(2);
+  expect(payload.totals.unreleased).toBe(0);
+  expect(payload.cache?.capped).toBe(true);
 });
 
 test("dashboard repo scan cap stops giant owners after recent repos", async () => {
@@ -443,14 +436,11 @@ test("dashboard repo scan cap stops giant owners after recent repos", async () =
     },
   });
 
-  assert.deepEqual(releaseFetches, ["empty-a", "empty-b"]);
-  assert.deepEqual(
-    payload.projects.map((project) => project.name),
-    ["empty-a", "empty-b"],
-  );
-  assert.equal(payload.totals.repos, 2);
-  assert.equal(payload.cache?.capped, true);
-  assert.match(payload.cache?.message ?? "", /scanned 2 recently pushed repos/);
+  expect(releaseFetches).toStrictEqual(["empty-a", "empty-b"]);
+  expect(payload.projects.map((project) => project.name)).toStrictEqual(["empty-a", "empty-b"]);
+  expect(payload.totals.repos).toBe(2);
+  expect(payload.cache?.capped).toBe(true);
+  expect(payload.cache?.message ?? "").toMatch(/scanned 2 recently pushed repos/);
 });
 
 test("dashboard metadata-only mode skips release hydration", async () => {
@@ -494,18 +484,15 @@ test("dashboard metadata-only mode skips release hydration", async () => {
     },
   });
 
-  assert.deepEqual(unexpectedHydrationFetches, []);
-  assert.deepEqual(
-    payload.projects.map((project) => project.name),
-    ["one", "two"],
-  );
-  assert.deepEqual(
-    payload.projects.map((project) => project.version),
-    ["repo search", "repo search"],
-  );
-  assert.equal(payload.projects[0]?.commitsSinceRelease, null);
-  assert.equal(payload.cache?.capped, true);
-  assert.match(payload.cache?.message ?? "", /release scan skipped/);
+  expect(unexpectedHydrationFetches).toStrictEqual([]);
+  expect(payload.projects.map((project) => project.name)).toStrictEqual(["one", "two"]);
+  expect(payload.projects.map((project) => project.version)).toStrictEqual([
+    "repo search",
+    "repo search",
+  ]);
+  expect(payload.projects[0]?.commitsSinceRelease).toBe(null);
+  expect(payload.cache?.capped).toBe(true);
+  expect(payload.cache?.message ?? "").toMatch(/release scan skipped/);
 });
 
 test("dashboard metadata-only released-only mode keeps released-only semantics", async () => {
@@ -529,11 +516,11 @@ test("dashboard metadata-only released-only mode keeps released-only semantics",
     },
   });
 
-  assert.deepEqual(fetchedPaths, []);
-  assert.deepEqual(payload.projects, []);
-  assert.equal(payload.totals.repos, 0);
-  assert.equal(payload.totals.unreleased, 0);
-  assert.match(payload.cache?.message ?? "", /release scan skipped/);
+  expect(fetchedPaths).toStrictEqual([]);
+  expect(payload.projects).toStrictEqual([]);
+  expect(payload.totals.repos).toBe(0);
+  expect(payload.totals.unreleased).toBe(0);
+  expect(payload.cache?.message ?? "").toMatch(/release scan skipped/);
 });
 
 test("dashboard shared owner page cap finishes as fresh capped data", async () => {
@@ -581,10 +568,10 @@ test("dashboard shared owner page cap finishes as fresh capped data", async () =
     },
   });
 
-  assert.deepEqual(pages, ["1", "2", "3"]);
-  assert.equal(payload.cache?.state, "fresh");
-  assert.equal(payload.cache?.progress?.done, undefined);
-  assert.equal(payload.cache?.capped, true);
+  expect(pages).toStrictEqual(["1", "2", "3"]);
+  expect(payload.cache?.state).toBe("fresh");
+  expect(payload.cache?.progress?.done).toBe(undefined);
+  expect(payload.cache?.capped).toBe(true);
 });
 
 test("dashboard repo scan cap marks full page boundary truncation as capped", async () => {
@@ -646,11 +633,11 @@ test("dashboard repo scan cap marks full page boundary truncation as capped", as
     },
   });
 
-  assert.deepEqual(pages, ["1"]);
-  assert.deepEqual(pageSizes, ["100"]);
-  assert.equal(payload.totals.repos, 100);
-  assert.equal(payload.cache?.capped, true);
-  assert.match(payload.cache?.message ?? "", /scanned 100 recently pushed repos/);
+  expect(pages).toStrictEqual(["1"]);
+  expect(pageSizes).toStrictEqual(["100"]);
+  expect(payload.totals.repos).toBe(100);
+  expect(payload.cache?.capped).toBe(true);
+  expect(payload.cache?.message ?? "").toMatch(/scanned 100 recently pushed repos/);
 });
 
 test("dashboard resume stops paging when visible cap is already scanned", async () => {
@@ -733,12 +720,9 @@ test("dashboard resume stops paging when visible cap is already scanned", async 
     },
   });
 
-  assert.deepEqual(pages, ["1"]);
-  assert.deepEqual(
-    payload.projects.map((project) => project.name),
-    ["one", "two"],
-  );
-  assert.equal(payload.cache?.progress?.done, true);
+  expect(pages).toStrictEqual(["1"]);
+  expect(payload.projects.map((project) => project.name)).toStrictEqual(["one", "two"]);
+  expect(payload.cache?.progress?.done).toBe(true);
 });
 
 test("dashboard repo cap keeps paginating until eligible repos survive filters", async () => {
@@ -814,11 +798,8 @@ test("dashboard repo cap keeps paginating until eligible repos survive filters",
     },
   });
 
-  assert.deepEqual(
-    payload.projects.map((project) => project.name),
-    ["one"],
-  );
-  assert.equal(payload.cache?.capped, true);
+  expect(payload.projects.map((project) => project.name)).toStrictEqual(["one"]);
+  expect(payload.cache?.capped).toBe(true);
 });
 
 test("owner count refresh uses the lean GraphQL shape", async () => {
@@ -853,10 +834,10 @@ test("owner count refresh uses the lean GraphQL shape", async () => {
     },
   });
 
-  assert.match(query, /query ReleaseBarOwnerCounts/);
-  assert.doesNotMatch(query, /repositoryTopics|releases|statusCheckRollup/);
-  assert.equal(result.complete, true);
-  assert.deepEqual(result.repos[0], {
+  expect(query).toMatch(/query ReleaseBarOwnerCounts/);
+  expect(query).not.toMatch(/repositoryTopics|releases|statusCheckRollup/);
+  expect(result.complete).toBe(true);
+  expect(result.repos[0]).toStrictEqual({
     fullName: "owner/repo",
     openIssues: 7,
     openPullRequests: 3,
@@ -894,5 +875,5 @@ test("owner count refresh uses the lean GraphQL shape", async () => {
         },
       }),
   });
-  assert.equal(truncated.complete, false);
+  expect(truncated.complete).toBe(false);
 });

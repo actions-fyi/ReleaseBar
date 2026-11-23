@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import { clipText, releaseTitlesInput } from "../../../worker/release-summary.js";
 import {
   releaseSummaryLimitSettings,
@@ -9,8 +8,8 @@ import {
 const defaults = releaseSummaryLimits({});
 
 test("clipped text never ends inside a surrogate pair", () => {
-  assert.equal(clipText("ab😀cd", 3), "ab…");
-  assert.equal(clipText("abc", 3), "abc");
+  expect(clipText("ab😀cd", 3)).toBe("ab…");
+  expect(clipText("abc", 3)).toBe("abc");
 });
 
 test("release summary titles stay within their cap whatever the commits hold", () => {
@@ -23,35 +22,33 @@ test("release summary titles stay within their cap whatever the commits hold", (
     assert.ok(text.length <= inputChars, `input is ${text.length} of ${inputChars} characters`);
     assert.ok(titlesUsed > 0 && titlesUsed < 500);
     // The newest titles are the ones kept.
-    assert.match(text, /commit 499 /);
-    assert.doesNotMatch(text, /commit 0 /);
-    assert.match(text, new RegExp(`the ${500 - titlesUsed} oldest left out`));
+    expect(text).toMatch(/commit 499 /);
+    expect(text).not.toMatch(/commit 0 /);
+    expect(text).toMatch(new RegExp(`the ${500 - titlesUsed} oldest left out`));
   }
 });
 
 test("release summary titles that fit are all sent, numbered oldest first", () => {
-  assert.deepEqual(releaseTitlesInput(["Add panel", "Fix cache"], defaults.inputChars), {
+  expect(releaseTitlesInput(["Add panel", "Fix cache"], defaults.inputChars)).toStrictEqual({
     text: "Commit titles, oldest first:\n1. Add panel\n2. Fix cache",
     titlesUsed: 2,
   });
 });
 
 test("release summary limits come from Worker vars, within their bounds", () => {
-  assert.deepEqual(defaults, { inputChars: 48_000, titleChars: 160 });
-  assert.deepEqual(
+  expect(defaults).toStrictEqual({ inputChars: 48_000, titleChars: 160 });
+  expect(
     releaseSummaryLimits({
       RELEASE_SUMMARY_INPUT_CHARS: " 20000 ",
       RELEASE_SUMMARY_TITLE_CHARS: "80",
     }),
-    { inputChars: 20_000, titleChars: 80 },
-  );
+  ).toStrictEqual({ inputChars: 20_000, titleChars: 80 });
   // Out of bounds is clamped; anything but a whole number is ignored.
-  assert.deepEqual(
+  expect(
     releaseSummaryLimits({
       RELEASE_SUMMARY_INPUT_CHARS: "999999999",
       RELEASE_SUMMARY_TITLE_CHARS: "1",
     }),
-    { inputChars: 400_000, titleChars: 20 },
-  );
-  assert.deepEqual(releaseSummaryLimits({ RELEASE_SUMMARY_INPUT_CHARS: "4.8e4" }), defaults);
+  ).toStrictEqual({ inputChars: 400_000, titleChars: 20 });
+  expect(releaseSummaryLimits({ RELEASE_SUMMARY_INPUT_CHARS: "4.8e4" })).toStrictEqual(defaults);
 });

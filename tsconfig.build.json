@@ -18,5 +18,6 @@
     "src/wasm.d.ts",
     "worker/**/*.ts",
     "worker-configuration.d.ts"
-  ]
+  ],
+  "exclude": ["scripts/lib/dashboard-tests/**", "scripts/lib/dashboard-test-harness.ts"]
 }

@@ -1,6 +1,5 @@
-import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, RefreshJob } from "../../../src/types.js";
 import {
@@ -92,10 +91,10 @@ test("worker only exposes public selected installation repositories", async () =
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = await response.json<any>();
-    assert.deepEqual(body.installations[0].repositories, ["steipete/public-repo"]);
-    assert.equal(body.installNeeded, false);
+    expect(body.installations[0].repositories).toStrictEqual(["steipete/public-repo"]);
+    expect(body.installNeeded).toBe(false);
 
     const repoRoute = await worker.fetch(
       new Request(
@@ -107,9 +106,9 @@ test("worker only exposes public selected installation repositories", async () =
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(repoRoute.status, 200);
+    expect(repoRoute.status).toBe(200);
     const repoRouteBody = await repoRoute.json<any>();
-    assert.equal(repoRouteBody.installNeeded, false);
+    expect(repoRouteBody.installNeeded).toBe(false);
 
     const escapedRepoRoute = await worker.fetch(
       new Request(
@@ -121,9 +120,9 @@ test("worker only exposes public selected installation repositories", async () =
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(escapedRepoRoute.status, 200);
+    expect(escapedRepoRoute.status).toBe(200);
     const escapedRepoRouteBody = await escapedRepoRoute.json<any>();
-    assert.equal(escapedRepoRouteBody.installNeeded, false);
+    expect(escapedRepoRouteBody.installNeeded).toBe(false);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -184,10 +183,10 @@ test("worker allows mixed-account dashboards to use partitioned App quota", asyn
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = await response.json<any>();
-    assert.equal(body.installNeeded, false);
-    assert.equal(body.installReason, null);
+    expect(body.installNeeded).toBe(false);
+    expect(body.installReason).toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -230,19 +229,19 @@ test("worker keeps signed-in mixed-account dashboards on shared release scans", 
     const url = new URL(String(input));
     const authorization = new Headers(init?.headers).get("authorization");
     if (url.pathname === "/user/installations") {
-      assert.equal(authorization, "Bearer user-token");
+      expect(authorization).toBe("Bearer user-token");
       return Response.json({ installations: [] });
     }
     if (url.pathname === "/users/openclaw") {
-      assert.equal(authorization, "Bearer shared-token");
+      expect(authorization).toBe("Bearer shared-token");
       return Response.json({ login: "openclaw", type: "Organization" });
     }
     if (url.pathname === "/users/steipete") {
-      assert.equal(authorization, "Bearer shared-token");
+      expect(authorization).toBe("Bearer shared-token");
       return Response.json({ login: "steipete", type: "User" });
     }
     if (url.pathname === "/graphql") {
-      assert.equal(authorization, "Bearer shared-token");
+      expect(authorization).toBe("Bearer shared-token");
       const body = JSON.parse(String(init?.body ?? "{}")) as {
         variables?: { includeReleases?: boolean };
       };
@@ -279,15 +278,15 @@ test("worker keeps signed-in mixed-account dashboards on shared release scans", 
       env,
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as DashboardPayload;
     await Promise.all(waits);
-    assert.deepEqual(graphqlIncludeReleases, [false, false]);
-    assert.equal(sentJobs.length, 1);
-    assert.equal(sentJobs[0]?.reason, "cold-metadata");
-    assert.equal(body.cache?.quota?.source, "shared");
-    assert.equal(body.cache?.quota?.remaining, 4996);
-    assert.doesNotMatch(body.cache?.message ?? "", /release scan skipped/);
+    expect(graphqlIncludeReleases).toStrictEqual([false, false]);
+    expect(sentJobs.length).toBe(1);
+    expect(sentJobs[0]?.reason).toBe("cold-metadata");
+    expect(body.cache?.quota?.source).toBe("shared");
+    expect(body.cache?.quota?.remaining).toBe(4996);
+    expect(body.cache?.message ?? "").not.toMatch(/release scan skipped/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -356,19 +355,19 @@ test("worker keeps unsynced app-configured owner dashboards metadata-only", asyn
     const response = await worker.fetch(new Request("https://release.bar/api/owner"), env, {
       waitUntil: () => undefined,
     });
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as DashboardPayload;
-    assert.deepEqual(fetchedPaths, ["/users/owner", "/users/owner/repos"]);
-    assert.equal(response.headers.get("cache-control"), "private, no-store");
-    assert.equal(response.headers.get("vary"), "cookie");
-    assert.equal(body.projects[0]?.version, "repo search");
-    assert.equal(body.projects[0]?.commitsSinceRelease, null);
-    assert.equal(body.projects[0]?.openIssues, null);
-    assert.equal(body.projects[0]?.openPullRequests, null);
-    assert.equal(body.cache?.countsUpdatedAt, null);
-    assert.match(body.cache?.message ?? "", /release scan skipped/);
-    assert.notEqual(body.projects[0]?.releaseName, "hydrated release cache");
-    assert.equal(await env.DASHBOARD_CACHE.get("hot:index:v3"), null);
+    expect(fetchedPaths).toStrictEqual(["/users/owner", "/users/owner/repos"]);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("vary")).toBe("cookie");
+    expect(body.projects[0]?.version).toBe("repo search");
+    expect(body.projects[0]?.commitsSinceRelease).toBe(null);
+    expect(body.projects[0]?.openIssues).toBe(null);
+    expect(body.projects[0]?.openPullRequests).toBe(null);
+    expect(body.cache?.countsUpdatedAt).toBe(null);
+    expect(body.cache?.message ?? "").toMatch(/release scan skipped/);
+    expect(body.projects[0]?.releaseName).not.toBe("hydrated release cache");
+    expect(await env.DASHBOARD_CACHE.get("hot:index:v3")).toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -414,7 +413,7 @@ test("worker uses GitHub App installation token for cold owner dashboards", asyn
     const url = new URL(String(input));
     const authorization = new Headers(init?.headers).get("authorization");
     if (url.pathname === "/user/installations") {
-      assert.equal(authorization, "Bearer user-token");
+      expect(authorization).toBe("Bearer user-token");
       return Response.json({
         installations: [
           {
@@ -433,21 +432,21 @@ test("worker uses GitHub App installation token for cold owner dashboards", asyn
       });
     }
     if (url.pathname === "/app/installations/1/access_tokens") {
-      assert.match(authorization ?? "", /^Bearer [^.]+\.[^.]+\.[^.]+$/);
+      expect(authorization ?? "").toMatch(/^Bearer [^.]+\.[^.]+\.[^.]+$/);
       return Response.json({ token: "installation-token" });
     }
     if (url.pathname === "/users/openclaw") {
-      assert.equal(authorization, "Bearer installation-token");
+      expect(authorization).toBe("Bearer installation-token");
       ownerResolvedWithInstallationToken = true;
       return Response.json({ login: "openclaw", type: "Organization" });
     }
     if (url.pathname === "/orgs/openclaw/repos") {
-      assert.equal(authorization, "Bearer installation-token");
+      expect(authorization).toBe("Bearer installation-token");
       appRestFallbacks += 1;
       return Response.json([]);
     }
     if (url.pathname === "/graphql") {
-      assert.equal(authorization, "Bearer installation-token");
+      expect(authorization).toBe("Bearer installation-token");
       const body = JSON.parse(String(init?.body ?? "{}")) as {
         variables?: { first?: number; includeReleases?: boolean };
       };
@@ -489,15 +488,15 @@ test("worker uses GitHub App installation token for cold owner dashboards", asyn
       env,
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(response.status, 200);
-    assert.equal(ownerResolvedWithInstallationToken, true);
+    expect(response.status).toBe(200);
+    expect(ownerResolvedWithInstallationToken).toBe(true);
     const body = (await response.json()) as DashboardPayload;
     await Promise.all(waits);
-    assert.equal(body.cache?.quota?.source, "app");
-    assert.equal(body.cache?.quota?.account, "openclaw");
-    assert.equal(body.cache?.quota?.remaining, null);
-    assert.equal(appRestFallbacks, 1);
-    assert.deepEqual(appReleasePageSizes, [50]);
+    expect(body.cache?.quota?.source).toBe("app");
+    expect(body.cache?.quota?.account).toBe("openclaw");
+    expect(body.cache?.quota?.remaining).toBe(null);
+    expect(appRestFallbacks).toBe(1);
+    expect(appReleasePageSizes).toStrictEqual([50]);
     assert.ok(
       await env.DASHBOARD_CACHE.get(
         "github:backoff:v2:graphql:app:openclaw:ReleaseBarOwnerRepos.metadata",
@@ -546,16 +545,16 @@ test("worker uses registered source-owned app tokens for anonymous owner dashboa
     const url = new URL(String(input));
     const authorization = new Headers(init?.headers).get("authorization");
     if (url.pathname === "/app/installations/1/access_tokens") {
-      assert.match(authorization ?? "", /^Bearer [^.]+\.[^.]+\.[^.]+$/);
+      expect(authorization ?? "").toMatch(/^Bearer [^.]+\.[^.]+\.[^.]+$/);
       return Response.json({ token: "installation-token" });
     }
     if (url.pathname === "/users/openclaw") {
-      assert.equal(authorization, "Bearer installation-token");
+      expect(authorization).toBe("Bearer installation-token");
       ownerResolvedWithInstallationToken = true;
       return Response.json({ login: "openclaw", type: "Organization" });
     }
     if (url.pathname === "/graphql") {
-      assert.equal(authorization, "Bearer installation-token");
+      expect(authorization).toBe("Bearer installation-token");
       return Response.json(
         {
           data: {
@@ -584,14 +583,14 @@ test("worker uses registered source-owned app tokens for anonymous owner dashboa
     const response = await worker.fetch(new Request("https://release.bar/api/openclaw"), env, {
       waitUntil: (promise) => waits.push(promise),
     });
-    assert.equal(response.status, 200);
-    assert.equal(ownerResolvedWithInstallationToken, true);
+    expect(response.status).toBe(200);
+    expect(ownerResolvedWithInstallationToken).toBe(true);
     const body = (await response.json()) as DashboardPayload;
     await Promise.all(waits);
-    assert.equal(body.cache?.quota?.source, "app");
-    assert.equal(body.cache?.quota?.account, "openclaw");
-    assert.equal(body.cache?.quota?.remaining, 4998);
-    assert.equal(
+    expect(body.cache?.quota?.source).toBe("app");
+    expect(body.cache?.quota?.account).toBe("openclaw");
+    expect(body.cache?.quota?.remaining).toBe(4998);
+    expect(
       auditLogs.some(
         (entry) =>
           (entry as { event?: string; quota?: { source?: string; account?: string } }).event ===
@@ -600,8 +599,7 @@ test("worker uses registered source-owned app tokens for anonymous owner dashboa
           (entry as { quota?: { source?: string; account?: string } }).quota?.account ===
             "openclaw",
       ),
-      true,
-    );
+    ).toBe(true);
   } finally {
     console.log = originalLog;
     globalThis.fetch = originalFetch;
@@ -644,11 +642,11 @@ test("worker keeps stale source installation coverage when discovery fails", asy
       return Response.json({ message: "temporarily unavailable" }, { status: 503 });
     }
     if (url.pathname === "/users/openclaw") {
-      assert.equal(authorization, "Bearer installation-token");
+      expect(authorization).toBe("Bearer installation-token");
       return Response.json({ login: "openclaw", type: "Organization" });
     }
     if (url.pathname === "/graphql") {
-      assert.equal(authorization, "Bearer installation-token");
+      expect(authorization).toBe("Bearer installation-token");
       return Response.json({
         data: {
           repositoryOwner: {
@@ -668,14 +666,14 @@ test("worker keeps stale source installation coverage when discovery fails", asy
     const response = await worker.fetch(new Request("https://release.bar/api/openclaw"), env, {
       waitUntil: (promise) => waits.push(promise),
     });
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as DashboardPayload;
     await Promise.all(waits);
-    assert.equal(discoveryCalls, 1);
-    assert.equal(body.cache?.quota?.source, "app");
-    assert.equal(body.cache?.quota?.account, "openclaw");
-    assert.equal(await cache.get("auth:installation-miss:v1:openclaw"), null);
-    assert.notEqual(await cache.get("auth:installation:v1:openclaw"), null);
+    expect(discoveryCalls).toBe(1);
+    expect(body.cache?.quota?.source).toBe("app");
+    expect(body.cache?.quota?.account).toBe("openclaw");
+    expect(await cache.get("auth:installation-miss:v1:openclaw")).toBe(null);
+    expect(await cache.get("auth:installation:v1:openclaw")).not.toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }

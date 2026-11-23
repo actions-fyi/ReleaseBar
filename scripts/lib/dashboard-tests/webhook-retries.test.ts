@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, RefreshTarget } from "../../../src/types.js";
 import {
@@ -97,12 +96,12 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
     { waitUntil: () => undefined },
   );
 
-  assert.equal(await cache.get(key), null);
+  expect(await cache.get(key)).toBe(null);
   const invalidatedHot = JSON.parse((await cache.get("hot:v3")) ?? "{}") as DashboardPayload;
-  assert.equal(invalidatedHot.cache?.state, "fresh");
+  expect(invalidatedHot.cache?.state).toBe("fresh");
   assert.ok(Date.parse((await cache.get("hot:v3:invalidated-at")) ?? "") > 0);
-  assert.deepEqual(dashboardCacheAtEnqueue, [null]);
-  assert.equal(
+  expect(dashboardCacheAtEnqueue).toStrictEqual([null]);
+  expect(
     queued.some(
       (message) =>
         Boolean(message) &&
@@ -110,8 +109,7 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
         (message as { kind?: unknown; targetKey?: unknown }).kind === "dashboard" &&
         (message as { targetKey?: unknown }).targetKey === key,
     ),
-    true,
-  );
+  ).toBe(true);
 
   const activeJob = queued.find(
     (message) =>
@@ -119,7 +117,7 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
       typeof message === "object" &&
       (message as { kind?: unknown }).kind === "dashboard",
   ) as { id?: string } | undefined;
-  assert.equal(typeof activeJob?.id, "string");
+  expect(typeof activeJob?.id).toBe("string");
   assert.ok(activeJob);
   queued.length = 0;
   await cache.put(
@@ -155,7 +153,7 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
     { waitUntil: () => undefined },
   );
 
-  assert.equal(await cache.get(key), null);
+  expect(await cache.get(key)).toBe(null);
   const requeued = queued.find(
     (message) =>
       Boolean(message) &&
@@ -163,7 +161,7 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
       (message as { kind?: unknown; delivery?: unknown }).kind === "github-webhook" &&
       (message as { delivery?: unknown }).delivery === "delivery-reserved-push",
   );
-  assert.equal(requeued, undefined);
+  expect(requeued).toBe(undefined);
   const targetStub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName(key));
   const release = await targetStub.fetch(
     new Request("https://releasebar.internal/job/release", {
@@ -174,8 +172,8 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
       }),
     }),
   );
-  assert.equal(release.status, 200);
-  assert.equal(((await release.json()) as { reason?: string }).reason, "webhook:push");
+  expect(release.status).toBe(200);
+  expect(((await release.json()) as { reason?: string }).reason).toBe("webhook:push");
 });
 
 test("reserved webhook refreshes queue one follow-up after the active job", async () => {
@@ -230,7 +228,7 @@ test("reserved webhook refreshes queue one follow-up after the active job", asyn
       body: JSON.stringify({ jobId: "existing-job" }),
     }),
   );
-  assert.equal(reservation.status, 204);
+  expect(reservation.status).toBe(204);
 
   let acknowledged = false;
   let retried = false;
@@ -275,9 +273,9 @@ test("reserved webhook refreshes queue one follow-up after the active job", asyn
       (message as { kind?: unknown; delivery?: unknown }).kind === "github-webhook" &&
       (message as { delivery?: unknown }).delivery === "delivery-reserved-fallback",
   );
-  assert.equal(requeuedWebhook, undefined);
-  assert.equal(acknowledged, true);
-  assert.equal(retried, false);
+  expect(requeuedWebhook).toBe(undefined);
+  expect(acknowledged).toBe(true);
+  expect(retried).toBe(false);
 
   let activeAcknowledged = false;
   await worker.queue(
@@ -312,7 +310,7 @@ test("reserved webhook refreshes queue one follow-up after the active job", asyn
     { waitUntil: () => undefined },
   );
 
-  assert.equal(activeAcknowledged, true);
+  expect(activeAcknowledged).toBe(true);
   const followup = queued.find(
     (message) =>
       Boolean(message) &&
@@ -320,9 +318,9 @@ test("reserved webhook refreshes queue one follow-up after the active job", asyn
       (message as { kind?: unknown; reason?: unknown }).kind === "dashboard" &&
       String((message as { reason?: unknown }).reason).includes("repository-publicized:follow-up"),
   ) as { targetKey?: string } | undefined;
-  assert.equal(followup?.targetKey, key);
-  assert.equal(delays.at(-1), 0);
-  assert.equal(await cache.get(key), null);
+  expect(followup?.targetKey).toBe(key);
+  expect(delays.at(-1)).toBe(0);
+  expect(await cache.get(key)).toBe(null);
 });
 
 test("worker acknowledges webhook jobs after the durable requeue limit", async () => {
@@ -394,9 +392,9 @@ test("worker acknowledges webhook jobs after the durable requeue limit", async (
     { waitUntil: () => undefined },
   );
 
-  assert.equal(abandoned, true);
-  assert.equal(acknowledged, true);
-  assert.equal(retried, false);
+  expect(abandoned).toBe(true);
+  expect(acknowledged).toBe(true);
+  expect(retried).toBe(false);
 });
 
 test("processed webhook retries take over followers behind a stale matching lease", async () => {
@@ -479,15 +477,14 @@ test("processed webhook retries take over followers behind a stale matching leas
     }),
   );
 
-  assert.equal(response.status, 202);
-  assert.deepEqual(values.get("webhook-pending"), []);
-  assert.equal(values.has("webhook-active"), false);
-  assert.equal(
+  expect(response.status).toBe(202);
+  expect(values.get("webhook-pending")).toStrictEqual([]);
+  expect(values.has("webhook-active")).toBe(false);
+  expect(
     (values.get("webhook-deliveries") as Array<{ id: string }>).some(
       (delivery) => delivery.id === "delivery-follower",
     ),
-    true,
-  );
+  ).toBe(true);
 });
 
 test("worker retries terminal webhook jobs when durable abandonment fails", async () => {
@@ -539,8 +536,8 @@ test("worker retries terminal webhook jobs when durable abandonment fails", asyn
     { waitUntil: () => undefined },
   );
 
-  assert.equal(acknowledged, false);
-  assert.equal(retryDelaySeconds, 20);
+  expect(acknowledged).toBe(false);
+  expect(retryDelaySeconds).toBe(20);
 });
 
 test("worker quickly requeues busy webhook jobs without consuming their failure budget", async () => {
@@ -618,10 +615,10 @@ test("worker quickly requeues busy webhook jobs without consuming their failure 
     { waitUntil: () => undefined },
   );
 
-  assert.equal(acknowledged, true);
-  assert.equal(queuedJob?.delivery, "delivery-busy");
-  assert.equal(queuedJob?.attempts, 48);
-  assert.equal(queuedDelaySeconds, 20);
+  expect(acknowledged).toBe(true);
+  expect(queuedJob?.delivery).toBe("delivery-busy");
+  expect(queuedJob?.attempts).toBe(48);
+  expect(queuedDelaySeconds).toBe(20);
 });
 
 test("terminal webhook fanout clears admission and processing deduplication", async () => {
@@ -688,9 +685,12 @@ test("terminal webhook fanout clears admission and processing deduplication", as
     { waitUntil: () => undefined },
   );
 
-  assert.deepEqual(abandoned.sort(), ["github-webhook-admission", "github-webhook-process:owner"]);
-  assert.equal(acknowledged, true);
-  assert.equal(retried, false);
+  expect(abandoned.sort()).toStrictEqual([
+    "github-webhook-admission",
+    "github-webhook-process:owner",
+  ]);
+  expect(acknowledged).toBe(true);
+  expect(retried).toBe(false);
 });
 
 test("terminal webhook fanout retries when durable abandonment fails", async () => {
@@ -750,6 +750,6 @@ test("terminal webhook fanout retries when durable abandonment fails", async () 
     { waitUntil: () => undefined },
   );
 
-  assert.equal(acknowledged, false);
-  assert.equal(retried, true);
+  expect(acknowledged).toBe(false);
+  expect(retried).toBe(true);
 });

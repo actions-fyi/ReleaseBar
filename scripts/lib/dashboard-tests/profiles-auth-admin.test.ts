@@ -1,6 +1,5 @@
-import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import test from "node:test";
+import { expect, test } from "vitest";
 import type {
   AuthFunnelSummary,
   DashboardPayload,
@@ -32,7 +31,7 @@ test("worker discovers and stores source-owned app installs for anonymous dashbo
     const url = new URL(String(input));
     const authorization = new Headers(init?.headers).get("authorization");
     if (url.pathname === "/app/installations") {
-      assert.match(authorization ?? "", /^Bearer [^.]+\.[^.]+\.[^.]+$/);
+      expect(authorization ?? "").toMatch(/^Bearer [^.]+\.[^.]+\.[^.]+$/);
       return Response.json([
         {
           id: 7,
@@ -49,15 +48,15 @@ test("worker discovers and stores source-owned app installs for anonymous dashbo
       ]);
     }
     if (url.pathname === "/app/installations/7/access_tokens") {
-      assert.match(authorization ?? "", /^Bearer [^.]+\.[^.]+\.[^.]+$/);
+      expect(authorization ?? "").toMatch(/^Bearer [^.]+\.[^.]+\.[^.]+$/);
       return Response.json({ token: "installation-token" });
     }
     if (url.pathname === "/users/openclaw") {
-      assert.equal(authorization, "Bearer installation-token");
+      expect(authorization).toBe("Bearer installation-token");
       return Response.json({ login: "openclaw", type: "Organization" });
     }
     if (url.pathname === "/graphql") {
-      assert.equal(authorization, "Bearer installation-token");
+      expect(authorization).toBe("Bearer installation-token");
       return Response.json({
         data: {
           repositoryOwner: {
@@ -76,14 +75,14 @@ test("worker discovers and stores source-owned app installs for anonymous dashbo
     const response = await worker.fetch(new Request("https://release.bar/api/openclaw"), env, {
       waitUntil: (promise) => waits.push(promise),
     });
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as DashboardPayload;
     await Promise.all(waits);
-    assert.equal(body.cache?.quota?.source, "app");
-    assert.equal(body.cache?.quota?.account, "openclaw");
+    expect(body.cache?.quota?.source).toBe("app");
+    expect(body.cache?.quota?.account).toBe("openclaw");
     const stored = JSON.parse((await cache.get("auth:installation:v1:openclaw")) ?? "{}");
-    assert.equal(stored.id, 7);
-    assert.equal(stored.repositorySelection, "all");
+    expect(stored.id).toBe(7);
+    expect(stored.repositorySelection).toBe("all");
   } finally {
     console.log = originalLog;
     globalThis.fetch = originalFetch;
@@ -204,18 +203,18 @@ test("worker saves owner public defaults and applies them to clean owner URLs", 
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(save.status, 200);
+    expect(save.status).toBe(200);
     const saved = await save.json<any>();
-    assert.deepEqual(saved.profile.includeRepos, ["openclaw/peekaboo"]);
+    expect(saved.profile.includeRepos).toStrictEqual(["openclaw/peekaboo"]);
 
     const response = await worker.fetch(new Request("https://release.bar/api/steipete"), env, {
       waitUntil: (promise) => waits.push(promise),
     });
-    assert.equal(response.status, 200, await response.clone().text());
+    expect(response.status, await response.clone().text()).toBe(200);
     const body = (await response.json()) as DashboardPayload;
     await Promise.all(waits);
-    assert.equal(body.profile?.owner, "steipete");
-    assert.equal(body.projects[0]?.fullName, "openclaw/peekaboo");
+    expect(body.profile?.owner).toBe("steipete");
+    expect(body.projects[0]?.fullName).toBe("openclaw/peekaboo");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -255,7 +254,7 @@ test("worker only lets the dashboard owner save public defaults", async () => {
     env,
     { waitUntil: () => undefined },
   );
-  assert.equal(response.status, 403);
+  expect(response.status).toBe(403);
 });
 
 test("worker logout deletes the stored session and clears the cookie", async () => {
@@ -293,10 +292,10 @@ test("worker logout deletes the stored session and clears the cookie", async () 
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 302);
-  assert.equal(response.headers.get("location"), "/openclaw");
-  assert.match(response.headers.get("set-cookie") ?? "", /rd_session=;.*Max-Age=0/);
-  assert.equal(await cache.get(`auth:session:${sessionId}`), null);
+  expect(response.status).toBe(302);
+  expect(response.headers.get("location")).toBe("/openclaw");
+  expect(response.headers.get("set-cookie") ?? "").toMatch(/rd_session=;.*Max-Age=0/);
+  expect(await cache.get(`auth:session:${sessionId}`)).toBe(null);
 });
 
 test("worker login returns 503 when GitHub App is not configured", async () => {
@@ -305,7 +304,7 @@ test("worker login returns 503 when GitHub App is not configured", async () => {
     { DASHBOARD_CACHE: kvStore() },
     { waitUntil: () => undefined },
   );
-  assert.equal(response.status, 503);
+  expect(response.status).toBe(503);
 });
 
 test("worker admin scheduler requires an admin session and reports refresh targets", async () => {
@@ -403,7 +402,7 @@ test("worker admin scheduler requires an admin session and reports refresh targe
     env,
     { waitUntil: () => undefined },
   );
-  assert.equal(anonymous.status, 401);
+  expect(anonymous.status).toBe(401);
 
   const nonAdmin = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler", {
@@ -412,7 +411,7 @@ test("worker admin scheduler requires an admin session and reports refresh targe
     env,
     { waitUntil: () => undefined },
   );
-  assert.equal(nonAdmin.status, 403);
+  expect(nonAdmin.status).toBe(403);
 
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler", {
@@ -422,15 +421,15 @@ test("worker admin scheduler requires an admin session and reports refresh targe
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as SchedulerAdminPayload;
-  assert.equal(body.status.targets, 1);
-  assert.equal(body.status.scannedTargets, 1);
-  assert.equal(body.status.dueTargets, 0);
-  assert.equal(body.status.queuedJobs, 1);
-  assert.equal(body.targets[0]?.owner, "openclaw");
-  assert.equal("githubAccess" in body, false);
-  assert.equal("auth" in body, false);
+  expect(body.status.targets).toBe(1);
+  expect(body.status.scannedTargets).toBe(1);
+  expect(body.status.dueTargets).toBe(0);
+  expect(body.status.queuedJobs).toBe(1);
+  expect(body.targets[0]?.owner).toBe("openclaw");
+  expect("githubAccess" in body).toBe(false);
+  expect("auth" in body).toBe(false);
 
   const access = await worker.fetch(
     new Request("https://release.bar/api/admin/github-access?hours=1", {
@@ -439,10 +438,10 @@ test("worker admin scheduler requires an admin session and reports refresh targe
     env,
     { waitUntil: () => undefined },
   );
-  assert.equal(access.status, 200);
+  expect(access.status).toBe(200);
   const accessBody = (await access.json()) as GitHubAccessSummary;
-  assert.equal(accessBody.total, 3);
-  assert.equal(accessBody.topRoutes[0]?.route, "graphql");
+  expect(accessBody.total).toBe(3);
+  expect(accessBody.topRoutes[0]?.route).toBe("graphql");
 
   const installations = await worker.fetch(
     new Request("https://release.bar/api/admin/installations", {
@@ -451,10 +450,10 @@ test("worker admin scheduler requires an admin session and reports refresh targe
     env,
     { waitUntil: () => undefined },
   );
-  assert.equal(installations.status, 200);
+  expect(installations.status).toBe(200);
   const installationBody = (await installations.json()) as AuthFunnelSummary;
-  assert.equal(installationBody.installationCount, 0);
-  assert.equal(installationBody.counterCount, 0);
+  expect(installationBody.installationCount).toBe(0);
+  expect(installationBody.counterCount).toBe(0);
 
   const run = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler/run", {
@@ -464,11 +463,11 @@ test("worker admin scheduler requires an admin session and reports refresh targe
     env,
     { waitUntil: () => undefined },
   );
-  assert.equal(run.status, 200);
+  expect(run.status).toBe(200);
   const runBody = (await run.json()) as { enqueued: number; due: number };
-  assert.equal(runBody.enqueued, 0);
-  assert.equal(runBody.due, 0);
-  assert.deepEqual(sentJobs, []);
+  expect(runBody.enqueued).toBe(0);
+  expect(runBody.due).toBe(0);
+  expect(sentJobs).toStrictEqual([]);
 });
 
 test("worker admin installation summary bounds record and counter reads", async () => {
@@ -528,14 +527,14 @@ test("worker admin installation summary bounds record and counter reads", async 
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as AuthFunnelSummary;
-  assert.equal(body.installationCount, 121);
-  assert.equal(body.installations.length, 80);
-  assert.equal(body.counterCount, 121);
-  assert.equal(body.counts.length, 80);
-  assert.equal(installationReads, 80);
-  assert.equal(counterReads, 80);
+  expect(body.installationCount).toBe(121);
+  expect(body.installations.length).toBe(80);
+  expect(body.counterCount).toBe(121);
+  expect(body.counts.length).toBe(80);
+  expect(installationReads).toBe(80);
+  expect(counterReads).toBe(80);
 });
 
 test("worker scheduler rotates bounded current-schema target pages", async () => {
@@ -608,21 +607,21 @@ test("worker scheduler rotates bounded current-schema target pages", async () =>
       },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     return (await response.json()) as { considered: number; due: number; enqueued: number };
   };
 
-  assert.deepEqual(await run(), { ok: true, considered: 120, due: 0, enqueued: 0 });
+  expect(await run()).toStrictEqual({ ok: true, considered: 120, due: 0, enqueued: 0 });
   const firstState = JSON.parse((await cache.get("refresh:state:v1")) ?? "{}") as {
     targetCursor?: string;
   };
-  assert.equal(firstState.targetCursor, "120");
+  expect(firstState.targetCursor).toBe("120");
 
-  assert.deepEqual(await run(), { ok: true, considered: 1, due: 0, enqueued: 0 });
+  expect(await run()).toStrictEqual({ ok: true, considered: 1, due: 0, enqueued: 0 });
   const secondState = JSON.parse((await cache.get("refresh:state:v1")) ?? "{}") as {
     targetCursor?: string;
   };
-  assert.equal(secondState.targetCursor, undefined);
+  expect(secondState.targetCursor).toBe(undefined);
 
   const admin = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler", {
@@ -635,9 +634,9 @@ test("worker scheduler rotates bounded current-schema target pages", async () =>
     },
     { waitUntil: () => undefined },
   );
-  assert.equal(admin.status, 200);
+  expect(admin.status).toBe(200);
   const adminBody = (await admin.json()) as SchedulerAdminPayload;
-  assert.equal(adminBody.status.targets, 121);
-  assert.equal(adminBody.status.scannedTargets, 1);
-  assert.equal(adminBody.targets.length, 120);
+  expect(adminBody.status.targets).toBe(121);
+  expect(adminBody.status.scannedTargets).toBe(1);
+  expect(adminBody.targets.length).toBe(120);
 });

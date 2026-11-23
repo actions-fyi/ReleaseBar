@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, RefreshJob } from "../../../src/types.js";
 import {
@@ -58,7 +57,7 @@ test("worker manual dashboard refresh returns metadata before release hydration"
       const body = JSON.parse(String(init?.body ?? "{}")) as {
         variables?: { first?: number; includeReleases?: boolean };
       };
-      assert.equal(body.variables?.first, 100);
+      expect(body.variables?.first).toBe(100);
       return Response.json({
         data: {
           repositoryOwner: {
@@ -95,33 +94,33 @@ test("worker manual dashboard refresh returns metadata before release hydration"
       env,
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(response.status, 202);
+    expect(response.status).toBe(202);
     const body = (await response.json()) as DashboardPayload;
-    assert.equal(body.cache?.state, "partial");
-    assert.equal(body.cache?.progress?.done, false);
-    assert.match(body.cache?.message ?? "", /repository metadata refreshed/);
-    assert.equal(body.projects[0]?.openIssues, 9);
-    assert.equal(body.projects[0]?.openPullRequests, 4);
-    assert.equal(body.projects[0]?.version, "repo search");
+    expect(body.cache?.state).toBe("partial");
+    expect(body.cache?.progress?.done).toBe(false);
+    expect(body.cache?.message ?? "").toMatch(/repository metadata refreshed/);
+    expect(body.projects[0]?.openIssues).toBe(9);
+    expect(body.projects[0]?.openPullRequests).toBe(4);
+    expect(body.projects[0]?.version).toBe("repo search");
 
     const repeated = await worker.fetch(
       new Request("https://release.bar/api/owner", { method: "POST" }),
       env,
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(repeated.status, 202);
+    expect(repeated.status).toBe(202);
     const repeatedBody = (await repeated.json()) as DashboardPayload;
-    assert.match(repeatedBody.cache?.message ?? "", /manual refresh recently started/);
-    assert.equal(repeatedBody.projects[0]?.openIssues, 9);
+    expect(repeatedBody.cache?.message ?? "").toMatch(/manual refresh recently started/);
+    expect(repeatedBody.projects[0]?.openIssues).toBe(9);
 
     await Promise.all(waits);
     const cached = await worker.fetch(new Request("https://release.bar/api/owner"), env, {
       waitUntil: () => undefined,
     });
     const hydrated = (await cached.json()) as DashboardPayload;
-    assert.equal(hydrated.cache?.state, "fresh");
-    assert.equal(hydrated.projects[0]?.version, "v1.0.0");
-    assert.equal(hydrated.projects[0]?.commitsSinceRelease, 3);
+    expect(hydrated.cache?.state).toBe("fresh");
+    expect(hydrated.projects[0]?.version).toBe("v1.0.0");
+    expect(hydrated.projects[0]?.commitsSinceRelease).toBe(3);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -170,7 +169,7 @@ test("manual refreshes merge owner removals observed during the build before cac
             }),
           }),
         );
-        assert.equal(removed.ok, true);
+        expect(removed.ok).toBe(true);
         removalRecorded = true;
       }
       return Response.json({
@@ -215,9 +214,9 @@ test("manual refreshes merge owner removals observed during the build before cac
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 202);
+    expect(response.status).toBe(202);
     const body = (await response.json()) as DashboardPayload;
-    assert.equal(body.projects.length, 0);
+    expect(body.projects.length).toBe(0);
     const cached = JSON.parse(
       (await cache.get(
         dashboardCacheKey({
@@ -228,7 +227,7 @@ test("manual refreshes merge owner removals observed during the build before cac
         }),
       )) ?? "{}",
     ) as DashboardPayload;
-    assert.equal(cached.projects.length, 0);
+    expect(cached.projects.length).toBe(0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -305,14 +304,14 @@ test("worker manual dashboard refresh preserves repository cap metadata", async 
       },
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(response.status, 202);
+    expect(response.status).toBe(202);
     const body = (await response.json()) as DashboardPayload;
     await Promise.all(waits);
-    assert.equal(graphqlCalls, 2);
-    assert.equal(body.projects.length, 200);
-    assert.equal(body.cache?.capped, true);
-    assert.equal(body.cache?.repoLimit, 200);
-    assert.equal(sentJobs.length, 1);
+    expect(graphqlCalls).toBe(2);
+    expect(body.projects.length).toBe(200);
+    expect(body.cache?.capped).toBe(true);
+    expect(body.cache?.repoLimit).toBe(200);
+    expect(sentJobs.length).toBe(1);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -355,9 +354,9 @@ test("worker limits cold metadata to one small page before queue hydration", asy
       const body = JSON.parse(String(init?.body ?? "{}")) as {
         variables?: { first?: number; after?: string | null; includeReleases?: boolean };
       };
-      assert.equal(body.variables?.first, 25);
-      assert.equal(body.variables?.after, null);
-      assert.equal(body.variables?.includeReleases, false);
+      expect(body.variables?.first).toBe(25);
+      expect(body.variables?.after).toBe(null);
+      expect(body.variables?.includeReleases).toBe(false);
       return Response.json({
         data: {
           repositoryOwner: {
@@ -387,23 +386,20 @@ test("worker limits cold metadata to one small page before queue hydration", asy
       },
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as DashboardPayload;
     await Promise.all(waits);
-    assert.equal(graphqlCalls, 1);
-    assert.equal(body.cache?.state, "partial");
-    assert.equal(body.cache?.progress?.done, false);
-    assert.equal(body.cache?.repoLimit, 200);
-    assert.equal(body.options?.repoLimit, 200);
-    assert.equal(body.projects.length, 24);
-    assert.equal(
-      body.projects.some((project) => project.name === "repo-1"),
-      false,
-    );
-    assert.equal(body.projects.find((project) => project.name === "repo-25")?.openIssues, 25);
-    assert.equal(body.projects.find((project) => project.name === "repo-25")?.openPullRequests, 24);
-    assert.equal(sentJobs.length, 1);
-    assert.equal(sentJobs[0]?.reason, "cold-metadata");
+    expect(graphqlCalls).toBe(1);
+    expect(body.cache?.state).toBe("partial");
+    expect(body.cache?.progress?.done).toBe(false);
+    expect(body.cache?.repoLimit).toBe(200);
+    expect(body.options?.repoLimit).toBe(200);
+    expect(body.projects.length).toBe(24);
+    expect(body.projects.some((project) => project.name === "repo-1")).toBe(false);
+    expect(body.projects.find((project) => project.name === "repo-25")?.openIssues).toBe(25);
+    expect(body.projects.find((project) => project.name === "repo-25")?.openPullRequests).toBe(24);
+    expect(sentJobs.length).toBe(1);
+    expect(sentJobs[0]?.reason).toBe("cold-metadata");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -439,11 +435,11 @@ test("worker manual dashboard refresh returns structured GitHub errors", async (
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 429);
-    assert.equal(response.headers.get("retry-after"), "30");
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("30");
     const body = (await response.json()) as DashboardPayload;
-    assert.equal(body.cache?.state, "error");
-    assert.match(body.cache?.message ?? "", /GitHub shared API quota is exhausted/);
+    expect(body.cache?.state).toBe("error");
+    expect(body.cache?.message ?? "").toMatch(/GitHub shared API quota is exhausted/);
 
     const key = dashboardCacheKey({ owner: "owner", includeUnreleased: true, schemaVersion: 6 });
     const dashboard = testDashboard("owner", [testProject({ owner: "owner", name: "repo" })]);
@@ -458,10 +454,10 @@ test("worker manual dashboard refresh returns structured GitHub errors", async (
       { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
-    assert.equal(cachedResponse.status, 429);
+    expect(cachedResponse.status).toBe(429);
     const cached = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
-    assert.equal(cached.cache?.state, "fresh");
-    assert.equal(cached.projects.length, 1);
+    expect(cached.cache?.state).toBe("fresh");
+    expect(cached.projects.length).toBe(1);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -498,10 +494,10 @@ test("worker GraphQL backoff does not fall through to shared REST scans", async 
       { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 429);
+    expect(response.status).toBe(429);
     const body = (await response.json()) as DashboardPayload;
-    assert.equal(body.cache?.state, "error");
-    assert.deepEqual(paths, ["/users/owner"]);
+    expect(body.cache?.state).toBe("error");
+    expect(paths).toStrictEqual(["/users/owner"]);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -544,10 +540,10 @@ test("worker GraphQL upstream failure does not fall through to shared REST scans
       { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 429);
+    expect(response.status).toBe(429);
     const body = (await response.json()) as DashboardPayload;
-    assert.equal(body.cache?.state, "error");
-    assert.deepEqual(paths, ["/users/owner", "/graphql"]);
+    expect(body.cache?.state).toBe("error");
+    expect(paths).toStrictEqual(["/users/owner", "/graphql"]);
     assert.ok(await cache.get("github:backoff:v2:graphql:shared:_:ReleaseBarOwnerRepos.metadata"));
     assert.ok(await cache.get("github:budget:v1:shared:graphql"));
   } finally {
@@ -637,11 +633,11 @@ test("worker manual dashboard refresh preserves released-only cache while rebuil
       env,
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(response.status, 202);
+    expect(response.status).toBe(202);
     const body = (await response.json()) as DashboardPayload;
-    assert.equal(body.projects.length, 1);
-    assert.equal(body.projects[0]?.version, "v1.0.0");
-    assert.match(body.cache?.message ?? "", /release data updating/);
+    expect(body.projects.length).toBe(1);
+    expect(body.projects[0]?.version).toBe("v1.0.0");
+    expect(body.cache?.message ?? "").toMatch(/release data updating/);
 
     await Promise.all(waits);
     const cached = await worker.fetch(
@@ -650,8 +646,8 @@ test("worker manual dashboard refresh preserves released-only cache while rebuil
       { waitUntil: () => undefined },
     );
     const hydrated = (await cached.json()) as DashboardPayload;
-    assert.equal(hydrated.projects[0]?.openIssues, 7);
-    assert.equal(hydrated.projects[0]?.openPullRequests, 3);
+    expect(hydrated.projects[0]?.openIssues).toBe(7);
+    expect(hydrated.projects[0]?.openPullRequests).toBe(3);
   } finally {
     globalThis.fetch = originalFetch;
   }

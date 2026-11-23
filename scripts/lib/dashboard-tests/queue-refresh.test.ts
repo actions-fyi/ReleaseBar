@@ -1,6 +1,5 @@
-import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../../../src/types.js";
 import {
@@ -55,7 +54,7 @@ test("worker refresh jobs can use shared quota when no source app token exists",
   globalThis.fetch = async (input, init) => {
     const url = new URL(String(input));
     paths.push(url.pathname);
-    assert.equal(new Headers(init?.headers).get("authorization"), "Bearer shared-token");
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer shared-token");
     if (url.pathname === "/users/openclaw") {
       return Response.json({ login: "openclaw", type: "Organization" });
     }
@@ -113,22 +112,16 @@ test("worker refresh jobs can use shared quota when no source app token exists",
   } finally {
     globalThis.fetch = originalFetch;
   }
-  assert.equal(acked, true);
+  expect(acked).toBe(true);
   const updated = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
-  assert.equal(updated.status, "succeeded");
+  expect(updated.status).toBe("succeeded");
   const auditEvents = await refreshAuditEvents(cache);
-  assert.equal(
-    auditEvents.some((event) => event.event === "job_start"),
-    true,
-  );
-  assert.equal(
-    auditEvents.some((event) => event.event === "dashboard_build_start"),
-    true,
-  );
+  expect(auditEvents.some((event) => event.event === "job_start")).toBe(true);
+  expect(auditEvents.some((event) => event.event === "dashboard_build_start")).toBe(true);
   const buildDone = auditEvents.find((event) => event.event === "dashboard_build_done");
-  assert.equal(buildDone?.status, "fresh");
-  assert.equal(buildDone?.projects, 0);
-  assert.deepEqual(paths, ["/users/openclaw", "/graphql"]);
+  expect(buildDone?.status).toBe("fresh");
+  expect(buildDone?.projects).toBe(0);
+  expect(paths).toStrictEqual(["/users/openclaw", "/graphql"]);
 });
 
 test("worker refresh jobs preserve profile filters from the queued target snapshot", async () => {
@@ -285,12 +278,12 @@ test("worker refresh jobs preserve profile filters from the queued target snapsh
     );
     await ownerFetchStarted;
     const deliveries = await cache.list({ prefix: "refresh:job-deliveries:v1:" });
-    assert.equal(deliveries.keys.length, 1);
+    expect(deliveries.keys.length).toBe(1);
     const running = JSON.parse(
       (await cache.get(deliveries.keys[0]?.name ?? "")) ?? "{}",
     ) as RefreshJob;
-    assert.equal(running.status, "running");
-    assert.notEqual(running.startedAt, null);
+    expect(running.status).toBe("running");
+    expect(running.startedAt).not.toBe(null);
     releaseOwnerFetch?.();
     await processing;
   } finally {
@@ -298,19 +291,16 @@ test("worker refresh jobs preserve profile filters from the queued target snapsh
     globalThis.fetch = originalFetch;
   }
 
-  assert.equal(acked, true);
-  assert.equal(mutableJobWrites, 1);
+  expect(acked).toBe(true);
+  expect(mutableJobWrites).toBe(1);
   const dashboard = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
-  assert.deepEqual(dashboard.profile, profile);
-  assert.deepEqual(
-    dashboard.projects.map((project) => project.fullName),
-    ["profiled/visible"],
-  );
+  expect(dashboard.profile).toStrictEqual(profile);
+  expect(dashboard.projects.map((project) => project.fullName)).toStrictEqual(["profiled/visible"]);
   const updatedTarget = JSON.parse(
     (await cache.get(`refresh:target:v1:${key}`)) ?? "{}",
   ) as RefreshTarget;
-  assert.equal(updatedTarget.lastSeenAt, latestLastSeenAt);
-  assert.equal(updatedTarget.path, latestPath);
+  expect(updatedTarget.lastSeenAt).toBe(latestLastSeenAt);
+  expect(updatedTarget.path).toBe(latestPath);
 });
 
 test("worker retries refresh jobs when the dashboard build lock is busy", async () => {
@@ -405,14 +395,14 @@ test("worker retries refresh jobs when the dashboard build lock is busy", async 
     { waitUntil: () => undefined },
   );
 
-  assert.equal(acked, false);
-  assert.equal(retryDelaySeconds, 60);
+  expect(acked).toBe(false);
+  expect(retryDelaySeconds).toBe(60);
   const updated = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
-  assert.equal(updated.status, "queued");
-  assert.equal(updated.startedAt, null);
-  assert.equal(updated.finishedAt, null);
-  assert.equal(updated.durationMs, null);
-  assert.equal(updated.error, "dashboard locked");
+  expect(updated.status).toBe("queued");
+  expect(updated.startedAt).toBe(null);
+  expect(updated.finishedAt).toBe(null);
+  expect(updated.durationMs).toBe(null);
+  expect(updated.error).toBe("dashboard locked");
 });
 
 test("worker stops and retries stalled progressive dashboard scans", async () => {
@@ -542,11 +532,11 @@ test("worker stops and retries stalled progressive dashboard scans", async () =>
     globalThis.fetch = originalFetch;
   }
 
-  assert.equal(repoPages, 2);
-  assert.equal(retryDelaySeconds, 60);
+  expect(repoPages).toBe(2);
+  expect(retryDelaySeconds).toBe(60);
   const updated = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
-  assert.equal(updated.status, "queued");
-  assert.equal(updated.error, "dashboard stalled");
+  expect(updated.status).toBe("queued");
+  expect(updated.error).toBe("dashboard stalled");
 });
 
 test("worker aborts Queue hydration at the delivery deadline", async () => {
@@ -666,12 +656,12 @@ test("worker aborts Queue hydration at the delivery deadline", async () => {
     globalThis.setTimeout = originalSetTimeout;
   }
 
-  assert.equal(aborted, true);
-  assert.equal(retryDelaySeconds, 60);
+  expect(aborted).toBe(true);
+  expect(retryDelaySeconds).toBe(60);
   const updated = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
-  assert.equal(updated.status, "queued");
-  assert.equal(updated.error, "dashboard deadline reached");
-  assert.equal(updated.finishedAt, null);
+  expect(updated.status).toBe("queued");
+  expect(updated.error).toBe("dashboard deadline reached");
+  expect(updated.finishedAt).toBe(null);
 });
 
 test("worker aborts Queue GitHub App token lookup at the delivery deadline", async () => {
@@ -790,9 +780,9 @@ test("worker aborts Queue GitHub App token lookup at the delivery deadline", asy
     globalThis.setTimeout = originalSetTimeout;
   }
 
-  assert.equal(credentialAborted, true);
-  assert.equal(retryDelaySeconds, 60);
+  expect(credentialAborted).toBe(true);
+  expect(retryDelaySeconds).toBe(60);
   const updated = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
-  assert.equal(updated.status, "queued");
-  assert.equal(updated.error, "dashboard deadline reached");
+  expect(updated.status).toBe("queued");
+  expect(updated.error).toBe("dashboard deadline reached");
 });

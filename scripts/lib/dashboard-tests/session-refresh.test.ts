@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { kvStore, signedJson, worker } from "../dashboard-test-harness.js";
 
 const context = { waitUntil: () => undefined };
@@ -84,8 +83,8 @@ test("worker refreshes expired GitHub user tokens instead of losing them", async
     const url = new URL(String(input));
     if (url.hostname === "github.com" && url.pathname === "/login/oauth/access_token") {
       const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, string>;
-      assert.equal(body.grant_type, "refresh_token");
-      assert.equal(body.refresh_token, "refresh-1");
+      expect(body.grant_type).toBe("refresh_token");
+      expect(body.refresh_token).toBe("refresh-1");
       refreshCalls += 1;
       return Response.json({
         access_token: "fresh-token",
@@ -110,22 +109,22 @@ test("worker refreshes expired GitHub user tokens instead of losing them", async
       env,
       context,
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as { user: { login: string } | null };
-    assert.equal(body.user?.login, "octocat");
-    assert.equal(refreshCalls, 1);
-    assert.deepEqual(installationTokens, ["Bearer fresh-token"]);
+    expect(body.user?.login).toBe("octocat");
+    expect(refreshCalls).toBe(1);
+    expect(installationTokens).toStrictEqual(["Bearer fresh-token"]);
     const stored = JSON.parse((await cache.get(`auth:session:${sessionId}`)) ?? "{}") as {
       accessToken: string;
       accessTokenExp: number;
       refreshToken: string;
       refreshTokenExp: number;
     };
-    assert.equal(stored.accessToken, "fresh-token");
-    assert.equal(stored.refreshToken, "refresh-2");
-    assert.equal(stored.accessTokenExp >= now + 28700, true);
-    assert.equal(stored.refreshTokenExp >= now + 15551900, true);
-    assert.equal(failedRotationWrites, 1);
+    expect(stored.accessToken).toBe("fresh-token");
+    expect(stored.refreshToken).toBe("refresh-2");
+    expect(stored.accessTokenExp >= now + 28700).toBe(true);
+    expect(stored.refreshTokenExp >= now + 15551900).toBe(true);
+    expect(failedRotationWrites).toBe(1);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -179,10 +178,10 @@ test("worker keeps sessions logged in across redundant or failing KV writes", as
 
     // Unchanged installation list: /api/me must not rewrite the session key at all.
     const unchanged = await request();
-    assert.equal(unchanged.status, 200);
+    expect(unchanged.status).toBe(200);
     const unchangedBody = (await unchanged.json()) as { user: { login: string } | null };
-    assert.equal(unchangedBody.user?.login, "octocat");
-    assert.equal(sessionPuts.length, 0);
+    expect(unchangedBody.user?.login).toBe("octocat");
+    expect(sessionPuts.length).toBe(0);
 
     // Changed list with a failing KV write: still logged in, write attempted once.
     liveInstallations = [
@@ -190,16 +189,16 @@ test("worker keeps sessions logged in across redundant or failing KV writes", as
       installationPayload(88, "clawtopia", "Organization"),
     ];
     const degraded = await request();
-    assert.equal(degraded.status, 200);
+    expect(degraded.status).toBe(200);
     const degradedBody = (await degraded.json()) as {
       user: { login: string } | null;
       installations: unknown[];
     };
-    assert.equal(degradedBody.user?.login, "octocat");
-    assert.equal(degradedBody.installations.length, 2);
-    assert.equal(sessionPuts.length, 1);
+    expect(degradedBody.user?.login).toBe("octocat");
+    expect(degradedBody.installations.length).toBe(2);
+    expect(sessionPuts.length).toBe(1);
     // Fresh, unchanged registry entries are not rewritten on the second /api/me call.
-    assert.deepEqual(registryPuts.sort(), [
+    expect(registryPuts.sort()).toStrictEqual([
       "auth:installation:v1:clawtopia",
       "auth:installation:v1:octocat",
     ]);
@@ -255,19 +254,19 @@ test("worker stores refresh grants during the OAuth callback", async () => {
       env,
       context,
     );
-    assert.equal(callback.status, 302);
+    expect(callback.status).toBe(302);
     const sessionKeys = (await cache.list({ prefix: "auth:session:" })).keys;
-    assert.equal(sessionKeys.length, 1);
+    expect(sessionKeys.length).toBe(1);
     const stored = JSON.parse((await cache.get(sessionKeys[0]?.name ?? "")) ?? "{}") as {
       accessToken: string;
       accessTokenExp?: number;
       refreshToken?: string;
       refreshTokenExp?: number;
     };
-    assert.equal(stored.accessToken, "user-token");
-    assert.equal(typeof stored.accessTokenExp, "number");
-    assert.equal(stored.refreshToken, "refresh-1");
-    assert.equal(typeof stored.refreshTokenExp, "number");
+    expect(stored.accessToken).toBe("user-token");
+    expect(typeof stored.accessTokenExp).toBe("number");
+    expect(stored.refreshToken).toBe("refresh-1");
+    expect(typeof stored.refreshTokenExp).toBe("number");
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import {
   buildDashboard,
   dashboardCacheKey,
@@ -14,17 +13,17 @@ import {
 import { optionsFromSearch } from "../../../src/routing.js";
 
 test("query options are explicit booleans", () => {
-  assert.deepEqual(optionsFromSearch("?forks=true&archived=false&unreleased=true"), {
+  expect(optionsFromSearch("?forks=true&archived=false&unreleased=true")).toStrictEqual({
     includeForks: true,
     includeArchived: false,
     includeUnreleased: true,
   });
-  assert.deepEqual(optionsFromSearch("?unreleased=false"), {
+  expect(optionsFromSearch("?unreleased=false")).toStrictEqual({
     includeForks: false,
     includeArchived: false,
     includeUnreleased: false,
   });
-  assert.equal(optionsFromSearch("").includeUnreleased, true);
+  expect(optionsFromSearch("").includeUnreleased).toBe(true);
 });
 
 test("build option normalization preserves config includeUnreleased", () => {
@@ -38,15 +37,14 @@ test("build option normalization preserves config includeUnreleased", () => {
     includeUnreleased: true,
   });
 
-  assert.equal(options.includeUnreleased, true);
-  assert.equal(
+  expect(options.includeUnreleased).toBe(true);
+  expect(
     normalizeBuildOptions({ ...options, includeUnreleased: undefined }).includeUnreleased,
-    false,
-  );
+  ).toBe(false);
 });
 
 test("cache keys include owner, schema, and visibility flags", () => {
-  assert.equal(
+  expect(
     dashboardCacheKey({
       owner: "@OpenClaw",
       includeForks: true,
@@ -54,50 +52,46 @@ test("cache keys include owner, schema, and visibility flags", () => {
       includeUnreleased: true,
       schemaVersion: 6,
     }),
-    "dashboard:v6:openclaw:forks-noarchived-unreleased-release",
-  );
-  assert.equal(
+  ).toBe("dashboard:v6:openclaw:forks-noarchived-unreleased-release");
+  expect(
     dashboardCacheKey({
       owner: "openclaw",
       owners: ["Steipete"],
       repos: ["Steipete/Oracle"],
       schemaVersion: 6,
     }),
-    "dashboard:v6:openclaw:noforks-noarchived-released-release:sources-2dgec2fqc87xi",
-  );
-  assert.equal(
+  ).toBe("dashboard:v6:openclaw:noforks-noarchived-released-release:sources-2dgec2fqc87xi");
+  expect(
     dashboardCacheKey({
       owner: "openclaw",
       includeReleaseData: false,
       schemaVersion: 6,
     }),
-    "dashboard:v6:openclaw:noforks-noarchived-released-metadata",
-  );
-  assert.equal(
+  ).toBe("dashboard:v6:openclaw:noforks-noarchived-released-metadata");
+  expect(
     dashboardCacheKey({
       owner: "openclaw",
       owners: Array.from({ length: 50 }, (_, index) => `owner-${index}`),
       repos: Array.from({ length: 50 }, (_, index) => `owner-${index}/repo-${index}`),
     }).length < 512,
-    true,
-  );
+  ).toBe(true);
 });
 
 test("owner slugs match public GitHub login rules", () => {
-  assert.equal(validOwnerSlug("steipete"), true);
-  assert.equal(validOwnerSlug("openclaw"), true);
-  assert.equal(validOwnerSlug("-bad"), false);
-  assert.equal(validOwnerSlug("bad-"), false);
-  assert.equal(validOwnerSlug("bad_owner"), false);
-  assert.equal(validRepoSlug("steipete/oracle"), true);
-  assert.equal(validRepoSlug("bad_owner/oracle"), false);
+  expect(validOwnerSlug("steipete")).toBe(true);
+  expect(validOwnerSlug("openclaw")).toBe(true);
+  expect(validOwnerSlug("-bad")).toBe(false);
+  expect(validOwnerSlug("bad-")).toBe(false);
+  expect(validOwnerSlug("bad_owner")).toBe(false);
+  expect(validRepoSlug("steipete/oracle")).toBe(true);
+  expect(validRepoSlug("bad_owner/oracle")).toBe(false);
 });
 
 test("owner resolution keeps GitHub profile identity", async () => {
   const owner = await resolveOwnerType("OpenClaw", {
     fetch: async (input) => {
       const url = new URL(String(input));
-      assert.equal(url.pathname, "/users/openclaw");
+      expect(url.pathname).toBe("/users/openclaw");
       return Response.json({
         login: "OpenClaw",
         type: "Organization",
@@ -107,7 +101,7 @@ test("owner resolution keeps GitHub profile identity", async () => {
     },
   });
 
-  assert.deepEqual(owner, {
+  expect(owner).toStrictEqual({
     type: "org",
     login: "OpenClaw",
     avatarUrl: "https://avatars.githubusercontent.com/u/123",
@@ -122,36 +116,32 @@ test("repo filtering respects forks, archived repos, private repos, and excludes
     archived: false,
     private: false,
   };
-  assert.equal(filterRepo(repo, { includeForks: false, includeArchived: false }), true);
-  assert.equal(
-    filterRepo({ ...repo, fork: true }, { includeForks: false, includeArchived: true }),
+  expect(filterRepo(repo, { includeForks: false, includeArchived: false })).toBe(true);
+  expect(filterRepo({ ...repo, fork: true }, { includeForks: false, includeArchived: true })).toBe(
     false,
   );
-  assert.equal(
+  expect(
     filterRepo({ ...repo, archived: true }, { includeForks: true, includeArchived: false }),
-    false,
-  );
-  assert.equal(
+  ).toBe(false);
+  expect(
     filterRepo({ ...repo, private: true }, { includeForks: true, includeArchived: true }),
-    false,
-  );
-  assert.equal(
+  ).toBe(false);
+  expect(
     filterRepo(repo, {
       includeForks: true,
       includeArchived: true,
       excludeRepos: ["owner/repo"],
     }),
-    false,
-  );
+  ).toBe(false);
 });
 
 test("freshness buckets remain compatible with existing dashboard semantics", () => {
   const project = { commitsSinceRelease: null };
-  assert.equal(freshness(project), "hot");
-  assert.equal(freshness({ ...project, commitsSinceRelease: 0 }), "fresh");
-  assert.equal(freshness({ ...project, commitsSinceRelease: 5 }), "warm");
-  assert.equal(freshness({ ...project, commitsSinceRelease: 25 }), "busy");
-  assert.equal(freshness({ ...project, commitsSinceRelease: 26 }), "hot");
+  expect(freshness(project)).toBe("hot");
+  expect(freshness({ ...project, commitsSinceRelease: 0 })).toBe("fresh");
+  expect(freshness({ ...project, commitsSinceRelease: 5 })).toBe("warm");
+  expect(freshness({ ...project, commitsSinceRelease: 25 })).toBe("busy");
+  expect(freshness({ ...project, commitsSinceRelease: 26 })).toBe("hot");
 });
 
 test("dashboard build skips empty unreleased repositories without failing", async () => {
@@ -197,14 +187,14 @@ test("dashboard build skips empty unreleased repositories without failing", asyn
     fetch: fetcher,
   });
 
-  assert.equal(payload.totals.repos, 0);
+  expect(payload.totals.repos).toBe(0);
 });
 
 test("dashboard build partitions GitHub App quota by owner", async () => {
   const authorizations = new Map<string, string | null>();
   const fetcher: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
-    assert.equal(url.pathname, "/graphql");
+    expect(url.pathname).toBe("/graphql");
     const body = JSON.parse(String(init?.body ?? "{}")) as {
       variables?: { login?: string };
     };
@@ -260,13 +250,13 @@ test("dashboard build partitions GitHub App quota by owner", async () => {
     },
   });
 
-  assert.deepEqual(Object.fromEntries(authorizations), {
+  expect(Object.fromEntries(authorizations)).toStrictEqual({
     alpha: "Bearer alpha-token",
     beta: "Bearer beta-token",
   });
-  assert.equal(payload.cache?.quota?.source, "app");
-  assert.equal(payload.cache?.quota?.account, null);
-  assert.equal(payload.cache?.quota?.remaining, 3900);
+  expect(payload.cache?.quota?.source).toBe("app");
+  expect(payload.cache?.quota?.account).toBe(null);
+  expect(payload.cache?.quota?.remaining).toBe(3900);
 });
 
 test("dashboard build keeps empty included repositories without check-run calls", async () => {
@@ -320,13 +310,10 @@ test("dashboard build keeps empty included repositories without check-run calls"
     },
   });
 
-  assert.equal(payload.totals.repos, 1);
-  assert.equal(payload.projects[0]?.version, "unreleased");
-  assert.equal(payload.projects[0]?.ciState, "unknown");
-  assert.equal(
-    requested.some((path) => path.includes("/check-runs")),
-    false,
-  );
+  expect(payload.totals.repos).toBe(1);
+  expect(payload.projects[0]?.version).toBe("unreleased");
+  expect(payload.projects[0]?.ciState).toBe("unknown");
+  expect(requested.some((path) => path.includes("/check-runs"))).toBe(false);
 });
 
 test("dashboard build treats empty successful GitHub JSON as no data", async () => {
@@ -392,8 +379,8 @@ test("dashboard build treats empty successful GitHub JSON as no data", async () 
     },
   });
 
-  assert.equal(payload.totals.repos, 1);
-  assert.equal(payload.projects[0]?.openPullRequests, 0);
+  expect(payload.totals.repos).toBe(1);
+  expect(payload.projects[0]?.openPullRequests).toBe(0);
 });
 
 test("dashboard build falls back when GraphQL returns an empty success body", async () => {
@@ -413,11 +400,11 @@ test("dashboard build falls back when GraphQL returns an empty success body", as
     },
   });
 
-  assert.equal(payload.totals.repos, 0);
+  expect(payload.totals.repos).toBe(0);
 });
 
 test("dashboard build treats ignored 403 check-run rate limits as quota errors", async () => {
-  await assert.rejects(
+  await expect(
     buildDashboard({
       title: "ReleaseBar",
       subtitle: "test",
@@ -489,8 +476,7 @@ test("dashboard build treats ignored 403 check-run rate limits as quota errors",
         throw new Error(`unexpected ${path}`);
       },
     }),
-    GitHubRateLimitError,
-  );
+  ).rejects.toBeInstanceOf(GitHubRateLimitError);
 });
 
 test("dashboard build can add explicit public repositories without an owner scan", async () => {
@@ -556,8 +542,8 @@ test("dashboard build can add explicit public repositories without an owner scan
     },
   });
 
-  assert.equal(payload.totals.repos, 1);
-  assert.equal(payload.projects[0]?.fullName, "other/repo");
+  expect(payload.totals.repos).toBe(1);
+  expect(payload.projects[0]?.fullName).toBe("other/repo");
 });
 
 test("dashboard metadata splits explicit repository issue and PR counts", async () => {
@@ -605,9 +591,9 @@ test("dashboard metadata splits explicit repository issue and PR counts", async 
     },
   });
 
-  assert.equal(payload.projects[0]?.openIssues, 4);
-  assert.equal(payload.projects[0]?.openPullRequests, 3);
-  assert.deepEqual(requested, ["/repos/other/repo", "/repos/other/repo/pulls"]);
+  expect(payload.projects[0]?.openIssues).toBe(4);
+  expect(payload.projects[0]?.openPullRequests).toBe(3);
+  expect(requested).toStrictEqual(["/repos/other/repo", "/repos/other/repo/pulls"]);
 });
 
 test("dashboard metadata splits authenticated REST owner issue and PR counts", async () => {
@@ -663,10 +649,10 @@ test("dashboard metadata splits authenticated REST owner issue and PR counts", a
     },
   });
 
-  assert.equal(payload.projects[0]?.openIssues, 4);
-  assert.equal(payload.projects[0]?.openPullRequests, 3);
-  assert.equal(payload.cache?.capped, false);
-  assert.deepEqual(requested, ["/graphql", "/users/owner/repos", "/repos/owner/repo/pulls"]);
+  expect(payload.projects[0]?.openIssues).toBe(4);
+  expect(payload.projects[0]?.openPullRequests).toBe(3);
+  expect(payload.cache?.capped).toBe(false);
+  expect(requested).toStrictEqual(["/graphql", "/users/owner/repos", "/repos/owner/repo/pulls"]);
 });
 
 test("dashboard REST hydration only splits counts for the hydrated batch", async () => {
@@ -729,15 +715,11 @@ test("dashboard REST hydration only splits counts for the hydrated batch", async
     },
   });
 
-  assert.deepEqual(
-    requested.filter((path) => path.endsWith("/pulls")),
-    ["/repos/owner/one/pulls"],
-  );
-  assert.equal(payload.projects.find((project) => project.name === "one")?.openIssues, 6);
-  assert.equal(payload.projects.find((project) => project.name === "one")?.openPullRequests, 1);
-  assert.equal(payload.projects.find((project) => project.name === "two")?.openIssues, null);
-  assert.equal(
-    payload.projects.find((project) => project.name === "three")?.openPullRequests,
-    null,
-  );
+  expect(requested.filter((path) => path.endsWith("/pulls"))).toStrictEqual([
+    "/repos/owner/one/pulls",
+  ]);
+  expect(payload.projects.find((project) => project.name === "one")?.openIssues).toBe(6);
+  expect(payload.projects.find((project) => project.name === "one")?.openPullRequests).toBe(1);
+  expect(payload.projects.find((project) => project.name === "two")?.openIssues).toBe(null);
+  expect(payload.projects.find((project) => project.name === "three")?.openPullRequests).toBe(null);
 });

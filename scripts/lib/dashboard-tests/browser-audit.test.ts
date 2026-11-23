@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import { isGitHubRateLimit } from "../../../src/rate-limit.js";
 import {
   githubAccessRouteRecords,
@@ -9,15 +8,14 @@ import {
 } from "../dashboard-test-harness.js";
 
 test("browser rate-limit detection covers HTTP and cached GitHub quota failures", () => {
-  assert.equal(isGitHubRateLimit(429), true);
-  assert.equal(isGitHubRateLimit(403, "API rate limit exceeded"), true);
-  assert.equal(isGitHubRateLimit(200, "shared GitHub quota paused until reset"), true);
-  assert.equal(
+  expect(isGitHubRateLimit(429)).toBe(true);
+  expect(isGitHubRateLimit(403, "API rate limit exceeded")).toBe(true);
+  expect(isGitHubRateLimit(200, "shared GitHub quota paused until reset")).toBe(true);
+  expect(
     isGitHubRateLimit(200, "Repository detail is cache-only while shared GitHub quota recovers."),
-    true,
-  );
-  assert.equal(isGitHubRateLimit(500, "dashboard fetch failed"), false);
-  assert.equal(isGitHubRateLimit(200, "shared quota · 4,812 left"), false);
+  ).toBe(true);
+  expect(isGitHubRateLimit(500, "dashboard fetch failed")).toBe(false);
+  expect(isGitHubRateLimit(200, "shared quota · 4,812 left")).toBe(false);
 });
 
 test("worker records client dashboard timing beacons in audit log", async () => {
@@ -50,21 +48,21 @@ test("worker records client dashboard timing beacons in audit log", async () => 
     { waitUntil: (promise) => waits.push(promise) },
   );
 
-  assert.equal(response.status, 202);
+  expect(response.status).toBe(202);
   await Promise.all(waits);
   const [event] = await refreshAuditEvents(cache);
-  assert.equal(event?.event, "client_dashboard_timing");
-  assert.equal(event?.source, "browser");
-  assert.equal(event?.reason, "fetch");
-  assert.equal(event?.status, "stale");
-  assert.equal(event?.durationMs, 63);
-  assert.equal(event?.projects, 58);
-  assert.equal(event?.scanned, 12);
-  assert.equal(event?.limit, 200);
-  assert.equal(event?.done, false);
-  assert.match(event?.detail ?? "", /path=\/steipete/);
-  assert.match(event?.detail ?? "", /headerMs=42/);
-  assert.match(event?.detail ?? "", /navTtfbMs=91/);
+  expect(event?.event).toBe("client_dashboard_timing");
+  expect(event?.source).toBe("browser");
+  expect(event?.reason).toBe("fetch");
+  expect(event?.status).toBe("stale");
+  expect(event?.durationMs).toBe(63);
+  expect(event?.projects).toBe(58);
+  expect(event?.scanned).toBe(12);
+  expect(event?.limit).toBe(200);
+  expect(event?.done).toBe(false);
+  expect(event?.detail ?? "").toMatch(/path=\/steipete/);
+  expect(event?.detail ?? "").toMatch(/headerMs=42/);
+  expect(event?.detail ?? "").toMatch(/navTtfbMs=91/);
 });
 
 test("worker stores GitHub access counters and cached owner identity", async () => {
@@ -143,13 +141,13 @@ test("worker stores GitHub access counters and cached owner identity", async () 
     ]);
     if (foregroundTimeout) clearTimeout(foregroundTimeout);
 
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     releaseAuditWrites();
     await Promise.all(waits);
     const owner = JSON.parse((await cache.get("owner:v1:owner")) ?? "{}") as {
       login?: string;
     };
-    assert.equal(owner.login, "owner");
+    expect(owner.login).toBe("owner");
     const records = await githubAccessRouteRecords(cache);
     assert.ok(
       records.some(

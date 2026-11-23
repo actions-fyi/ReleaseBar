@@ -1,6 +1,5 @@
-import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, Project, RefreshJob } from "../../../src/types.js";
 import { kvStore, testDashboard, testProject, worker } from "../dashboard-test-harness.js";
@@ -84,9 +83,9 @@ test("worker filters shared owner snapshots for cold combined dashboards", async
       },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as DashboardPayload;
-    assert.deepEqual(body.projects.map((project) => project.fullName).sort(), [
+    expect(body.projects.map((project) => project.fullName).sort()).toStrictEqual([
       "alpha/released",
       "beta/released",
     ]);
@@ -122,12 +121,9 @@ test("worker uses explicit repository owner snapshots for cold dashboards", asyn
     },
     { waitUntil: () => undefined },
   );
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as DashboardPayload;
-  assert.deepEqual(
-    body.projects.map((candidate) => candidate.fullName),
-    ["other/repo"],
-  );
+  expect(body.projects.map((candidate) => candidate.fullName)).toStrictEqual(["other/repo"]);
 });
 
 test("cold partial dashboards honor durable privatization tombstones over stale KV", async () => {
@@ -174,9 +170,9 @@ test("cold partial dashboards honor durable privatization tombstones over stale 
     },
     { waitUntil: () => undefined },
   );
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as DashboardPayload;
-  assert.deepEqual(body.projects, []);
+  expect(body.projects).toStrictEqual([]);
 });
 
 test("metadata-only partial dashboards strip hydrated release and CI fields", async () => {
@@ -221,17 +217,17 @@ test("metadata-only partial dashboards strip hydrated release and CI fields", as
       },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as DashboardPayload;
-    assert.equal(body.cache?.state, "partial");
-    assert.equal(body.projects.length, 2);
+    expect(body.cache?.state).toBe("partial");
+    expect(body.projects.length).toBe(2);
     for (const project of body.projects) {
-      assert.equal(project.version, "repo search");
-      assert.equal(project.releaseDate, null);
-      assert.equal(project.latestCommitSha, null);
-      assert.equal(project.commitsSinceRelease, null);
-      assert.equal(project.ciState, "unknown");
-      assert.equal(project.ciConclusion, null);
+      expect(project.version).toBe("repo search");
+      expect(project.releaseDate).toBe(null);
+      expect(project.latestCommitSha).toBe(null);
+      expect(project.commitsSinceRelease).toBe(null);
+      expect(project.ciState).toBe("unknown");
+      expect(project.ciConclusion).toBe(null);
     }
   } finally {
     globalThis.fetch = originalFetch;
@@ -312,13 +308,12 @@ test("worker progressively resumes large owner dashboard builds from partial cac
   try {
     const first = await worker.fetch(new Request("https://release.bar/api/big"), env, context);
     const firstBody = (await first.json()) as DashboardPayload;
-    assert.equal(first.headers.get("cache-control"), "no-store");
-    assert.equal(firstBody.cache?.state, "partial");
-    assert.equal(firstBody.cache?.progress?.scanned, 0);
-    assert.equal(firstBody.cache?.progress?.done, false);
-    assert.equal(firstBody.projects.length, 25);
-    assert.equal(
-      firstBody.projects.filter((project) => project.version === "repo search").length,
+    expect(first.headers.get("cache-control")).toBe("no-store");
+    expect(firstBody.cache?.state).toBe("partial");
+    expect(firstBody.cache?.progress?.scanned).toBe(0);
+    expect(firstBody.cache?.progress?.done).toBe(false);
+    expect(firstBody.projects.length).toBe(25);
+    expect(firstBody.projects.filter((project) => project.version === "repo search").length).toBe(
       25,
     );
 
@@ -326,13 +321,12 @@ test("worker progressively resumes large owner dashboard builds from partial cac
 
     const second = await worker.fetch(new Request("https://release.bar/api/big"), env, context);
     const secondBody = (await second.json()) as DashboardPayload;
-    assert.equal(secondBody.cache?.state, "fresh");
-    assert.equal(secondBody.cache?.progress?.done, true);
-    assert.equal(secondBody.projects.length, 25);
-    assert.equal(typeof secondBody.cache?.releasesUpdatedAt, "string");
-    assert.equal(secondBody.cache?.ciUpdatedAt, secondBody.cache?.releasesUpdatedAt);
-    assert.equal(
-      secondBody.projects.filter((project) => project.version === "repo search").length,
+    expect(secondBody.cache?.state).toBe("fresh");
+    expect(secondBody.cache?.progress?.done).toBe(true);
+    expect(secondBody.projects.length).toBe(25);
+    expect(typeof secondBody.cache?.releasesUpdatedAt).toBe("string");
+    expect(secondBody.cache?.ciUpdatedAt).toBe(secondBody.cache?.releasesUpdatedAt);
+    expect(secondBody.projects.filter((project) => project.version === "repo search").length).toBe(
       0,
     );
   } finally {
@@ -354,8 +348,13 @@ test("worker bounds cold owner resolution by the response deadline", async () =>
   let ownerStarted = false;
   const cache = kvStore();
 
+  // The owner deadline is the cold-build wait minus the time the request has already taken, so
+  // it is 15 seconds or a few milliseconds less.
   globalThis.setTimeout = ((callback: () => void, delay?: number) =>
-    originalSetTimeout(callback, delay === 15_000 ? 0 : delay)) as typeof setTimeout;
+    originalSetTimeout(
+      callback,
+      delay !== undefined && delay > 14_000 && delay <= 15_000 ? 0 : delay,
+    )) as typeof setTimeout;
   globalThis.fetch = async (input, init) => {
     const path = new URL(String(input)).pathname;
     if (path === "/users/slowmeta") {
@@ -395,15 +394,15 @@ test("worker bounds cold owner resolution by the response deadline", async () =>
       },
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(ownerStarted, true);
-    assert.equal(response.status, 202);
+    expect(ownerStarted).toBe(true);
+    expect(response.status).toBe(202);
     const body = (await response.json()) as DashboardPayload;
-    assert.equal(body.cache?.state, "rebuilding");
+    expect(body.cache?.state).toBe("rebuilding");
     await new Promise((resolve) => originalSetTimeout(resolve, 0));
-    assert.equal(ownerAborted, true);
-    assert.equal(sentJobs.length, 1);
-    assert.equal(sentJobs[0]?.reason, "cold-metadata");
-    assert.equal(deliveryDelaySeconds, 2);
+    expect(ownerAborted).toBe(true);
+    expect(sentJobs.length).toBe(1);
+    expect(sentJobs[0]?.reason).toBe("cold-metadata");
+    expect(deliveryDelaySeconds).toBe(2);
   } finally {
     releaseOwner?.();
     await Promise.all(waits);
@@ -467,11 +466,11 @@ test("worker bounds cold GitHub App token lookup by the response deadline", asyn
       },
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(response.status, 202);
-    assert.equal(credentialAborted, true);
+    expect(response.status).toBe(202);
+    expect(credentialAborted).toBe(true);
     await Promise.all(waits);
-    assert.equal(sentJobs.length, 1);
-    assert.equal(sentJobs[0]?.reason, "cold-build");
+    expect(sentJobs.length).toBe(1);
+    expect(sentJobs[0]?.reason).toBe("cold-build");
   } finally {
     globalThis.fetch = originalFetch;
     globalThis.setTimeout = originalSetTimeout;
@@ -553,17 +552,17 @@ test("worker resumes durable progress on cold metadata cache misses", async () =
       },
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as DashboardPayload;
-    assert.equal(body.cache?.state, "partial");
-    assert.equal(body.cache?.progress?.scanned, 43);
-    assert.deepEqual(body.projects, [project]);
+    expect(body.cache?.state).toBe("partial");
+    expect(body.cache?.progress?.scanned).toBe(43);
+    expect(body.projects).toStrictEqual([project]);
     await Promise.all(waits);
-    assert.equal(sentJobs.length, 1);
-    assert.equal(sentJobs[0]?.reason, "cold-metadata");
-    assert.equal(progressDeletes, 0);
-    assert.equal(progressWrites, 0);
-    assert.equal(released, true);
+    expect(sentJobs.length).toBe(1);
+    expect(sentJobs[0]?.reason).toBe("cold-metadata");
+    expect(progressDeletes).toBe(0);
+    expect(progressWrites).toBe(0);
+    expect(released).toBe(true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -663,7 +662,7 @@ test("worker chains direct progressive continuation after a cold build timeout",
       { DASHBOARD_CACHE: cache },
       { waitUntil: (promise) => waits.push(promise) },
     );
-    assert.equal(response.status, 202);
+    expect(response.status).toBe(202);
     await firstRepoFetch;
     releaseFirstRepo?.();
     while (waits.length > 0) {
@@ -671,10 +670,10 @@ test("worker chains direct progressive continuation after a cold build timeout",
     }
 
     const stored = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
-    assert.equal(stored.cache?.state, "fresh");
-    assert.equal(stored.cache?.progress?.done, true);
-    assert.equal(stored.cache?.progress?.scanned, 13);
-    assert.equal(stored.projects.length, 13);
+    expect(stored.cache?.state).toBe("fresh");
+    expect(stored.cache?.progress?.done).toBe(true);
+    expect(stored.cache?.progress?.scanned).toBe(13);
+    expect(stored.projects.length).toBe(13);
   } finally {
     releaseFirstRepo?.();
     globalThis.fetch = originalFetch;
@@ -762,22 +761,22 @@ test("worker deduplicates queued refreshes for partial dashboards", async () => 
       const response = await worker.fetch(new Request("https://release.bar/api/owner"), env, {
         waitUntil: (promise) => waits.push(promise),
       });
-      assert.equal(response.status, 200);
+      expect(response.status).toBe(200);
       await Promise.all(waits);
     }),
   );
 
-  assert.equal(sentJobs.length, 1);
-  assert.equal(sentJobs[0]?.reason, "partial-cache");
-  assert.equal(sentJobs[0]?.target, undefined);
-  assert.match(sentJobs[0]?.targetSnapshotKey ?? "", /^refresh:jobs:v2:/);
-  assert.equal(deliveryDelaySeconds, 2);
-  assert.equal(targetReads, 2);
+  expect(sentJobs.length).toBe(1);
+  expect(sentJobs[0]?.reason).toBe("partial-cache");
+  expect(sentJobs[0]?.target).toBe(undefined);
+  expect(sentJobs[0]?.targetSnapshotKey ?? "").toMatch(/^refresh:jobs:v2:/);
+  expect(deliveryDelaySeconds).toBe(2);
+  expect(targetReads).toBe(2);
   const indexedJobs = await cache.list({ prefix: "refresh:jobs:v2:" });
-  assert.equal(indexedJobs.keys.length, 1);
+  expect(indexedJobs.keys.length).toBe(1);
   const snapshot = JSON.parse(
     (await cache.get(sentJobs[0]?.targetSnapshotKey ?? "")) ?? "{}",
   ) as RefreshJob;
-  assert.equal(snapshot.target?.key, key);
-  assert.equal((await cache.list({ prefix: "refresh:job:v1:" })).keys.length, 0);
+  expect(snapshot.target?.key).toBe(key);
+  expect((await cache.list({ prefix: "refresh:job:v1:" })).keys.length).toBe(0);
 });

@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import type {
   OwnerActivityPayload,
   OwnerActivitySummary,
@@ -150,16 +149,15 @@ test("summary retry backoff doubles per failure and stops at the maximum", () =>
   });
   const many = 20;
   const failureCounts = [1, summaryRetryMultiplier, many];
-  assert.deepEqual(
+  expect(
     failureCounts.map((failures) => [
       summaryRetryDue(failed(backoffMs(failures) - 1, failures), now),
       summaryRetryDue(failed(backoffMs(failures), failures), now),
     ]),
-    failureCounts.map(() => [false, true]),
-  );
-  assert.equal(backoffMs(many), summaryRetryMaxMs);
-  assert.equal(summaryRetryDue({ state: "unavailable" }, now), false);
-  assert.equal(summaryRetryDue({ ...failed(summaryRetryMaxMs, 1), state: "ready" }, now), false);
+  ).toStrictEqual(failureCounts.map(() => [false, true]));
+  expect(backoffMs(many)).toBe(summaryRetryMaxMs);
+  expect(summaryRetryDue({ state: "unavailable" }, now)).toBe(false);
+  expect(summaryRetryDue({ ...failed(summaryRetryMaxMs, 1), state: "ready" }, now)).toBe(false);
 });
 
 test("worker logs a failed owner activity summary and stores a generic message", async () => {
@@ -191,18 +189,18 @@ test("worker logs a failed owner activity summary and stores a generic message",
         "https://release.bar/api/acme/activity?range=week",
         queued,
       );
-      assert.equal(response.status, httpAccepted);
+      expect(response.status).toBe(httpAccepted);
       await Promise.all(queued);
     });
     const cached = JSON.parse((await cache.get(ownerActivityKey)) ?? "{}") as OwnerActivityPayload;
-    assert.equal(cached.summary?.state, "unavailable");
-    assert.equal(cached.summary?.message, summaryFailedMessage);
-    assert.equal(cached.summary?.failures, 1);
+    expect(cached.summary?.state).toBe("unavailable");
+    expect(cached.summary?.message).toBe(summaryFailedMessage);
+    expect(cached.summary?.failures).toBe(1);
     assert.ok(cached.summary?.failedAt);
-    assert.equal(logged.length, 1);
+    expect(logged.length).toBe(1);
     const entry = JSON.parse(logged[0] ?? "{}") as Record<string, unknown>;
-    assert.equal(entry.event, "summary_failed");
-    assert.equal(entry.kind, "owner-activity");
+    expect(entry.event).toBe("summary_failed");
+    expect(entry.kind).toBe("owner-activity");
     assert.ok(String(entry.error).includes(authErrorText));
   } finally {
     globalThis.fetch = originalFetch;
@@ -223,10 +221,10 @@ test("worker waits out the backoff before retrying a failed owner activity summa
       "https://release.bar/api/acme/activity?range=week",
       queued,
     );
-    assert.equal(response.status, httpOk);
-    assert.equal(queued.length, 0);
+    expect(response.status).toBe(httpOk);
+    expect(queued.length).toBe(0);
     const body = (await response.json()) as OwnerActivityPayload;
-    assert.equal(body.summary?.message, summaryFailedMessage);
+    expect(body.summary?.message).toBe(summaryFailedMessage);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -261,12 +259,12 @@ test("worker retries a failed owner activity summary once the backoff has passed
       "https://release.bar/api/acme/activity?range=week",
       queued,
     );
-    assert.equal(response.status, httpAccepted);
+    expect(response.status).toBe(httpAccepted);
     await Promise.all(queued);
     const cached = JSON.parse((await cache.get(ownerActivityKey)) ?? "{}") as OwnerActivityPayload;
-    assert.equal(cached.summary?.state, "ready");
-    assert.equal(cached.summary?.failedAt, undefined);
-    assert.equal(cached.summary?.failures, undefined);
+    expect(cached.summary?.state).toBe("ready");
+    expect(cached.summary?.failedAt).toBe(undefined);
+    expect(cached.summary?.failures).toBe(undefined);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -341,15 +339,15 @@ test("worker counts consecutive release summary failures and retries after the b
       await Promise.all(queued.splice(0));
     });
     const failed = await cachedSummary();
-    assert.equal(failed?.state, "unavailable");
-    assert.equal(failed?.message, summaryFailedMessage);
-    assert.equal(failed?.failures, priorFailures + 1);
+    expect(failed?.state).toBe("unavailable");
+    expect(failed?.message).toBe(summaryFailedMessage);
+    expect(failed?.failures).toBe(priorFailures + 1);
     const entry = JSON.parse(logged[0] ?? "{}") as Record<string, unknown>;
-    assert.equal(entry.kind, "release");
+    expect(entry.kind).toBe("release");
     assert.ok(String(entry.error).includes(authErrorText));
 
     await request();
-    assert.equal(queued.length, 0, "the next failure waits out a doubled backoff");
+    expect(queued.length, "the next failure waits out a doubled backoff").toBe(0);
 
     await cache.put(
       repoDetailKey,
@@ -364,9 +362,9 @@ test("worker counts consecutive release summary failures and retries after the b
     await request();
     await Promise.all(queued.splice(0));
     const ready = await cachedSummary();
-    assert.equal(ready?.state, "ready");
-    assert.equal(ready?.failures, undefined);
-    assert.equal(claudeResponses.length, 0);
+    expect(ready?.state).toBe("ready");
+    expect(ready?.failures).toBe(undefined);
+    expect(claudeResponses.length).toBe(0);
   } finally {
     globalThis.fetch = originalFetch;
   }

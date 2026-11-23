@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { RefreshJob, RefreshTarget } from "../../../src/types.js";
 import {
@@ -80,11 +79,11 @@ test("worker scheduler preserves queued backlog jobs until reservation expiry", 
     });
 
   const activeResponse = await worker.fetch(request(), env, { waitUntil: () => undefined });
-  assert.equal(activeResponse.status, 200);
+  expect(activeResponse.status).toBe(200);
   const activeBody = (await activeResponse.json()) as { due: number; enqueued: number };
-  assert.equal(activeBody.due, 0);
-  assert.equal(activeBody.enqueued, 0);
-  assert.equal(sentJobs.length, 0);
+  expect(activeBody.due).toBe(0);
+  expect(activeBody.enqueued).toBe(0);
+  expect(sentJobs.length).toBe(0);
 
   const expiredJob = {
     ...queuedJob,
@@ -95,12 +94,12 @@ test("worker scheduler preserves queued backlog jobs until reservation expiry", 
 
   const expiredResponse = await worker.fetch(request(), env, { waitUntil: () => undefined });
 
-  assert.equal(expiredResponse.status, 200);
+  expect(expiredResponse.status).toBe(200);
   const expiredBody = (await expiredResponse.json()) as { due: number; enqueued: number };
-  assert.equal(expiredBody.due, 1);
-  assert.equal(expiredBody.enqueued, 1);
-  assert.equal(sentJobs.length, 1);
-  assert.notEqual(sentJobs[0]?.id, queuedJob.id);
+  expect(expiredBody.due).toBe(1);
+  expect(expiredBody.enqueued).toBe(1);
+  expect(sentJobs.length).toBe(1);
+  expect(sentJobs[0]?.id).not.toBe(queuedJob.id);
 });
 
 test("worker clears fallback reservations after active-job scans fail", async () => {
@@ -174,18 +173,17 @@ test("worker clears fallback reservations after active-job scans fail", async ()
       headers: { cookie: `rd_session=${authCookie}` },
     });
 
-  await assert.rejects(
-    worker.fetch(request(), env, { waitUntil: () => undefined }),
+  await expect(worker.fetch(request(), env, { waitUntil: () => undefined })).rejects.toThrow(
     /active job scan failed/,
   );
-  assert.equal(sentJobs.length, 0);
+  expect(sentJobs.length).toBe(0);
 
   const response = await worker.fetch(request(), env, { waitUntil: () => undefined });
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as { due: number; enqueued: number };
-  assert.equal(body.due, 1);
-  assert.equal(body.enqueued, 1);
-  assert.equal(sentJobs.length, 1);
+  expect(body.due).toBe(1);
+  expect(body.enqueued).toBe(1);
+  expect(sentJobs.length).toBe(1);
 });
 
 test("worker scheduler falls back when the reservation Durable Object is unavailable", async () => {
@@ -249,11 +247,11 @@ test("worker scheduler falls back when the reservation Durable Object is unavail
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as { due: number; enqueued: number };
-  assert.equal(body.due, 1);
-  assert.equal(body.enqueued, 1);
-  assert.equal(sentJobs.length, 1);
+  expect(body.due).toBe(1);
+  expect(body.enqueued).toBe(1);
+  expect(sentJobs.length).toBe(1);
 });
 
 test("worker admin GitHub access ignores expired shared quota cooldowns", async () => {
@@ -303,10 +301,10 @@ test("worker admin GitHub access ignores expired shared quota cooldowns", async 
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as { cooldown?: { active?: boolean } };
-  assert.equal(body.cooldown?.active, false);
-  assert.equal(await cache.get("github:budget:v1:shared:_"), null);
+  expect(body.cooldown?.active).toBe(false);
+  expect(await cache.get("github:budget:v1:shared:_")).toBe(null);
 });
 
 test("worker admin GitHub access keeps longest active shared quota cooldown", async () => {
@@ -356,9 +354,9 @@ test("worker admin GitHub access keeps longest active shared quota cooldown", as
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as { cooldown?: { resource?: string | null } };
-  assert.equal(body.cooldown?.resource, "graphql");
+  expect(body.cooldown?.resource).toBe("graphql");
 });
 
 test("worker admin scheduler defers shared quota paused targets even with missing cache", async () => {
@@ -416,11 +414,11 @@ test("worker admin scheduler defers shared quota paused targets even with missin
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as { due: number; enqueued: number };
-  assert.equal(body.due, 0);
-  assert.equal(body.enqueued, 0);
-  assert.deepEqual(sentJobs, []);
+  expect(body.due).toBe(0);
+  expect(body.enqueued).toBe(0);
+  expect(sentJobs).toStrictEqual([]);
 });
 
 test("worker admin scheduler lets app-token targets bypass shared quota pauses", async () => {
@@ -491,11 +489,11 @@ test("worker admin scheduler lets app-token targets bypass shared quota pauses",
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as { due: number; enqueued: number };
-  assert.equal(body.due, 1);
-  assert.equal(body.enqueued, 1);
-  assert.equal(sentJobs[0]?.reason, "app-quota");
+  expect(body.due).toBe(1);
+  expect(body.enqueued).toBe(1);
+  expect(sentJobs[0]?.reason).toBe("app-quota");
 });
 
 test("worker admin scheduler uses app registry coverage without minting tokens", async () => {
@@ -565,11 +563,11 @@ test("worker admin scheduler uses app registry coverage without minting tokens",
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as { due: number; enqueued: number };
-  assert.equal(body.due, 1);
-  assert.equal(body.enqueued, 1);
-  assert.equal(sentJobs[0]?.reason, "app-quota");
+  expect(body.due).toBe(1);
+  expect(body.enqueued).toBe(1);
+  expect(sentJobs[0]?.reason).toBe("app-quota");
 });
 
 test("worker admin scheduler bypasses shared quota defer time with app coverage", async () => {
@@ -648,11 +646,11 @@ test("worker admin scheduler bypasses shared quota defer time with app coverage"
     { waitUntil: () => undefined },
   );
 
-  assert.equal(response.status, 200);
+  expect(response.status).toBe(200);
   const body = (await response.json()) as { due: number; enqueued: number };
-  assert.equal(body.due, 1);
-  assert.equal(body.enqueued, 1);
-  assert.equal(sentJobs[0]?.reason, "app-quota");
+  expect(body.due).toBe(1);
+  expect(body.enqueued).toBe(1);
+  expect(sentJobs[0]?.reason).toBe("app-quota");
 });
 
 test("worker scheduler marks jobs failed when queue delivery fails", async () => {
@@ -690,7 +688,7 @@ test("worker scheduler marks jobs failed when queue delivery fails", async () =>
     [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
   });
 
-  await assert.rejects(
+  await expect(
     worker.fetch(
       new Request("https://release.bar/api/admin/scheduler/run", {
         method: "POST",
@@ -708,17 +706,16 @@ test("worker scheduler marks jobs failed when queue delivery fails", async () =>
       },
       { waitUntil: () => undefined },
     ),
-    /queue unavailable/,
-  );
+  ).rejects.toThrow(/queue unavailable/);
 
   const indexedJobs = await cache.list({ prefix: "refresh:jobs:v2:" });
-  assert.equal(indexedJobs.keys.length, 1);
+  expect(indexedJobs.keys.length).toBe(1);
   const indexed = JSON.parse(
     (await cache.get(indexedJobs.keys[0]?.name ?? "")) ?? "{}",
   ) as RefreshJob;
   const stored = JSON.parse(
     (await cache.get(`refresh:job:v1:${indexed.id}`)) ?? "{}",
   ) as RefreshJob;
-  assert.equal(stored.status, "failed");
-  assert.match(stored.error ?? "", /queue unavailable/);
+  expect(stored.status).toBe("failed");
+  expect(stored.error ?? "").toMatch(/queue unavailable/);
 });

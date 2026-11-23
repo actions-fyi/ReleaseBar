@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { assetResponse } from "../../../worker/app-shell.js";
 import { canonicalDomain } from "../../../worker/runtime.js";
 import { socialSvg } from "../../../worker/social-card.js";
@@ -18,17 +17,15 @@ function shellEnv(domain?: string): Env {
 
 test("canonical domain comes from the Worker var, else the request host", () => {
   const url = new URL("https://preview.example.dev/openclaw");
-  assert.equal(canonicalDomain({} as Env, url), "preview.example.dev");
-  assert.equal(canonicalDomain({} as Env), "localhost");
-  assert.equal(
+  expect(canonicalDomain({} as Env, url)).toBe("preview.example.dev");
+  expect(canonicalDomain({} as Env)).toBe("localhost");
+  expect(
     canonicalDomain(
       { RELEASEDECK_CANONICAL_DOMAIN: " https://releasebar.example.com/ " } as Env,
       url,
     ),
-    "releasebar.example.com",
-  );
-  assert.equal(
-    canonicalDomain({ RELEASEDECK_CANONICAL_DOMAIN: "" } as Env, url),
+  ).toBe("releasebar.example.com");
+  expect(canonicalDomain({ RELEASEDECK_CANONICAL_DOMAIN: "" } as Env, url)).toBe(
     "preview.example.dev",
   );
 });
@@ -39,21 +36,19 @@ test("app shell carries the configured canonical domain to the page", async () =
     shellEnv("releasebar.example.com"),
   );
   const html = await response.text();
-  assert.match(html, /<title>[^<]*@openclaw · releasebar\.example\.com<\/title>/);
-  assert.match(html, /<link rel="canonical" href="https:\/\/releasebar\.example\.com\/" \/>/);
-  assert.match(
-    html,
+  expect(html).toMatch(/<title>[^<]*@openclaw · releasebar\.example\.com<\/title>/);
+  expect(html).toMatch(/<link rel="canonical" href="https:\/\/releasebar\.example\.com\/" \/>/);
+  expect(html).toMatch(
     /<meta name="releasebar:canonical-domain" content="releasebar\.example\.com" \/>/,
   );
-  assert.doesNotMatch(html, /releasebar\.invalid/);
+  expect(html).not.toMatch(/releasebar\.invalid/);
 });
 
 test("app shell falls back to the request host without a configured domain", async () => {
   const response = await assetResponse(new Request("https://preview.example.dev/"), shellEnv());
   const html = await response.text();
-  assert.match(html, /<link rel="canonical" href="https:\/\/preview\.example\.dev\/" \/>/);
-  assert.match(
-    html,
+  expect(html).toMatch(/<link rel="canonical" href="https:\/\/preview\.example\.dev\/" \/>/);
+  expect(html).toMatch(
     /<meta name="releasebar:canonical-domain" content="preview\.example\.dev" \/>/,
   );
 });
@@ -66,5 +61,5 @@ test("social cards print the canonical domain", async () => {
     metric: "3 repos",
     domain: "releasebar.example.com",
   });
-  assert.match(svg, />releasebar\.example\.com<\/text>/);
+  expect(svg).toMatch(/>releasebar\.example\.com<\/text>/);
 });

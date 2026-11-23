@@ -1,6 +1,5 @@
-import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import type { AudienceRange, RepoAudiencePayload } from "../../../src/types.js";
 import { crawlerRequest, kvStore, signedJson, worker } from "../dashboard-test-harness.js";
 
@@ -35,9 +34,9 @@ test("worker builds cached repository audience from public stargazers", async ()
       const body = JSON.parse(String(init?.body ?? "{}")) as {
         variables?: { owner?: string; name?: string; first?: number };
       };
-      assert.equal(body.variables?.owner, "acme");
-      assert.equal(body.variables?.name, "releasebar");
-      assert.equal(body.variables?.first, 30);
+      expect(body.variables?.owner).toBe("acme");
+      expect(body.variables?.name).toBe("releasebar");
+      expect(body.variables?.first).toBe(30);
       return Response.json({
         data: {
           repository: {
@@ -87,8 +86,8 @@ test("worker builds cached repository audience from public stargazers", async ()
     }
     if (path === "/repos/acme/releasebar/stargazers") {
       const headers = init?.headers as Record<string, string> | undefined;
-      assert.equal(headers instanceof Headers, false);
-      assert.match(String(headers?.accept), /star\+json/);
+      expect(headers instanceof Headers).toBe(false);
+      expect(String(headers?.accept)).toMatch(/star\+json/);
       if (url.searchParams.get("page") !== "3") {
         return Response.json(
           [
@@ -279,38 +278,38 @@ test("worker builds cached repository audience from public stargazers", async ()
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as RepoAudiencePayload;
-    assert.equal(body.fullName, "acme/releasebar");
-    assert.equal(body.range, "month");
-    assert.equal(body.users[0]?.login, "principal");
-    assert.equal(body.users[0]?.tier, "high");
-    assert.equal(body.users[0]?.trustScore, 88);
-    assert.equal(body.users[0]?.trustTier, "high");
+    expect(body.fullName).toBe("acme/releasebar");
+    expect(body.range).toBe("month");
+    expect(body.users[0]?.login).toBe("principal");
+    expect(body.users[0]?.tier).toBe("high");
+    expect(body.users[0]?.trustScore).toBe(88);
+    expect(body.users[0]?.trustTier).toBe("high");
     assert.ok((body.users[0]?.dimensions.trust ?? 0) >= 80);
-    assert.equal(body.users[0]?.orgs[0]?.login, "github");
-    assert.equal(body.users[0]?.topRepositories[0]?.fullName, "principal/release-tools");
-    assert.match(body.users[0]?.reasons.join(" ") ?? "", /notable org: github/);
+    expect(body.users[0]?.orgs[0]?.login).toBe("github");
+    expect(body.users[0]?.topRepositories[0]?.fullName).toBe("principal/release-tools");
+    expect(body.users[0]?.reasons.join(" ") ?? "").toMatch(/notable org: github/);
     const cabot = body.users.find((user) => user.login === "cabot");
-    assert.notEqual(cabot?.tier, "bot");
+    expect(cabot?.tier).not.toBe("bot");
     assert.ok((cabot?.score ?? 0) > 0);
-    assert.equal(body.totals.stargazers, 1234);
-    assert.equal(body.totals.highSignal, 1);
-    assert.equal(body.totals.mediumSignal, 1);
-    assert.equal(body.totals.bots, 1);
-    assert.equal(body.totals.highSignalPercent, 25);
-    assert.equal(body.totals.mediumSignalPercent, 25);
-    assert.equal(body.totals.lowSignalPercent, 25);
-    assert.equal(body.totals.botPercent, 25);
-    assert.equal(body.cache.quota?.source, "shared");
+    expect(body.totals.stargazers).toBe(1234);
+    expect(body.totals.highSignal).toBe(1);
+    expect(body.totals.mediumSignal).toBe(1);
+    expect(body.totals.bots).toBe(1);
+    expect(body.totals.highSignalPercent).toBe(25);
+    expect(body.totals.mediumSignalPercent).toBe(25);
+    expect(body.totals.lowSignalPercent).toBe(25);
+    expect(body.totals.botPercent).toBe(25);
+    expect(body.cache.quota?.source).toBe("shared");
 
     const cached = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/releasebar/audience"),
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(cached.status, 200);
-    assert.equal(calls, 12);
+    expect(cached.status).toBe(200);
+    expect(calls).toBe(12);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -344,7 +343,7 @@ test("worker REST stargazer fallback samples newest stargazers", async () => {
     }
     if (path === "/repos/acme/restbar/stargazers") {
       const headers = init?.headers as Record<string, string> | undefined;
-      assert.match(String(headers?.accept), /star\+json/);
+      expect(String(headers?.accept)).toMatch(/star\+json/);
       stargazerPages.push(url.searchParams.get("page") ?? "first");
       if (url.searchParams.get("page") !== "2") {
         return Response.json(
@@ -413,11 +412,11 @@ test("worker REST stargazer fallback samples newest stargazers", async () => {
       { DASHBOARD_CACHE: kvStore() },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as RepoAudiencePayload;
-    assert.deepEqual(stargazerPages, ["first", "2", "1"]);
-    assert.deepEqual(body.users.map((user) => user.login).sort(), ["newest", "previous"]);
-    assert.equal(body.totals.stargazers, 31);
+    expect(stargazerPages).toStrictEqual(["first", "2", "1"]);
+    expect(body.users.map((user) => user.login).sort()).toStrictEqual(["newest", "previous"]);
+    expect(body.totals.stargazers).toBe(31);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -460,11 +459,11 @@ test("worker serves stale repository audience caches to crawlers without refresh
       { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as RepoAudiencePayload;
-    assert.equal(body.cache.state, "stale");
-    assert.equal(body.cache.message, "showing cached repository audience signals");
-    assert.equal(body.totals.stargazers, 10);
+    expect(body.cache.state).toBe("stale");
+    expect(body.cache.message).toBe("showing cached repository audience signals");
+    expect(body.totals.stargazers).toBe(10);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -476,7 +475,7 @@ test("worker serves OpenAPI spec aliases for Swagger tooling", async () => {
     const response = await worker.fetch(new Request(`https://release.bar${path}`), env, {
       waitUntil: () => undefined,
     });
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as {
       openapi?: string;
       info?: { version?: string };
@@ -490,8 +489,8 @@ test("worker serves OpenAPI spec aliases for Swagger tooling", async () => {
         };
       };
     };
-    assert.equal(body.openapi, "3.1.0");
-    assert.equal(body.info?.version, "0.2.3");
+    expect(body.openapi).toBe("3.1.0");
+    expect(body.info?.version).toBe("0.2.3");
     assert.ok(body.paths?.["/api/{owner}/activity"]);
     assert.ok(body.paths?.["/api/users/{login}/trust"]);
     assert.ok(body.paths?.["/api/repos/{owner}/{repo}/audience"]);
@@ -513,9 +512,9 @@ test("worker rejects malformed nested owner API paths", async () => {
       { DASHBOARD_CACHE: kvStore() },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 404);
+    expect(response.status).toBe(404);
     const body = (await response.json()) as { error?: string };
-    assert.equal(body.error, "not found");
+    expect(body.error).toBe("not found");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -537,10 +536,10 @@ test("worker keeps unsynced app-configured audience GETs off shared quota", asyn
       },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 403);
-    assert.equal(response.headers.get("cache-control"), "no-store");
+    expect(response.status).toBe(403);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     const body = (await response.json()) as { error?: string };
-    assert.match(body.error ?? "", /GitHub App/);
+    expect(body.error ?? "").toMatch(/GitHub App/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -559,7 +558,7 @@ test("worker only backfills repository audience caches with GitHub App quota", a
       { DASHBOARD_CACHE: kvStore(), GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
-    assert.equal(denied.status, 403);
+    expect(denied.status).toBe(403);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -601,7 +600,7 @@ test("worker only backfills repository audience caches with GitHub App quota", a
     const path = url.pathname;
     const authorization = new Headers(init?.headers).get("authorization");
     if (path === "/user/installations") {
-      assert.equal(authorization, "Bearer user-token");
+      expect(authorization).toBe("Bearer user-token");
       return Response.json({
         installations: [
           {
@@ -620,12 +619,12 @@ test("worker only backfills repository audience caches with GitHub App quota", a
       });
     }
     if (path === "/app/installations/1/access_tokens") {
-      assert.match(authorization ?? "", /^Bearer [^.]+\.[^.]+\.[^.]+$/);
+      expect(authorization ?? "").toMatch(/^Bearer [^.]+\.[^.]+\.[^.]+$/);
       return Response.json({ token: "installation-token" });
     }
     if (path === "/repos/acme/releasebar") {
       appCalls += 1;
-      assert.equal(authorization, "Bearer installation-token");
+      expect(authorization).toBe("Bearer installation-token");
       return Response.json({
         owner: { login: "acme" },
         name: "releasebar",
@@ -647,7 +646,7 @@ test("worker only backfills repository audience caches with GitHub App quota", a
     }
     if (path === "/graphql") {
       appCalls += 1;
-      assert.equal(authorization, "Bearer installation-token");
+      expect(authorization).toBe("Bearer installation-token");
       return Response.json({
         data: {
           repository: {
@@ -669,7 +668,7 @@ test("worker only backfills repository audience caches with GitHub App quota", a
     }
     if (path === "/users/principal") {
       appCalls += 1;
-      assert.equal(authorization, "Bearer installation-token");
+      expect(authorization).toBe("Bearer installation-token");
       return Response.json({
         login: "principal",
         avatar_url: "https://avatars.githubusercontent.com/u/10",
@@ -691,7 +690,7 @@ test("worker only backfills repository audience caches with GitHub App quota", a
     }
     if (path === "/users/principal/orgs") {
       appCalls += 1;
-      assert.equal(authorization, "Bearer installation-token");
+      expect(authorization).toBe("Bearer installation-token");
       return Response.json([
         {
           login: "github",
@@ -702,7 +701,7 @@ test("worker only backfills repository audience caches with GitHub App quota", a
     }
     if (path === "/users/principal/repos") {
       appCalls += 1;
-      assert.equal(authorization, "Bearer installation-token");
+      expect(authorization).toBe("Bearer installation-token");
       return Response.json([
         {
           full_name: "principal/release-tools",
@@ -730,18 +729,17 @@ test("worker only backfills repository audience caches with GitHub App quota", a
       env,
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as {
       fullName: string;
       ranges: Array<{ range: AudienceRange; state: string; users: number }>;
       quota: { source: string; account: string | null };
     };
-    assert.equal(body.fullName, "acme/releasebar");
-    assert.deepEqual(
+    expect(body.fullName).toBe("acme/releasebar");
+    expect(
       body.ranges.map((range) => `${range.range}:${range.state}:${range.users}`),
-      ["week:rebuilt:1", "month:rebuilt:1"],
-    );
-    assert.deepEqual(body.quota, { source: "app", account: "acme" });
+    ).toStrictEqual(["week:rebuilt:1", "month:rebuilt:1"]);
+    expect(body.quota).toStrictEqual({ source: "app", account: "acme" });
     assert.ok(appCalls > 0);
 
     const cached = await worker.fetch(
@@ -750,8 +748,8 @@ test("worker only backfills repository audience caches with GitHub App quota", a
       { waitUntil: () => undefined },
     );
     const audience = (await cached.json()) as RepoAudiencePayload;
-    assert.equal(audience.cache.quota?.source, "app");
-    assert.equal(audience.users[0]?.factors.length, 7);
+    expect(audience.cache.quota?.source).toBe("app");
+    expect(audience.users[0]?.factors.length).toBe(7);
   } finally {
     globalThis.fetch = originalFetch;
   }

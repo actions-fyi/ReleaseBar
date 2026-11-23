@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../../../src/types.js";
 import { kvStore, testProject, worker } from "../dashboard-test-harness.js";
@@ -120,13 +119,13 @@ test("worker does not restore stale KV progress after an authoritative Durable O
     globalThis.fetch = originalFetch;
   }
 
-  assert.equal(acked, true);
+  expect(acked).toBe(true);
   const dashboard = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
-  assert.deepEqual(dashboard.projects, []);
+  expect(dashboard.projects).toStrictEqual([]);
   const tombstone = JSON.parse((await cache.get(`progress:tombstone:v1:${key}`)) ?? "{}") as {
     clearedAt?: string;
   };
-  assert.equal(typeof tombstone.clearedAt, "string");
+  expect(typeof tombstone.clearedAt).toBe("string");
 });
 
 test("worker does not persist delayed progress older than its tombstone", async () => {
@@ -243,11 +242,11 @@ test("worker does not persist delayed progress older than its tombstone", async 
     globalThis.fetch = originalFetch;
   }
 
-  assert.equal(retryDelaySeconds, 2);
-  assert.equal(await cache.get(`progress:v1:${key}`), null);
+  expect(retryDelaySeconds).toBe(2);
+  expect(await cache.get(`progress:v1:${key}`)).toBe(null);
   const dashboard = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
-  assert.equal(dashboard.cache?.progress?.scanned, 12);
-  assert.equal(dashboard.cache?.progress?.done, false);
+  expect(dashboard.cache?.progress?.scanned).toBe(12);
+  expect(dashboard.cache?.progress?.done).toBe(false);
 });
 
 test("worker tombstones failed Durable Object progress deletion before publishing fresh cache", async () => {
@@ -392,18 +391,18 @@ test("worker tombstones failed Durable Object progress deletion before publishin
       },
       { waitUntil: () => undefined },
     );
-    assert.equal(response.status, 200);
+    expect(response.status).toBe(200);
     const body = (await response.json()) as DashboardPayload;
-    assert.equal(body.cache?.state, "fresh");
-    assert.equal(body.projects[0]?.version, "v1.0.0");
+    expect(body.cache?.state).toBe("fresh");
+    expect(body.projects[0]?.version).toBe("v1.0.0");
     const tombstone = JSON.parse((await cache.get(progressTombstoneStorageKey)) ?? "{}") as {
       clearedAt?: string;
     };
-    assert.equal(typeof tombstone.clearedAt, "string");
+    expect(typeof tombstone.clearedAt).toBe("string");
     const cached = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
-    assert.equal(cached.cache?.state, "fresh");
-    assert.equal(deleteAttempts, 1);
-    assert.equal(released, true);
+    expect(cached.cache?.state).toBe("fresh");
+    expect(deleteAttempts).toBe(1);
+    expect(released).toBe(true);
 
     deleteFails = false;
     const target: RefreshTarget = {
@@ -473,15 +472,15 @@ test("worker tombstones failed Durable Object progress deletion before publishin
       { waitUntil: () => undefined },
     );
 
-    assert.equal(acked, true);
+    expect(acked).toBe(true);
     const recovered = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
-    assert.equal(recovered.cache?.state, "fresh");
-    assert.equal(recovered.projects[0]?.version, "v1.0.0");
+    expect(recovered.cache?.state).toBe("fresh");
+    expect(recovered.projects[0]?.version).toBe("v1.0.0");
     const recoveredTombstone = JSON.parse(
       (await cache.get(progressTombstoneStorageKey)) ?? "{}",
     ) as { clearedAt?: string };
-    assert.equal(typeof recoveredTombstone.clearedAt, "string");
-    assert.equal(deleteAttempts >= 2, true);
+    expect(typeof recoveredTombstone.clearedAt).toBe("string");
+    expect(deleteAttempts >= 2).toBe(true);
   } finally {
     globalThis.fetch = originalFetch;
   }

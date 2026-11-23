@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import { buildDashboard } from "../dashboard.js";
 import { buildCommands } from "../../../src/app-commands.js";
 import type { AuthInstallation, AuthPayload } from "../../../src/types.js";
@@ -44,15 +43,14 @@ function signedInAuth(installations: AuthInstallation[] = []): AuthPayload {
 }
 
 test("anonymous visitors have no dashboards list", () => {
-  assert.deepEqual(userDashboards(null), []);
-  assert.deepEqual(
+  expect(userDashboards(null)).toStrictEqual([]);
+  expect(
     userDashboards({ ...signedInAuth([installation("acme", "org")]), user: null }),
-    [],
-  );
+  ).toStrictEqual([]);
 });
 
 test("a signed-in user without organizations has only their own dashboard", () => {
-  assert.deepEqual(userDashboards(signedInAuth()), [
+  expect(userDashboards(signedInAuth())).toStrictEqual([
     {
       login: "octocat",
       kind: "user",
@@ -62,13 +60,12 @@ test("a signed-in user without organizations has only their own dashboard", () =
       repositories: [],
     },
   ]);
-  assert.deepEqual(
+  expect(
     userDashboards(signedInAuth([installation("octocat", "user")])).map((entry) => [
       entry.login,
       entry.repositorySelection,
     ]),
-    [["octocat", "all"]],
-  );
+  ).toStrictEqual([["octocat", "all"]]);
 });
 
 test("the user's dashboard comes first, then one per installed organization", () => {
@@ -81,14 +78,11 @@ test("the user's dashboard comes first, then one per installed organization", ()
       installation("someone-else", "user"),
     ]),
   );
-  assert.deepEqual(
-    dashboards.map((entry) => [entry.login, entry.kind, entry.path]),
-    [
-      ["octocat", "user", "/octocat"],
-      ["acme", "org", "/acme"],
-      ["zeta-org", "org", "/zeta-org"],
-    ],
-  );
+  expect(dashboards.map((entry) => [entry.login, entry.kind, entry.path])).toStrictEqual([
+    ["octocat", "user", "/octocat"],
+    ["acme", "org", "/acme"],
+    ["zeta-org", "org", "/zeta-org"],
+  ]);
 });
 
 test("an organization installed on selected repositories keeps only its own repositories", () => {
@@ -100,12 +94,12 @@ test("an organization installed on selected repositories keeps only its own repo
       }),
     ]),
   );
-  assert.deepEqual(user?.repositories, []);
-  assert.equal(org?.path, "/acme");
-  assert.equal(org?.repositorySelection, "selected");
-  assert.deepEqual(org?.repositories, ["acme/api", "acme/widgets"]);
-  assert.equal(userDashboardDetail(org!), "organization · 2 selected repositories");
-  assert.equal(userDashboardDetail(user!), "personal");
+  expect(user?.repositories).toStrictEqual([]);
+  expect(org?.path).toBe("/acme");
+  expect(org?.repositorySelection).toBe("selected");
+  expect(org?.repositories).toStrictEqual(["acme/api", "acme/widgets"]);
+  expect(userDashboardDetail(org!)).toBe("organization · 2 selected repositories");
+  expect(userDashboardDetail(user!)).toBe("personal");
 });
 
 test("the command palette lists the signed-in user's dashboards", () => {
@@ -136,17 +130,18 @@ test("the command palette lists the signed-in user's dashboards", () => {
       ) as unknown as Parameters<typeof buildCommands>[1],
     ).filter((command) => String(command.actionId).startsWith("account:dashboard"));
 
-  assert.deepEqual(commands({ ...signedInAuth([installation("acme", "org")]), user: null }), []);
-  const listed = commands(signedInAuth([installation("acme", "org")]));
-  assert.deepEqual(
-    listed.map((command) => [command.actionId, command.title, command.subTitle]),
-    [
-      ["account:dashboard", "Open my dashboard", "@octocat"],
-      ["account:dashboard:acme", "Open @acme dashboard", "organization"],
-    ],
+  expect(commands({ ...signedInAuth([installation("acme", "org")]), user: null })).toStrictEqual(
+    [],
   );
+  const listed = commands(signedInAuth([installation("acme", "org")]));
+  expect(
+    listed.map((command) => [command.actionId, command.title, command.subTitle]),
+  ).toStrictEqual([
+    ["account:dashboard", "Open my dashboard", "@octocat"],
+    ["account:dashboard:acme", "Open @acme dashboard", "organization"],
+  ]);
   for (const command of listed) command.onRun?.(undefined);
-  assert.deepEqual(opened, ["octocat", "acme"]);
+  expect(opened).toStrictEqual(["octocat", "acme"]);
 });
 
 function listedRepo(owner: string, name: string): Record<string, unknown> {
@@ -199,12 +194,12 @@ async function builtRepos(
 }
 
 test("user and organization dashboards only list their own account's repositories", async () => {
-  assert.deepEqual(await builtRepos({ type: "user", login: "Octocat" }), ["octocat/dotfiles"]);
-  assert.deepEqual(await builtRepos({ type: "org", login: "acme" }), ["acme/widgets"]);
+  expect(await builtRepos({ type: "user", login: "Octocat" })).toStrictEqual(["octocat/dotfiles"]);
+  expect(await builtRepos({ type: "org", login: "acme" })).toStrictEqual(["acme/widgets"]);
 });
 
 test("a dashboard still shows another account's repository it deliberately lists", async () => {
-  assert.deepEqual(await builtRepos({ type: "user", login: "octocat" }, ["acme/widgets"]), [
+  expect(await builtRepos({ type: "user", login: "octocat" }, ["acme/widgets"])).toStrictEqual([
     "acme/widgets",
     "octocat/dotfiles",
   ]);

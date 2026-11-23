@@ -1,6 +1,5 @@
-import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import { calculateAudienceScore, isLikelyBot } from "../audience.js";
 import {
   dashboardRoute,
@@ -27,128 +26,116 @@ import { dashboardStreamSignature, dashboardStreamState } from "../../../worker/
 import { testDashboard, testProject } from "../dashboard-test-harness.js";
 
 test("owner route parsing keeps root hot board and owners API-backed", () => {
-  assert.equal(ownerFromPath("/"), null);
-  assert.equal(ownerFromPath("/index.html"), null);
-  assert.equal(ownerFromPath("/OpenClaw"), "OpenClaw");
-  assert.equal(ownerFromPath("/bad_owner"), null);
-  assert.equal(ownerDashboardPath("@Steipete"), "/steipete");
-  assert.deepEqual(repoFromPath("/OpenClaw/Peekaboo"), {
+  expect(ownerFromPath("/")).toBe(null);
+  expect(ownerFromPath("/index.html")).toBe(null);
+  expect(ownerFromPath("/OpenClaw")).toBe("OpenClaw");
+  expect(ownerFromPath("/bad_owner")).toBe(null);
+  expect(ownerDashboardPath("@Steipete")).toBe("/steipete");
+  expect(repoFromPath("/OpenClaw/Peekaboo")).toStrictEqual({
     owner: "openclaw",
     repo: "peekaboo",
     fullName: "openclaw/peekaboo",
     apiPath: `${workerApiOrigin}/api/repos/openclaw/peekaboo`,
     fallbackApiPath: `${workersDevApiOrigin}/api/repos/openclaw/peekaboo`,
   });
-  assert.equal(repoFromPath("/openclaw"), null);
-  assert.equal(repoDetailPath("OpenClaw/Peekaboo"), "/openclaw/peekaboo");
-  assert.equal(repoDetailPath("OpenClaw/react.dev"), "/-/openclaw/react.dev");
-  assert.equal(repoFromPath("/acme/activity"), null);
-  assert.equal(repoDetailPath("acme/activity"), "/-/acme/activity");
-  assert.deepEqual(ownerActivityFromPath("/Steipete/activity"), {
+  expect(repoFromPath("/openclaw")).toBe(null);
+  expect(repoDetailPath("OpenClaw/Peekaboo")).toBe("/openclaw/peekaboo");
+  expect(repoDetailPath("OpenClaw/react.dev")).toBe("/-/openclaw/react.dev");
+  expect(repoFromPath("/acme/activity")).toBe(null);
+  expect(repoDetailPath("acme/activity")).toBe("/-/acme/activity");
+  expect(ownerActivityFromPath("/Steipete/activity")).toStrictEqual({
     owner: "steipete",
     apiPath: `${workerApiOrigin}/api/steipete/activity`,
     fallbackApiPath: `${workersDevApiOrigin}/api/steipete/activity`,
   });
-  assert.equal(ownerActivityFromPath("/api/activity"), null);
-  assert.deepEqual(ownerActivityFromPath("/-/owners/api/activity"), {
+  expect(ownerActivityFromPath("/api/activity")).toBe(null);
+  expect(ownerActivityFromPath("/-/owners/api/activity")).toStrictEqual({
     owner: "api",
     apiPath: `${workerApiOrigin}/api/api/activity`,
     fallbackApiPath: `${workersDevApiOrigin}/api/api/activity`,
   });
-  assert.equal(ownerActivityFromPath("/steipete/activity/extra"), null);
-  assert.equal(ownerActivityPath("@Steipete"), "/steipete/activity");
-  assert.equal(ownerActivityPath("@Steipete", "day"), "/steipete/activity?range=day");
-  assert.equal(ownerActivityPath("@Steipete", "month"), "/steipete/activity?range=month");
-  assert.equal(ownerActivityPath("@api"), "/-/owners/api/activity");
-  assert.equal(ownerActivityPath("@og", "month"), "/-/owners/og/activity?range=month");
-  assert.deepEqual(repoFromPath("/-/og/foo"), {
+  expect(ownerActivityFromPath("/steipete/activity/extra")).toBe(null);
+  expect(ownerActivityPath("@Steipete")).toBe("/steipete/activity");
+  expect(ownerActivityPath("@Steipete", "day")).toBe("/steipete/activity?range=day");
+  expect(ownerActivityPath("@Steipete", "month")).toBe("/steipete/activity?range=month");
+  expect(ownerActivityPath("@api")).toBe("/-/owners/api/activity");
+  expect(ownerActivityPath("@og", "month")).toBe("/-/owners/og/activity?range=month");
+  expect(repoFromPath("/-/og/foo")).toStrictEqual({
     owner: "og",
     repo: "foo",
     fullName: "og/foo",
     apiPath: `${workerApiOrigin}/api/repos/og/foo`,
     fallbackApiPath: `${workersDevApiOrigin}/api/repos/og/foo`,
   });
-  assert.equal(repoDetailPath("og/foo"), "/-/og/foo");
+  expect(repoDetailPath("og/foo")).toBe("/-/og/foo");
 
-  assert.deepEqual(dashboardRoute("/", "").isDefault, true);
-  assert.equal(dashboardRoute("/", "").apiPath, `${workerApiOrigin}/api/_discover`);
-  assert.equal(dashboardRoute("/", "").fallbackApiPath, `${workersDevApiOrigin}/api/_discover`);
-  assert.equal(dashboardRoute("/", "").discoverPeriod, "week");
-  assert.equal(
-    dashboardRoute("/", "?period=day&hotLang=TypeScript").apiPath,
+  expect(dashboardRoute("/", "").isDefault).toStrictEqual(true);
+  expect(dashboardRoute("/", "").apiPath).toBe(`${workerApiOrigin}/api/_discover`);
+  expect(dashboardRoute("/", "").fallbackApiPath).toBe(`${workersDevApiOrigin}/api/_discover`);
+  expect(dashboardRoute("/", "").discoverPeriod).toBe("week");
+  expect(dashboardRoute("/", "?period=day&hotLang=TypeScript").apiPath).toBe(
     `${workerApiOrigin}/api/_discover?period=day&lang=TypeScript`,
   );
-  assert.equal(
-    dashboardRoute("/", "?period=releasebar&hotLang=TypeScript").apiPath,
+  expect(dashboardRoute("/", "?period=releasebar&hotLang=TypeScript").apiPath).toBe(
     `${workerApiOrigin}/api/_hot`,
   );
-  assert.equal(dashboardRoute("/", "?period=releasebar&hotLang=TypeScript").discoverLanguage, "");
-  assert.equal(
-    dashboardRoute("/", "?period=day&lang=TypeScript").apiPath,
+  expect(dashboardRoute("/", "?period=releasebar&hotLang=TypeScript").discoverLanguage).toBe("");
+  expect(dashboardRoute("/", "?period=day&lang=TypeScript").apiPath).toBe(
     `${workerApiOrigin}/api/_discover?period=day`,
   );
-  assert.equal(dashboardRoute("/openclaw", "").apiPath, `${workerApiOrigin}/api/openclaw`);
-  assert.equal(
-    dashboardRoute("/openclaw", "?forks=true&archived=true&unreleased=true").apiPath,
+  expect(dashboardRoute("/openclaw", "").apiPath).toBe(`${workerApiOrigin}/api/openclaw`);
+  expect(dashboardRoute("/openclaw", "?forks=true&archived=true&unreleased=true").apiPath).toBe(
     `${workerApiOrigin}/api/openclaw?forks=true&archived=true`,
   );
-  assert.equal(
-    dashboardRoute("/openclaw", "?unreleased=false").apiPath,
+  expect(dashboardRoute("/openclaw", "?unreleased=false").apiPath).toBe(
     `${workerApiOrigin}/api/openclaw?unreleased=false`,
   );
-  assert.equal(
+  expect(
     dashboardRoute("/openclaw", "?owners=steipete,openclaw&repos=steipete/oracle").apiPath,
-    `${workerApiOrigin}/api/openclaw?owners=steipete&repos=steipete%2Foracle`,
-  );
-  assert.equal(
-    dashboardRoute("/", "?owners=openclaw&repos=steipete/oracle").apiPath,
+  ).toBe(`${workerApiOrigin}/api/openclaw?owners=steipete&repos=steipete%2Foracle`);
+  expect(dashboardRoute("/", "?owners=openclaw&repos=steipete/oracle").apiPath).toBe(
     `${workerApiOrigin}/api/dashboard?owners=openclaw&repos=steipete%2Foracle`,
   );
-  assert.equal(
-    dashboardRoute("/", "?owners=openclaw").fallbackApiPath,
+  expect(dashboardRoute("/", "?owners=openclaw").fallbackApiPath).toBe(
     `${workersDevApiOrigin}/api/dashboard?owners=openclaw`,
   );
-  assert.equal(
-    fallbackApiOrigin({ protocol: "http:", hostname: "127.0.0.1", port: "5174" }),
+  expect(fallbackApiOrigin({ protocol: "http:", hostname: "127.0.0.1", port: "5174" })).toBe(
     "http://127.0.0.1:8787",
   );
-  assert.equal(
-    fallbackApiOrigin({ protocol: "http:", hostname: "localhost", port: "8787" }),
+  expect(fallbackApiOrigin({ protocol: "http:", hostname: "localhost", port: "8787" })).toBe(
     workersDevApiOrigin,
   );
-  assert.equal(
+  expect(
     dashboardRoute(
       "/openclaw",
       "?q=codex&lang=Swift&filter=attention&sort=issues&dir=desc&dev=true",
     ).apiPath,
-    `${workerApiOrigin}/api/openclaw`,
-  );
+  ).toBe(`${workerApiOrigin}/api/openclaw`);
 });
 
 test("owner activity event logs are collapsed by default", async () => {
   const source = await readFile("src/components/OwnerActivityPage.svelte", "utf8");
-  assert.match(source, /<details class="activity-event-details">/);
-  assert.doesNotMatch(source, /<details class="activity-event-details"[^>]*\bopen(?:=|\s|>)/);
+  expect(source).toMatch(/<details class="activity-event-details">/);
+  expect(source).not.toMatch(/<details class="activity-event-details"[^>]*\bopen(?:=|\s|>)/);
 });
 
 test("owner activity range links use the reserved-safe route helper", async () => {
   const source = await readFile("src/components/OwnerActivityPage.svelte", "utf8");
-  assert.match(source, /ownerActivityPath\(activityPageRoute\.owner, range\)/);
+  expect(source).toMatch(/ownerActivityPath\(activityPageRoute\.owner, range\)/);
 });
 
 test("dashboard view state restores search, filters, sorting, and dev columns", () => {
-  assert.deepEqual(
+  expect(
     parseViewState("?q=CodexBar&lang=Swift&filter=attention&sort=issues&dir=asc", false),
-    {
-      query: "CodexBar",
-      language: "Swift",
-      filter: "attention",
-      sortKey: "issues",
-      sortDirection: "asc",
-      devMode: true,
-    },
-  );
-  assert.deepEqual(parseViewState("?filter=nope&sort=nope&dir=sideways", true), {
+  ).toStrictEqual({
+    query: "CodexBar",
+    language: "Swift",
+    filter: "attention",
+    sortKey: "issues",
+    sortDirection: "asc",
+    devMode: true,
+  });
+  expect(parseViewState("?filter=nope&sort=nope&dir=sideways", true)).toStrictEqual({
     query: "",
     language: "",
     filter: "all",
@@ -156,7 +143,7 @@ test("dashboard view state restores search, filters, sorting, and dev columns", 
     sortDirection: "desc",
     devMode: false,
   });
-  assert.deepEqual(parseViewState("?sort=version&dir=asc", false), {
+  expect(parseViewState("?sort=version&dir=asc", false)).toStrictEqual({
     query: "",
     language: "",
     filter: "all",
@@ -173,11 +160,10 @@ test("dashboard view state restores search, filters, sorting, and dev columns", 
     sortDirection: "desc",
     devMode: true,
   };
-  assert.equal(
-    viewStateSearch("?owners=openclaw&q=old", state, false),
+  expect(viewStateSearch("?owners=openclaw&q=old", state, false)).toBe(
     "?owners=openclaw&q=repo&lang=Go&filter=hot&sort=prs&dir=desc&dev=true",
   );
-  assert.equal(
+  expect(
     viewStateSearch(
       "?owners=openclaw&q=repo&filter=all&sort=activity&dir=desc&dev=true",
       {
@@ -190,9 +176,8 @@ test("dashboard view state restores search, filters, sorting, and dev columns", 
       },
       false,
     ),
-    "?owners=openclaw",
-  );
-  assert.equal(
+  ).toBe("?owners=openclaw");
+  expect(
     viewStateSearch(
       "?period=day&hotLang=TypeScript&lang=Swift",
       {
@@ -205,8 +190,7 @@ test("dashboard view state restores search, filters, sorting, and dev columns", 
       },
       false,
     ),
-    "?period=day&hotLang=TypeScript",
-  );
+  ).toBe("?period=day&hotLang=TypeScript");
 });
 
 test("dashboard project sorting handles dev issue and pull request counts numerically", () => {
@@ -217,15 +201,19 @@ test("dashboard project sorting handles dev issue and pull request counts numeri
     testProject({ owner: "owner", name: "unknown", openIssues: null, openPullRequests: null }),
   ];
 
-  assert.deepEqual(
-    sortProjects(projects, "issues", "desc").map((project) => project.name),
-    ["many", "some", "zero", "unknown"],
-  );
-  assert.deepEqual(
-    sortProjects(projects, "prs", "desc").map((project) => project.name),
-    ["some", "many", "zero", "unknown"],
-  );
-  assert.deepEqual(
+  expect(sortProjects(projects, "issues", "desc").map((project) => project.name)).toStrictEqual([
+    "many",
+    "some",
+    "zero",
+    "unknown",
+  ]);
+  expect(sortProjects(projects, "prs", "desc").map((project) => project.name)).toStrictEqual([
+    "some",
+    "many",
+    "zero",
+    "unknown",
+  ]);
+  expect(
     sortProjects(
       [
         testProject({ owner: "owner", name: "small", stars: 10 }),
@@ -234,8 +222,7 @@ test("dashboard project sorting handles dev issue and pull request counts numeri
       "stars",
       "desc",
     ).map((project) => project.name),
-    ["large", "small"],
-  );
+  ).toStrictEqual(["large", "small"]);
 });
 
 test("dashboard project search matches independent metadata terms", () => {
@@ -251,11 +238,11 @@ test("dashboard project search matches independent metadata terms", () => {
     ciWorkflow: "CI",
   });
 
-  assert.equal(matchesProjectSearch(project, ""), true);
-  assert.equal(matchesProjectSearch(project, "typescript v1.2.3"), true);
-  assert.equal(matchesProjectSearch(project, "owner worker ci"), true);
-  assert.equal(matchesProjectSearch(project, "ship failure"), true);
-  assert.equal(matchesProjectSearch(project, "typescript swift"), false);
+  expect(matchesProjectSearch(project, "")).toBe(true);
+  expect(matchesProjectSearch(project, "typescript v1.2.3")).toBe(true);
+  expect(matchesProjectSearch(project, "owner worker ci")).toBe(true);
+  expect(matchesProjectSearch(project, "ship failure")).toBe(true);
+  expect(matchesProjectSearch(project, "typescript swift")).toBe(false);
 });
 
 test("dashboard stream signature changes when dev sort counts change", () => {
@@ -275,22 +262,19 @@ test("dashboard stream signature changes when dev sort counts change", () => {
   assert.ok(next.projects[0]);
   next.projects[0].openPullRequests = 9;
 
-  assert.notEqual(
-    dashboardStreamSignature(payload, "partial"),
+  expect(dashboardStreamSignature(payload, "partial")).not.toBe(
     dashboardStreamSignature(next, "partial"),
   );
   const archived = JSON.parse(JSON.stringify(payload)) as DashboardPayload;
   assert.ok(archived.projects[0]);
   archived.projects[0].archived = true;
-  assert.notEqual(
-    dashboardStreamSignature(payload, "partial"),
+  expect(dashboardStreamSignature(payload, "partial")).not.toBe(
     dashboardStreamSignature(archived, "partial"),
   );
   const fresher = JSON.parse(JSON.stringify(payload)) as DashboardPayload;
   assert.ok(fresher.cache);
   fresher.cache.countsUpdatedAt = "2026-05-22T00:01:00.000Z";
-  assert.notEqual(
-    dashboardStreamSignature(payload, "partial"),
+  expect(dashboardStreamSignature(payload, "partial")).not.toBe(
     dashboardStreamSignature(fresher, "partial"),
   );
 });
@@ -305,7 +289,7 @@ test("dashboard stream state preserves explicit webhook invalidation", () => {
     repoLimit: 200,
     generatedAt: payload.generatedAt,
   };
-  assert.equal(dashboardStreamState(payload), "stale");
+  expect(dashboardStreamState(payload)).toBe("stale");
 });
 
 test("repository detail hides unavailable code churn", () => {
@@ -333,8 +317,8 @@ test("repository detail hides unavailable code churn", () => {
     workTrend: null,
   };
 
-  assert.equal(showCodeChurn(base), false);
-  assert.equal(
+  expect(showCodeChurn(base)).toBe(false);
+  expect(
     showCodeChurn({
       ...base,
       stats: {
@@ -342,19 +326,17 @@ test("repository detail hides unavailable code churn", () => {
         codeFrequency: { state: "warming", message: "GitHub is preparing repository statistics." },
       },
     }),
-    true,
-  );
-  assert.equal(
+  ).toBe(true);
+  expect(
     showCodeChurn({
       ...base,
       codeFrequency: [{ week: "2026-05-18T00:00:00Z", additions: 10, deletions: 3 }],
     }),
-    true,
-  );
+  ).toBe(true);
 });
 
 test("audience scoring uses only public profile and stargazer signals", () => {
-  assert.equal(isLikelyBot("dependabot"), true);
+  expect(isLikelyBot("dependabot")).toBe(true);
   const bot = calculateAudienceScore({
     login: "github-actions[bot]",
     followers: 100000,
@@ -370,19 +352,19 @@ test("audience scoring uses only public profile and stargazer signals", () => {
     accountUpdatedAt: "2026-05-18T00:00:00Z",
     starredAt: "2026-05-18T00:00:00Z",
   });
-  assert.equal(bot.score, 0);
-  assert.equal(bot.tier, "bot");
-  assert.deepEqual(bot.reasons, ["automation account"]);
-  assert.deepEqual(bot.dimensions, {
+  expect(bot.score).toBe(0);
+  expect(bot.tier).toBe("bot");
+  expect(bot.reasons).toStrictEqual(["automation account"]);
+  expect(bot.dimensions).toStrictEqual({
     trust: 0,
     influence: 0,
     builder: 0,
     recency: 0,
     risk: 0,
   });
-  assert.equal(bot.factors[0]?.key, "risk");
-  assert.equal(bot.factors[0]?.label, "account safety");
-  assert.equal(bot.factors[0]?.sentiment, "negative");
+  expect(bot.factors[0]?.key).toBe("risk");
+  expect(bot.factors[0]?.label).toBe("account safety");
+  expect(bot.factors[0]?.sentiment).toBe("negative");
 
   const high = calculateAudienceScore({
     login: "human",
@@ -413,17 +395,22 @@ test("audience scoring uses only public profile and stargazer signals", () => {
       },
     ],
   });
-  assert.equal(high.tier, "high");
+  expect(high.tier).toBe("high");
   assert.ok(high.score >= 70);
   assert.ok(high.reasons.includes("known tech company"));
   assert.ok(high.reasons.includes("notable org: github"));
   assert.ok(high.dimensions.trust >= 80);
-  assert.equal(high.dimensions.risk, 100);
-  assert.equal(high.factors.find((factor) => factor.key === "age")?.label, "account age");
-  assert.deepEqual(
-    high.factors.map((factor) => factor.key),
-    ["age", "profile", "orgs", "reach", "builder", "recency", "risk"],
-  );
+  expect(high.dimensions.risk).toBe(100);
+  expect(high.factors.find((factor) => factor.key === "age")?.label).toBe("account age");
+  expect(high.factors.map((factor) => factor.key)).toStrictEqual([
+    "age",
+    "profile",
+    "orgs",
+    "reach",
+    "builder",
+    "recency",
+    "risk",
+  ]);
   assert.ok((high.factors.find((factor) => factor.key === "builder")?.weightedValue ?? 0) > 0);
   const profileOnly = calculateAudienceScore({
     login: "human",
@@ -454,12 +441,11 @@ test("audience scoring uses only public profile and stargazer signals", () => {
       },
     ],
   });
-  assert.equal(profileOnly.factors.find((factor) => factor.key === "recency")?.weight, 0);
-  assert.equal(profileOnly.tier, "high");
-  assert.equal(
+  expect(profileOnly.factors.find((factor) => factor.key === "recency")?.weight).toBe(0);
+  expect(profileOnly.tier).toBe("high");
+  expect(
     Math.round(profileOnly.factors.reduce((sum, factor) => sum + factor.weightedValue, 0)),
-    profileOnly.score,
-  );
+  ).toBe(profileOnly.score);
 
   const low = calculateAudienceScore({
     login: "quiet-user",
@@ -472,17 +458,17 @@ test("audience scoring uses only public profile and stargazer signals", () => {
     location: null,
     starredAt: null,
   });
-  assert.equal(low.tier, "low");
+  expect(low.tier).toBe("low");
   assert.ok(low.score < 40);
-  assert.equal(low.factors.find((factor) => factor.key === "risk")?.sentiment, "negative");
+  expect(low.factors.find((factor) => factor.key === "risk")?.sentiment).toBe("negative");
 });
 
 test("isLikelyBot uses account type before narrow login fallbacks", () => {
   // GitHub account metadata is authoritative when it is available.
   for (const login of ["cabot", "crawlerbot", "robot", "gpt4bot"]) {
-    assert.equal(isLikelyBot(login, "Bot"), true, `${login} with Bot type should be a bot`);
-    assert.equal(isLikelyBot(login, "App"), true, `${login} with App type should be a bot`);
-    assert.equal(isLikelyBot(login, "User"), false, `${login} with User type should be human`);
+    expect(isLikelyBot(login, "Bot"), `${login} with Bot type should be a bot`).toBe(true);
+    expect(isLikelyBot(login, "App"), `${login} with App type should be a bot`).toBe(true);
+    expect(isLikelyBot(login, "User"), `${login} with User type should be human`).toBe(false);
   }
 
   // Narrow lexical fallback for callers that do not have account type metadata.
@@ -497,15 +483,14 @@ test("isLikelyBot uses account type before narrow login fallbacks", () => {
     "foo[bot]",
     "bot",
   ]) {
-    assert.equal(isLikelyBot(login), true, `${login} should be detected as a bot`);
+    expect(isLikelyBot(login), `${login} should be detected as a bot`).toBe(true);
   }
 
   for (const login of ["renovate-bot", "bot-ci", "foo[bot]", "github-actions"]) {
-    assert.equal(
+    expect(
       isLikelyBot(login, "User"),
-      true,
       `${login} should keep explicit bot fallback with User metadata`,
-    );
+    ).toBe(true);
   }
 
   // No-separator *bot names are ambiguous without metadata, so do not guess.
@@ -519,7 +504,7 @@ test("isLikelyBot uses account type before narrow login fallbacks", () => {
     "robot",
     "gpt4bot",
   ]) {
-    assert.equal(isLikelyBot(login), false, `${login} should require metadata before bot tier`);
+    expect(isLikelyBot(login), `${login} should require metadata before bot tier`).toBe(false);
   }
 
   // A strong human profile whose login ends in "bot" is scored, not zeroed out.
@@ -539,7 +524,7 @@ test("isLikelyBot uses account type before narrow login fallbacks", () => {
     accountUpdatedAt: "2026-05-18T00:00:00Z",
     starredAt: "2026-05-18T00:00:00Z",
   });
-  assert.notEqual(human.tier, "bot");
+  expect(human.tier).not.toBe("bot");
   assert.ok(human.score > 0);
 
   const typedBot = calculateAudienceScore({
@@ -558,7 +543,7 @@ test("isLikelyBot uses account type before narrow login fallbacks", () => {
     accountUpdatedAt: "2026-05-18T00:00:00Z",
     starredAt: "2026-05-18T00:00:00Z",
   });
-  assert.equal(typedBot.score, 0);
-  assert.equal(typedBot.tier, "bot");
-  assert.deepEqual(typedBot.reasons, ["automation account"]);
+  expect(typedBot.score).toBe(0);
+  expect(typedBot.tier).toBe("bot");
+  expect(typedBot.reasons).toStrictEqual(["automation account"]);
 });

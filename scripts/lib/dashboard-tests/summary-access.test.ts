@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { expect, test } from "vitest";
 import type {
   OwnerActivityPayload,
   OwnerActivitySummary,
@@ -206,18 +205,18 @@ test("anonymous and crawler requests never start a summary and are told to sign 
           releaseSummary?: OwnerActivitySummary;
         };
         const summary = body.summary ?? body.releaseSummary;
-        assert.equal(response.status, httpOk, url);
-        assert.equal(response.headers.get("cache-control"), "no-store", url);
+        expect(response.status, url).toBe(httpOk);
+        expect(response.headers.get("cache-control"), url).toBe("no-store");
         // Not `warming`, which the client would keep polling.
-        assert.equal(summary?.state, "unavailable", url);
-        assert.equal(summary?.message, summarySignInMessage, url);
-        assert.equal(queued.length, 0, url);
+        expect(summary?.state, url).toBe("unavailable");
+        expect(summary?.message, url).toBe(summarySignInMessage);
+        expect(queued.length, url).toBe(0);
       }
     }
-    assert.equal(modelCalls(), 0);
+    expect(modelCalls()).toBe(0);
   });
   // The stored summaries stay pending for a signed-in request.
-  for (const [key, value] of Object.entries(stored)) assert.equal(await cache.get(key), value);
+  for (const [key, value] of Object.entries(stored)) expect(await cache.get(key)).toBe(value);
 });
 
 test("anonymous requests get a cached summary", async () => {
@@ -238,10 +237,10 @@ test("anonymous requests get a cached summary", async () => {
       { waitUntil: () => undefined },
     );
     const body = (await response.json()) as OwnerActivityPayload;
-    assert.equal(response.status, httpOk);
-    assert.equal(body.summary?.text, ready.text);
-    assert.match(response.headers.get("cache-control") ?? "", /public/);
-    assert.equal(modelCalls(), 0);
+    expect(response.status).toBe(httpOk);
+    expect(body.summary?.text).toBe(ready.text);
+    expect(response.headers.get("cache-control") ?? "").toMatch(/public/);
+    expect(modelCalls()).toBe(0);
   });
 });
 
@@ -250,23 +249,23 @@ test("a signed-in user generates summaries up to the hourly limit", async () => 
   const locks = durableLocks({ DASHBOARD_CACHE: cache, SUMMARY_USER_HOURLY_LIMIT: "1" });
   await withModel(async (modelCalls) => {
     const first = await summaryFor(cache, locks, 1, ownerActivityUrl("acme"));
-    assert.equal(first.status, httpAccepted);
-    assert.equal(first.summary?.state, "warming");
-    assert.equal(modelCalls(), 1);
+    expect(first.status).toBe(httpAccepted);
+    expect(first.summary?.state).toBe("warming");
+    expect(modelCalls()).toBe(1);
     // The generated summary is cached, and reading it again costs nothing.
     const again = await summaryFor(cache, locks, 1, ownerActivityUrl("acme"));
-    assert.equal(again.summary?.text, "@acme improved summaries.");
+    expect(again.summary?.text).toBe("@acme improved summaries.");
 
     const refused = await summaryFor(cache, locks, 1, ownerActivityUrl("beta"));
-    assert.equal(refused.status, httpOk);
-    assert.equal(refused.summary?.state, "unavailable");
-    assert.equal(refused.summary?.message, summaryUserLimitMessage);
-    assert.equal(modelCalls(), 1);
+    expect(refused.status).toBe(httpOk);
+    expect(refused.summary?.state).toBe("unavailable");
+    expect(refused.summary?.message).toBe(summaryUserLimitMessage);
+    expect(modelCalls()).toBe(1);
 
     // The limit is per user.
     const other = await summaryFor(cache, locks, 2, ownerActivityUrl("beta"));
-    assert.equal(other.summary?.state, "warming");
-    assert.equal(modelCalls(), 2);
+    expect(other.summary?.state).toBe("warming");
+    expect(modelCalls()).toBe(2);
   });
 });
 
@@ -276,9 +275,9 @@ test("the daily limit for all users stops further summaries", async () => {
   await withModel(async (modelCalls) => {
     await summaryFor(cache, locks, 1, ownerActivityUrl("acme"));
     const refused = await summaryFor(cache, locks, 2, ownerActivityUrl("beta"));
-    assert.equal(refused.summary?.state, "unavailable");
-    assert.equal(refused.summary?.message, summaryGlobalLimitMessage);
-    assert.equal(modelCalls(), 1);
+    expect(refused.summary?.state).toBe("unavailable");
+    expect(refused.summary?.message).toBe(summaryGlobalLimitMessage);
+    expect(modelCalls()).toBe(1);
   });
 });
 
@@ -290,12 +289,12 @@ test("a summary that never calls the model is not counted", async () => {
     // GitHub returns no commit titles, so the release summary ends without the model.
     await summaryFor(cache, locks, 1, `${origin}/api/repos/acme/releasebar`);
     const stored = JSON.parse((await cache.get(repoDetailKey)) ?? "{}") as RepoDetailPayload;
-    assert.equal(stored.releaseSummary?.message, "No commit titles were available to summarize.");
-    assert.equal(modelCalls(), 0);
+    expect(stored.releaseSummary?.message).toBe("No commit titles were available to summarize.");
+    expect(modelCalls()).toBe(0);
 
     const next = await summaryFor(cache, locks, 1, ownerActivityUrl("acme"));
-    assert.equal(next.summary?.state, "warming");
-    assert.equal(modelCalls(), 1);
+    expect(next.summary?.state).toBe("warming");
+    expect(modelCalls()).toBe(1);
   });
 });
 
@@ -313,16 +312,16 @@ test("the summary quota counts atomically and starts over each hour", async () =
     return ((await response.json()) as { allowed: boolean }).allowed;
   };
   const reserved = await Promise.all(Array.from({ length: attempts }, () => ask(true)));
-  assert.equal(reserved.filter(Boolean).length, limit);
-  assert.equal(await ask(false), false);
+  expect(reserved.filter(Boolean).length).toBe(limit);
+  expect(await ask(false)).toBe(false);
 
   const realNow = Date.now;
   Date.now = () => realNow() + hourMs;
   try {
     // Checking alone counts nothing.
-    assert.equal(await ask(false), true);
-    assert.equal(await ask(false), true);
-    assert.equal(await ask(true), true);
+    expect(await ask(false)).toBe(true);
+    expect(await ask(false)).toBe(true);
+    expect(await ask(true)).toBe(true);
   } finally {
     Date.now = realNow;
   }
@@ -330,22 +329,24 @@ test("the summary quota counts atomically and starts over each hour", async () =
 
 test("summary rate limits come from Worker vars, within their bounds", () => {
   const { userHourly, globalDaily } = summaryRateLimitSettings;
-  assert.deepEqual(summaryRateLimits({}), {
+  expect(summaryRateLimits({})).toStrictEqual({
     userHourly: userHourly.defaultValue,
     globalDaily: globalDaily.defaultValue,
   });
-  assert.deepEqual(
+  expect(
     summaryRateLimits({ SUMMARY_USER_HOURLY_LIMIT: " 5 ", SUMMARY_GLOBAL_DAILY_LIMIT: "200" }),
-    { userHourly: 5, globalDaily: 200 },
-  );
+  ).toStrictEqual({ userHourly: 5, globalDaily: 200 });
   // Out of bounds is clamped, so no setting removes a limit; anything but a whole number is
   // ignored.
-  assert.deepEqual(
+  expect(
     summaryRateLimits({ SUMMARY_USER_HOURLY_LIMIT: "0", SUMMARY_GLOBAL_DAILY_LIMIT: "999999999" }),
-    { userHourly: userHourly.min, globalDaily: globalDaily.max },
+  ).toStrictEqual({ userHourly: userHourly.min, globalDaily: globalDaily.max });
+  expect(summaryRateLimits({ SUMMARY_USER_HOURLY_LIMIT: "-1" })).toStrictEqual(
+    summaryRateLimits({}),
   );
-  assert.deepEqual(summaryRateLimits({ SUMMARY_USER_HOURLY_LIMIT: "-1" }), summaryRateLimits({}));
-  assert.deepEqual(summaryRateLimits({ SUMMARY_GLOBAL_DAILY_LIMIT: "1e3" }), summaryRateLimits({}));
+  expect(summaryRateLimits({ SUMMARY_GLOBAL_DAILY_LIMIT: "1e3" })).toStrictEqual(
+    summaryRateLimits({}),
+  );
 });
 
 test("deploy config sets the summary rate limits and rejects values out of bounds", () => {
@@ -353,16 +354,14 @@ test("deploy config sets the summary rate limits and rejects values out of bound
     {},
     { RELEASEBAR_SUMMARY_USER_HOURLY_LIMIT: " 5 ", RELEASEBAR_SUMMARY_GLOBAL_DAILY_LIMIT: "200" },
   );
-  assert.deepEqual(config.vars, {
+  expect(config.vars).toStrictEqual({
     SUMMARY_USER_HOURLY_LIMIT: "5",
     SUMMARY_GLOBAL_DAILY_LIMIT: "200",
   });
   for (const value of ["0", "1001", "1,000", "-1", "1e2"]) {
-    assert.throws(
-      () => deployConfig({}, { RELEASEBAR_SUMMARY_USER_HOURLY_LIMIT: value }),
-      (error) => error instanceof Error && error.message.includes("from 1 to 1000"),
-      value,
+    expect(() => deployConfig({}, { RELEASEBAR_SUMMARY_USER_HOURLY_LIMIT: value }), value).toThrow(
+      "from 1 to 1000",
     );
   }
-  assert.throws(() => deployConfig({}, { RELEASEBAR_SUMMARY_GLOBAL_DAILY_LIMIT: "100001" }));
+  expect(() => deployConfig({}, { RELEASEBAR_SUMMARY_GLOBAL_DAILY_LIMIT: "100001" })).toThrow();
 });

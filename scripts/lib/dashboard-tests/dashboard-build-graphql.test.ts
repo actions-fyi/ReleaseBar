@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { assert, expect, test } from "vitest";
 import { buildDashboard } from "../dashboard.js";
 import { testProject } from "../dashboard-test-harness.js";
 
@@ -20,8 +19,8 @@ test("dashboard build uses GraphQL owner metadata when token is available", asyn
       const path = parsed.pathname;
       requested.push(`${path}${parsed.search}`);
       if (path === "/graphql") {
-        assert.equal(init?.method, "POST");
-        const body = JSON.parse(String(init.body ?? "{}")) as { query?: string };
+        expect(init?.method).toBe("POST");
+        const body = JSON.parse(String(init?.body ?? "{}")) as { query?: string };
         if (body.query?.includes("ReleaseBarRepoDetails")) {
           return Response.json({
             data: {
@@ -127,29 +126,17 @@ test("dashboard build uses GraphQL owner metadata when token is available", asyn
     },
   });
 
-  assert.equal(payload.totals.repos, 1);
-  assert.equal(payload.projects[0]?.openIssues, 7);
-  assert.equal(payload.projects[0]?.openPullRequests, 3);
-  assert.equal(payload.projects[0]?.version, "v2.0.0-alpha.1");
-  assert.equal(payload.projects[0]?.latestCommitSha, "abcdef1");
-  assert.equal(payload.projects[0]?.ciState, "success");
-  assert.equal(payload.projects[0]?.ciWorkflow, "2/2 checks");
-  assert.equal(
-    requested.some((path) => path.includes("/commits/main")),
-    false,
-  );
-  assert.equal(
-    requested.some((path) => path.includes("/check-runs")),
-    false,
-  );
-  assert.equal(
-    requested.some((path) => path.includes("/releases")),
-    false,
-  );
-  assert.equal(
-    requested.some((path) => path.includes("/pulls")),
-    false,
-  );
+  expect(payload.totals.repos).toBe(1);
+  expect(payload.projects[0]?.openIssues).toBe(7);
+  expect(payload.projects[0]?.openPullRequests).toBe(3);
+  expect(payload.projects[0]?.version).toBe("v2.0.0-alpha.1");
+  expect(payload.projects[0]?.latestCommitSha).toBe("abcdef1");
+  expect(payload.projects[0]?.ciState).toBe("success");
+  expect(payload.projects[0]?.ciWorkflow).toBe("2/2 checks");
+  expect(requested.some((path) => path.includes("/commits/main"))).toBe(false);
+  expect(requested.some((path) => path.includes("/check-runs"))).toBe(false);
+  expect(requested.some((path) => path.includes("/releases"))).toBe(false);
+  expect(requested.some((path) => path.includes("/pulls"))).toBe(false);
 });
 
 test("dashboard released-only build uses GraphQL detail hydration for CI", async () => {
@@ -169,8 +156,8 @@ test("dashboard released-only build uses GraphQL detail hydration for CI", async
       const path = parsed.pathname;
       requested.push(`${path}${parsed.search}`);
       if (path === "/graphql") {
-        assert.equal(init?.method, "POST");
-        const body = JSON.parse(String(init.body ?? "{}")) as { query?: string };
+        expect(init?.method).toBe("POST");
+        const body = JSON.parse(String(init?.body ?? "{}")) as { query?: string };
         if (body.query?.includes("ReleaseBarRepoDetails")) {
           return Response.json({
             data: {
@@ -261,18 +248,12 @@ test("dashboard released-only build uses GraphQL detail hydration for CI", async
     },
   });
 
-  assert.equal(payload.totals.repos, 1);
-  assert.equal(payload.projects[0]?.version, "v1.0.0");
-  assert.equal(payload.projects[0]?.ciState, "success");
-  assert.equal(payload.projects[0]?.ciWorkflow, "1/1 checks");
-  assert.equal(
-    requested.some((path) => path.includes("/commits/main")),
-    false,
-  );
-  assert.equal(
-    requested.some((path) => path.includes("/check-runs")),
-    false,
-  );
+  expect(payload.totals.repos).toBe(1);
+  expect(payload.projects[0]?.version).toBe("v1.0.0");
+  expect(payload.projects[0]?.ciState).toBe("success");
+  expect(payload.projects[0]?.ciWorkflow).toBe("1/1 checks");
+  expect(requested.some((path) => path.includes("/commits/main"))).toBe(false);
+  expect(requested.some((path) => path.includes("/check-runs"))).toBe(false);
 });
 
 test("dashboard build emits owner metadata before release hydration", async () => {
@@ -348,33 +329,29 @@ test("dashboard build emits owner metadata before release hydration", async () =
     },
   });
 
-  assert.equal(progress[0]?.projects.length, 3);
-  assert.deepEqual(
+  expect(progress[0]?.projects.length).toBe(3);
+  expect(
     progress[0]?.projects.map((project) => [
       project.name,
       project.openIssues,
       project.openPullRequests,
       project.version,
     ]),
-    [
-      ["one", 5, 2, "repo search"],
-      ["two", 4, 1, "repo search"],
-      ["three", 3, 0, "repo search"],
-    ],
-  );
-  assert.equal(progress[0]?.cache?.progress?.scanned, 0);
-  assert.equal(payload.cache?.countsUpdatedAt, progress[0]?.cache?.countsUpdatedAt);
-  assert.equal(progress[0]?.cache?.releasesUpdatedAt, "2026-01-01T00:00:00Z");
-  assert.equal(progress[0]?.cache?.ciUpdatedAt, "2026-01-02T00:00:00Z");
-  assert.equal(requested.includes("/repos/owner/one/commits/main"), true);
-  assert.equal(requested.includes("/repos/owner/three/commits/main"), false);
-  assert.equal(payload.cache?.state, "partial");
-  assert.equal(payload.cache?.releasesUpdatedAt, "2026-01-01T00:00:00Z");
-  assert.equal(payload.cache?.ciUpdatedAt, "2026-01-02T00:00:00Z");
-  assert.deepEqual(
-    payload.projects.map((project) => project.name),
-    ["one", "two", "three"],
-  );
+  ).toStrictEqual([
+    ["one", 5, 2, "repo search"],
+    ["two", 4, 1, "repo search"],
+    ["three", 3, 0, "repo search"],
+  ]);
+  expect(progress[0]?.cache?.progress?.scanned).toBe(0);
+  expect(payload.cache?.countsUpdatedAt).toBe(progress[0]?.cache?.countsUpdatedAt);
+  expect(progress[0]?.cache?.releasesUpdatedAt).toBe("2026-01-01T00:00:00Z");
+  expect(progress[0]?.cache?.ciUpdatedAt).toBe("2026-01-02T00:00:00Z");
+  expect(requested.includes("/repos/owner/one/commits/main")).toBe(true);
+  expect(requested.includes("/repos/owner/three/commits/main")).toBe(false);
+  expect(payload.cache?.state).toBe("partial");
+  expect(payload.cache?.releasesUpdatedAt).toBe("2026-01-01T00:00:00Z");
+  expect(payload.cache?.ciUpdatedAt).toBe("2026-01-02T00:00:00Z");
+  expect(payload.projects.map((project) => project.name)).toStrictEqual(["one", "two", "three"]);
 });
 
 test("partial owner scans do not advance count freshness without current coverage", async () => {
@@ -400,7 +377,7 @@ test("partial owner scans do not advance count freshness without current coverag
     previousCountsUpdatedAt,
     fetch: async (url) => {
       const path = new URL(String(url)).pathname;
-      assert.equal(path, "/graphql");
+      expect(path).toBe("/graphql");
       return Response.json({
         data: {
           repositoryOwner: {
@@ -436,10 +413,10 @@ test("partial owner scans do not advance count freshness without current coverag
     },
   });
 
-  assert.equal(payload.cache?.state, "partial");
-  assert.equal(payload.projects.find((project) => project.name === "one")?.openIssues, 9);
-  assert.equal(payload.projects.find((project) => project.name === "two")?.openIssues, 2);
-  assert.equal(payload.cache?.countsUpdatedAt, previousCountsUpdatedAt);
+  expect(payload.cache?.state).toBe("partial");
+  expect(payload.projects.find((project) => project.name === "one")?.openIssues).toBe(9);
+  expect(payload.projects.find((project) => project.name === "two")?.openIssues).toBe(2);
+  expect(payload.cache?.countsUpdatedAt).toBe(previousCountsUpdatedAt);
 });
 
 test("multi-page count scans keep their first-request observation time", async () => {
@@ -479,7 +456,7 @@ test("multi-page count scans keep their first-request observation time", async (
     ownerPageSize: 1,
     token: "token",
     fetch: async (url) => {
-      assert.equal(new URL(String(url)).pathname, "/graphql");
+      expect(new URL(String(url)).pathname).toBe("/graphql");
       page += 1;
       if (page === 2) secondRequestStartedAt = Date.now();
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -500,7 +477,7 @@ test("multi-page count scans keep their first-request observation time", async (
     },
   });
 
-  assert.equal(payload.projects.length, 2);
+  expect(payload.projects.length).toBe(2);
   assert.ok(secondRequestStartedAt > 0);
   assert.ok(Date.parse(payload.cache?.countsUpdatedAt ?? "") < secondRequestStartedAt);
 });
@@ -522,6 +499,6 @@ test("metadata-only released-only builds preserve count freshness without fetchi
     },
   });
 
-  assert.deepEqual(payload.projects, []);
-  assert.equal(payload.cache?.countsUpdatedAt, previousCountsUpdatedAt);
+  expect(payload.projects).toStrictEqual([]);
+  expect(payload.cache?.countsUpdatedAt).toBe(previousCountsUpdatedAt);
 });
