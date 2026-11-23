@@ -286,6 +286,7 @@
         discoverPeriods,
       },
       {
+        navigate: (path) => location.assign(path),
         openOwner,
         addSource,
         discoverHref,

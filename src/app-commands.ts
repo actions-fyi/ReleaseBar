@@ -45,6 +45,7 @@ export type CommandState = {
 };
 
 export type CommandActions = {
+  navigate: (path: string) => void;
   openOwner: (owner: string) => void;
   addSource: (source: string) => void;
   discoverHref: (period: DiscoverPeriod) => string;
@@ -78,7 +79,7 @@ function repoCommands(
       description: project.description ?? undefined,
       group: "Repos",
       keywords: [project.owner, project.name, project.language ?? "", project.version, ...topics],
-      onRun: () => location.assign(repoDetailPath(project.fullName)),
+      onRun: () => actions.navigate(repoDetailPath(project.fullName)),
     },
     {
       actionId: `github:${project.fullName}`,
@@ -214,7 +215,7 @@ export function buildCommands(state: CommandState, actions: CommandActions): Com
       subTitle: "root dashboard",
       group: "Dashboards",
       keywords: ["home", "root", "hot", "discover", "trending"],
-      onRun: () => location.assign("/"),
+      onRun: () => actions.navigate("/"),
     },
     ...state.discoverPeriods.map((period) => ({
       actionId: `dashboard:discover:${period.value}`,
@@ -222,7 +223,7 @@ export function buildCommands(state: CommandState, actions: CommandActions): Com
       subTitle: period.value === "releasebar" ? "cached ReleaseBar dashboards" : "GitHub Hot",
       group: "Dashboards",
       keywords: ["hot", "discover", "trending", period.value, period.label],
-      onRun: () => location.assign(actions.discoverHref(period.value)),
+      onRun: () => actions.navigate(actions.discoverHref(period.value)),
     })),
     ...ownerCommands,
     ...state.languages.map(languageCommand),

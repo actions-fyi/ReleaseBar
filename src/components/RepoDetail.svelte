@@ -8,7 +8,6 @@
     cadenceSummary,
     countLabel,
     detailValueStyle,
-    fitDetailValue,
     formatDays,
     maxNumber,
     numberFormat,
@@ -22,6 +21,7 @@
     repoActivityMeta,
     shortDate,
   } from "../app-format.js";
+  import { fitDetailValue } from "../fit-detail-value.js";
   import { ownerDashboardPath, repoDetailPath } from "../routing.js";
   import type {
     ActivityRange,

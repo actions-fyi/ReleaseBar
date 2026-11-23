@@ -199,41 +199,6 @@ export function detailValueStyle(value: string | number | null): string {
   return `--detail-value-size: ${size}px; --detail-fit-size: ${size}px`;
 }
 
-export function fitDetailValue(node: HTMLElement, _value: string | number | null) {
-  let frame = 0;
-  const minSize = 20;
-  const preferredSize = (): number => {
-    const parsed = Number.parseFloat(
-      getComputedStyle(node).getPropertyValue("--detail-value-size"),
-    );
-    return Number.isFinite(parsed) ? parsed : 42;
-  };
-  const fit = (): void => {
-    cancelAnimationFrame(frame);
-    frame = requestAnimationFrame(() => {
-      const preferred = preferredSize();
-      node.style.setProperty("--detail-fit-size", `${preferred}px`);
-      const rendered = Number.parseFloat(getComputedStyle(node).fontSize);
-      const base = Number.isFinite(rendered) ? rendered : preferred;
-      const next =
-        node.clientWidth > 0 && node.scrollWidth > node.clientWidth
-          ? Math.max(minSize, Math.floor(base * (node.clientWidth / node.scrollWidth) * 0.96))
-          : preferred;
-      node.style.setProperty("--detail-fit-size", `${next}px`);
-    });
-  };
-  const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit);
-  observer?.observe(node);
-  fit();
-  return {
-    update: fit,
-    destroy() {
-      cancelAnimationFrame(frame);
-      observer?.disconnect();
-    },
-  };
-}
-
 export function attentionText(project: Project): string {
   const reasons = attentionReasons(project).slice(0, 3);
   return reasons.length > 0 ? reasons.join(" · ") : "looks okay";
