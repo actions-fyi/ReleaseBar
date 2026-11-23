@@ -603,7 +603,7 @@ test("worker aborts Queue hydration at the delivery deadline", async () => {
   const originalSetTimeout = globalThis.setTimeout;
   let aborted = false;
   let retryDelaySeconds: number | undefined;
-  globalThis.setTimeout = ((callback: TimerHandler, delay?: number) =>
+  globalThis.setTimeout = ((callback: () => void, delay?: number) =>
     originalSetTimeout(callback, delay === 12 * 60 * 1000 ? 0 : delay)) as typeof setTimeout;
   globalThis.fetch = async (input, init) => {
     const path = new URL(String(input)).pathname;
@@ -723,7 +723,7 @@ test("worker aborts Queue GitHub App token lookup at the delivery deadline", asy
   const originalSetTimeout = globalThis.setTimeout;
   let credentialAborted = false;
   let retryDelaySeconds: number | undefined;
-  globalThis.setTimeout = ((callback: TimerHandler, delay?: number) =>
+  globalThis.setTimeout = ((callback: () => void, delay?: number) =>
     originalSetTimeout(callback, delay === 12 * 60 * 1000 ? 0 : delay)) as typeof setTimeout;
   globalThis.fetch = async (input, init) => {
     const path = new URL(String(input)).pathname;

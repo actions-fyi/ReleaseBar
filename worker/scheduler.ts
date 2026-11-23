@@ -471,7 +471,7 @@ export async function schedulerAdminPayload(env: Env): Promise<SchedulerAdminPay
     refreshTargetInventory(env),
     listRefreshJobs(env),
     listAuditEvents(env),
-    env.DASHBOARD_CACHE?.get(refreshStateKey),
+    env.DASHBOARD_CACHE.get(refreshStateKey),
     schedulerDueOptions(env),
   ]);
   const state = stateRaw

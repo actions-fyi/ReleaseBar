@@ -454,7 +454,7 @@ test("processed webhook retries take over followers behind a stale matching leas
         return callback();
       },
     },
-    {},
+    { DASHBOARD_CACHE: kvStore() },
   );
 
   const response = await lock.fetch(

@@ -9,6 +9,7 @@ import { currentSession } from "./app-shell.js";
 import { jsonResponse } from "./http.js";
 import { isCrawlerRequest } from "./owner-metadata-write.js";
 import { summaryRateLimits } from "./summary-limits.js";
+import type { BackgroundContext } from "./runtime.js";
 
 export const summarySignInMessage = "Sign in to generate this AI summary.";
 export const summaryUserLimitMessage =
@@ -130,7 +131,7 @@ export async function summaryGate(request: Request, env: Env): Promise<SummaryGa
 export async function startGatedSummary(
   request: Request,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
   start: (reserve: SummaryReservation) => Promise<unknown>,
 ): Promise<string | null> {
   const gate = await summaryGate(request, env);

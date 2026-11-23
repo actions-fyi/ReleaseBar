@@ -12,7 +12,7 @@ import {
   sharedQuotaCooldown,
 } from "./github-audit.js";
 import { jsonResponse, workerFetch } from "./http.js";
-import { canonicalDomain } from "./runtime.js";
+import { type BackgroundContext, canonicalDomain } from "./runtime.js";
 import {
   gitHubReleaseSchema,
   type GitHubSearchRepository,
@@ -479,7 +479,7 @@ export async function discoverResponse(
   request: Request,
   env: Env,
   url: URL,
-  context: ExecutionContext,
+  context: BackgroundContext,
 ): Promise<Response> {
   const period = discoverPeriod(url);
   const language = discoverLanguage(url);

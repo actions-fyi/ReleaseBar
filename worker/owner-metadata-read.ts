@@ -170,7 +170,7 @@ export async function readOwnerMetadataKv(
   env: Env,
   owner: string,
 ): Promise<OwnerMetadataSnapshot | null> {
-  const raw = await env.DASHBOARD_CACHE?.get(ownerMetadataKey(owner));
+  const raw = await env.DASHBOARD_CACHE.get(ownerMetadataKey(owner));
   if (!raw) return null;
   return normalizeOwnerMetadataSnapshot(
     owner,
@@ -259,7 +259,7 @@ export async function privateRepositoryNames(
 }
 
 export async function writeOwnerMetadata(env: Env, snapshot: OwnerMetadataSnapshot): Promise<void> {
-  await env.DASHBOARD_CACHE?.put(ownerMetadataKey(snapshot.owner), JSON.stringify(snapshot), {
+  await env.DASHBOARD_CACHE.put(ownerMetadataKey(snapshot.owner), JSON.stringify(snapshot), {
     expirationTtl: ownerMetadataTtlSeconds,
   });
 }

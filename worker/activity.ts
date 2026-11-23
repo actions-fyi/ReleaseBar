@@ -70,6 +70,7 @@ import {
   detailGitHubJson,
   ownerActivityCacheKey,
 } from "./repo-github.js";
+import type { BackgroundContext } from "./runtime.js";
 
 async function prepareActivitySummary(
   payload: ActivitySummaryPayload,
@@ -534,7 +535,7 @@ export async function refreshOwnerActivity(
 export async function ownerActivityResponse(
   request: Request,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
 ): Promise<Response> {
   const url = new URL(request.url);
   const ownerSlug = slugOwner(url.pathname.replace(/^\/api\//, "").split("/")[0] ?? "");
@@ -738,7 +739,7 @@ export async function refreshRepoActivity(
 export async function repoActivityResponse(
   request: Request,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
 ): Promise<Response> {
   const url = new URL(request.url);
   const [, , , rawOwner, rawRepo] = url.pathname.split("/");

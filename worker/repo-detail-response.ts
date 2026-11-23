@@ -35,6 +35,7 @@ import {
   refreshRepoDetail,
   repoDetailCredential,
 } from "./repo-detail.js";
+import type { BackgroundContext } from "./runtime.js";
 
 export function releaseSummaryNeedsRefresh(payload: RepoDetailPayload | null, env: Env): boolean {
   const hasComparableCommits =
@@ -119,7 +120,7 @@ export async function refreshReleaseSummary(
 export async function repoDetailResponse(
   request: Request,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
 ): Promise<Response> {
   const url = new URL(request.url);
   const [, , , rawOwner, rawRepo] = url.pathname.split("/");

@@ -205,7 +205,7 @@ test("worker saves owner public defaults and applies them to clean owner URLs", 
       { waitUntil: () => undefined },
     );
     assert.equal(save.status, 200);
-    const saved = await save.json();
+    const saved = await save.json<any>();
     assert.deepEqual(saved.profile.includeRepos, ["openclaw/peekaboo"]);
 
     const response = await worker.fetch(new Request("https://release.bar/api/steipete"), env, {

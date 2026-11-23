@@ -7,7 +7,7 @@ import {
   sharedQuotaDeferUntil,
 } from "./github-audit.js";
 import { jsonResponse } from "./http.js";
-import type { GitHubWebhookFanoutJob, WebhookTargetAction } from "./runtime.js";
+import type { BackgroundContext, GitHubWebhookFanoutJob, WebhookTargetAction } from "./runtime.js";
 import { tryJsonParse } from "./schemas.js";
 import { markHotCacheStale } from "./build-progress.js";
 import {
@@ -48,7 +48,7 @@ export async function prepareGitHubWebhookEvent(
   event: string,
   payload: Record<string, unknown>,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
   repo: NonNullable<ReturnType<typeof webhookRepo>>,
   seedTargets: RefreshTarget[],
 ): Promise<WebhookTargetAction | null> {
@@ -103,7 +103,7 @@ export async function prepareGitHubWebhookEvent(
         observedAt: repositoryObservedAt ?? updatedAt,
       }),
       invalidatePublicRepoCaches(env, repo.fullName),
-      env.DASHBOARD_CACHE?.delete?.(hotCacheKey),
+      env.DASHBOARD_CACHE.delete(hotCacheKey),
     ]);
     return {
       reason: "webhook:repository-privatized",
@@ -202,7 +202,7 @@ export async function prepareGitHubWebhookEvent(
 
 export async function applyWebhookTargetAction(
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
   targets: RefreshTarget[],
   action: WebhookTargetAction,
 ): Promise<void> {
@@ -278,7 +278,7 @@ export async function webhookPriorityBatchActive(env: Env, targetKeys: string[])
 export async function processGitHubWebhookFanout(
   job: GitHubWebhookFanoutJob,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
 ): Promise<void> {
   const repo = webhookRepo(job.payload);
   if (!repo) return;
@@ -319,7 +319,7 @@ export async function processGitHubWebhook(
   payload: Record<string, unknown>,
   createdAt: string,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
 ): Promise<void> {
   const repo = webhookRepo(payload);
   if (!repo) return;
@@ -416,7 +416,7 @@ export async function abandonGitHubWebhookDelivery(
       ),
     ),
   );
-  const failed = responses.find((response) => !response.ok);
+  const failed = responses.find((response: Response) => !response.ok);
   if (failed) {
     throw new Error(`webhook delivery abandon returned ${failed.status}`);
   }
@@ -453,7 +453,7 @@ export async function boundedRequestText(request: Request, limit: number): Promi
 export async function githubWebhookResponse(
   request: Request,
   env: Env,
-  _context: ExecutionContext,
+  _context: BackgroundContext,
 ): Promise<Response> {
   if (!env.GITHUB_WEBHOOK_SECRET) {
     return jsonResponse({ error: "webhook not configured" }, 503, {

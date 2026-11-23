@@ -3,7 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { RefreshJob } from "../../../src/types.js";
-import { kvStore, signedJson, testDashboard, worker } from "../dashboard-test-harness.js";
+import { kvStore, signedJson, testDashboard, testEnv, worker } from "../dashboard-test-harness.js";
 
 test("worker rejects oversized custom source requests", async () => {
   const owners = Array.from({ length: 9 }, (_, index) => `owner-${index}`).join(",");
@@ -402,7 +402,7 @@ test("worker reports GitHub App installation coverage for signed-in users", asyn
       { waitUntil: () => undefined },
     );
     assert.equal(response.status, 200);
-    const body = await response.json();
+    const body = await response.json<any>();
     assert.equal(body.user.login, "octocat");
     assert.equal(body.installNeeded, false);
     assert.equal(body.installReason, null);
@@ -491,7 +491,7 @@ test("worker detects the signed-in user's GitHub App install with app auth fallb
       { waitUntil: () => undefined },
     );
     assert.equal(response.status, 200);
-    const body = await response.json();
+    const body = await response.json<any>();
     assert.equal(body.installNeeded, false);
     assert.equal(body.installReason, null);
     assert.deepEqual(
@@ -549,7 +549,7 @@ test("worker does not prompt signed-in users to install the app for third-party 
       { waitUntil: () => undefined },
     );
     assert.equal(response.status, 200);
-    const body = await response.json();
+    const body = await response.json<any>();
     assert.equal(body.installNeeded, false);
     assert.match(body.installReason, /shared API quota unless f\/prompts\.chat installs/);
   } finally {
@@ -603,7 +603,7 @@ test("worker still prompts signed-in users to install the app for owner dashboar
       { waitUntil: () => undefined },
     );
     assert.equal(response.status, 200);
-    const body = await response.json();
+    const body = await response.json<any>();
     assert.equal(body.installNeeded, true);
     assert.match(body.installReason, /Install the GitHub App for @openclaw/);
   } finally {
@@ -714,7 +714,7 @@ test("worker remembers a just-completed GitHub App install while GitHub catches 
       { waitUntil: () => undefined },
     );
     assert.equal(me.status, 200);
-    const body = await me.json();
+    const body = await me.json<any>();
     assert.equal(body.installNeeded, false);
     assert.equal(body.installReason, null);
     assert.equal(
@@ -828,8 +828,8 @@ test("worker records server-verified install callbacks without signed return sta
 
 test("admin logins come from ADMIN_LOGINS and default to nobody", async () => {
   const { isAdminLogin } = await import("../../../worker/auth-oauth.js");
-  assert.equal(isAdminLogin("steipete", {}), false);
-  assert.equal(isAdminLogin("anyone", { ADMIN_LOGINS: "" }), false);
-  assert.equal(isAdminLogin("Octo", { ADMIN_LOGINS: "first, octo ,third" }), true);
-  assert.equal(isAdminLogin("other", { ADMIN_LOGINS: "first, octo ,third" }), false);
+  assert.equal(isAdminLogin("steipete", testEnv({})), false);
+  assert.equal(isAdminLogin("anyone", testEnv({ ADMIN_LOGINS: "" })), false);
+  assert.equal(isAdminLogin("Octo", testEnv({ ADMIN_LOGINS: "first, octo ,third" })), true);
+  assert.equal(isAdminLogin("other", testEnv({ ADMIN_LOGINS: "first, octo ,third" })), false);
 });

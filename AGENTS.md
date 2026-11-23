@@ -11,6 +11,7 @@ Work style: terse.
 - Repo/product name: ReleaseBar. Config file: `releasebar.config.json`.
 - Not GitHub Pages. No deploy workflow: Cloudflare's GitHub app (Workers Builds) runs `npm run deploy` on every push to `main`. GitHub holds no Cloudflare token.
 - `wrangler.jsonc` stays generic: no domain, admin login, account or resource ID. Deployment values are Workers Builds build variables (`RELEASEBAR_*`, see `docs/self-hosting.md`), which `npm run deploy` writes into the git-ignored `wrangler.deploy.json`.
+- `worker-configuration.d.ts` is generated: run `npm run types` after changing `wrangler.jsonc` or updating Wrangler. `npm run typecheck` fails when it is stale. Variables and secrets set outside the config are typed in `worker/env.d.ts`.
 - Gates on pull requests: the org ruleset workflow Test TypeScript (`typecheck`, `lint`, `format:check`, `build`, `test` scripts) and `.github/workflows/cloudflare.yml` (`wrangler deploy --dry-run`).
 - `npm run build` must stay offline. `npm run build:data` fetches real dashboard data from GitHub.
 - Wrangler is a locked devDependency. Never run it with `npm exec --yes` or `npx --yes`.
@@ -26,7 +27,7 @@ Nothing is in production use, so there is no data migration and no compatibility
 Steps, one pull request each, in order; 7a to 7c may run in parallel. Tick a step in the pull request that completes it.
 
 - [x] 1 Ground rules: this section.
-- [ ] 2 Config and types: `wrangler.jsonc`, types from `wrangler types`, handlers `satisfies ExportedHandler<Env>`.
+- [x] 2 Config and types: `wrangler.jsonc`, types from `wrangler types`, handlers `satisfies ExportedHandler<Env>`.
 - [ ] 3 Test runner: Vitest in the Workers runtime; tests import TypeScript sources, no compile step.
 - [ ] 4 Single build: Cloudflare Vite plugin v1, one `vite build`, one `vite dev`; shared code moves from `scripts/lib` to `shared/`.
 - [ ] 5 Durable Objects: classes that extend `DurableObject`, typed RPC methods, SQLite tables.

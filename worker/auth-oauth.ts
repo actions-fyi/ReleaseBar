@@ -375,7 +375,7 @@ export async function syncGithubAppInstallations(env: Env): Promise<AuthInstalla
     existing
       .filter((installation) => !freshAccounts.has(installation.accountLogin))
       .map(async (installation) => {
-        await env.DASHBOARD_CACHE?.delete?.(installationRegistryKey(installation.accountLogin));
+        await env.DASHBOARD_CACHE.delete(installationRegistryKey(installation.accountLogin));
         await recordAuthFunnelEvent(env, {
           event: "install_removed",
           account: installation.accountLogin,
@@ -537,7 +537,7 @@ export async function githubAppInstallationForAccount(
   accountLogin: string,
   signal?: AbortSignal,
 ): Promise<AuthInstallation | null> {
-  if (!appTokenConfigured(env) || !env.DASHBOARD_CACHE) return null;
+  if (!appTokenConfigured(env)) return null;
   const account = slugOwner(accountLogin);
   if (!validOwnerSlug(account)) return null;
   if (await env.DASHBOARD_CACHE.get(installationMissKey(account))) return null;
@@ -585,7 +585,7 @@ export async function githubAppInstallationForAccount(
     if (result.length < 100) break;
   }
   await Promise.all([
-    env.DASHBOARD_CACHE.delete?.(installationRegistryKey(account)),
+    env.DASHBOARD_CACHE.delete(installationRegistryKey(account)),
     env.DASHBOARD_CACHE.put(installationMissKey(account), new Date().toISOString(), {
       expirationTtl: 10 * 60,
     }),
@@ -646,7 +646,7 @@ export async function writeSessionRecord(
   id: string | null,
   session: StoredAuthSession,
 ): Promise<void> {
-  if (!id || !env.DASHBOARD_CACHE) return;
+  if (!id) return;
   // KV rejects expirationTtl below 60s; a session that close to expiry is not worth rewriting.
   const ttl = session.exp - Math.floor(Date.now() / 1000);
   if (ttl < 60) return;
@@ -675,7 +675,7 @@ export async function bestEffortWriteSessionRecord(
 }
 
 async function readStoredSession(env: Env, id: string): Promise<StoredAuthSession | null> {
-  const stored = await env.DASHBOARD_CACHE?.get(`auth:session:${id}`);
+  const stored = await env.DASHBOARD_CACHE.get(`auth:session:${id}`);
   if (!stored) return null;
   return safeJsonParse(storedAuthSessionSchema, stored, "auth session");
 }

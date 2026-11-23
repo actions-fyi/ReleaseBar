@@ -14,8 +14,7 @@ import type {
 } from "../src/types.js";
 import { hmac, verifySignedJson } from "./crypto.js";
 import { auditGitHubFetch } from "./github-audit.js";
-import { jsonResponse } from "./http.js";
-import { canonicalDomain } from "./runtime.js";
+import { type BackgroundContext, canonicalDomain } from "./runtime.js";
 import { safeJsonParse, storedAuthSessionSchema, tryJsonParse } from "./schemas.js";
 import { authDependentAppShellHeaders } from "./auth-oauth.js";
 import { cachedHotInitialData } from "./build-progress.js";
@@ -115,10 +114,7 @@ export function parseCookies(request: Request): Map<string, string> {
 
 export function authConfigured(env: Env): boolean {
   return Boolean(
-    env.AUTH_COOKIE_SECRET &&
-    env.DASHBOARD_CACHE &&
-    env.GITHUB_APP_CLIENT_ID &&
-    env.GITHUB_APP_CLIENT_SECRET,
+    env.AUTH_COOKIE_SECRET && env.GITHUB_APP_CLIENT_ID && env.GITHUB_APP_CLIENT_SECRET,
   );
 }
 
@@ -184,7 +180,7 @@ export async function currentSessionRecord(
   const pointer = await verifySignedJson<AuthSession>(env.AUTH_COOKIE_SECRET, token);
   if (!pointer || pointer.exp < Math.floor(Date.now() / 1000)) return null;
 
-  const stored = await env.DASHBOARD_CACHE?.get(`auth:session:${pointer.id}`);
+  const stored = await env.DASHBOARD_CACHE.get(`auth:session:${pointer.id}`);
   if (stored) {
     const session = safeJsonParse(storedAuthSessionSchema, stored, "auth session");
     if (!session) return null;
@@ -235,14 +231,14 @@ export function isCachedOwner(value: unknown): value is Owner {
 }
 
 export async function readCachedOwner(env: Env, login: string): Promise<Owner | null> {
-  const raw = await env.DASHBOARD_CACHE?.get(ownerCacheKey(login));
+  const raw = await env.DASHBOARD_CACHE.get(ownerCacheKey(login));
   if (!raw) return null;
   const parsed = tryJsonParse<Owner>(raw, `owner ${login}`);
   return isCachedOwner(parsed) ? parsed : null;
 }
 
 export async function writeCachedOwner(env: Env, owner: Owner): Promise<void> {
-  await env.DASHBOARD_CACHE?.put(ownerCacheKey(owner.login), JSON.stringify(owner), {
+  await env.DASHBOARD_CACHE.put(ownerCacheKey(owner.login), JSON.stringify(owner), {
     expirationTtl: ownerCacheTtlSeconds,
   });
 }
@@ -284,7 +280,7 @@ export async function resolveOwners(
   quotaSource: ApiQuota["source"] = token || env.GITHUB_TOKEN ? "shared" : "anonymous",
   quotaAccount: string | null = null,
   signal?: AbortSignal,
-  context?: ExecutionContext,
+  context?: BackgroundContext,
 ): Promise<Owner[] | null> {
   const owners: Owner[] = [];
   for (const owner of ownerSlugs) {
@@ -334,10 +330,6 @@ export async function initialPageData(
 }
 
 export async function assetResponse(request: Request, env: Env): Promise<Response> {
-  if (!env.ASSETS) {
-    return jsonResponse({ error: "not found" }, 404);
-  }
-
   const url = new URL(request.url);
   if (shouldServeAppShell(url)) {
     url.pathname = "/index.html";

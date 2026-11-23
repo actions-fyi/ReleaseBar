@@ -55,7 +55,7 @@ export function releaseSummaryCacheKey(project: Project, model: string): string 
 }
 
 export async function readRepoDetail(env: Env, key: string): Promise<RepoDetailPayload | null> {
-  const raw = await env.DASHBOARD_CACHE?.get(key);
+  const raw = await env.DASHBOARD_CACHE.get(key);
   return raw ? tryJsonParse<RepoDetailPayload>(raw, `repo detail ${key}`) : null;
 }
 
@@ -64,7 +64,7 @@ export async function writeRepoDetail(
   key: string,
   payload: RepoDetailPayload,
 ): Promise<void> {
-  await env.DASHBOARD_CACHE?.put(key, JSON.stringify(payload), {
+  await env.DASHBOARD_CACHE.put(key, JSON.stringify(payload), {
     expirationTtl: dashboardStorageTtlSeconds,
   });
 }
@@ -74,7 +74,7 @@ export async function readReleaseSummary(
   key: string | null,
 ): Promise<RepoDetailReleaseSummary | null> {
   if (!key) return null;
-  const raw = await env.DASHBOARD_CACHE?.get(key);
+  const raw = await env.DASHBOARD_CACHE.get(key);
   return raw ? tryJsonParse<RepoDetailReleaseSummary>(raw, `release summary ${key}`) : null;
 }
 
@@ -83,7 +83,7 @@ export async function writeReleaseSummary(
   key: string,
   summary: RepoDetailReleaseSummary,
 ): Promise<void> {
-  await env.DASHBOARD_CACHE?.put(key, JSON.stringify(summary), {
+  await env.DASHBOARD_CACHE.put(key, JSON.stringify(summary), {
     expirationTtl: dashboardStorageTtlSeconds,
   });
 }

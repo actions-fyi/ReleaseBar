@@ -56,6 +56,7 @@ import { acquireBuildLock } from "./dashboard-rebuild.js";
 import { repositoryPublicCacheBarrier } from "./owner-metadata-read.js";
 import { allowRequestRefresh, crawlerCacheOnlyResponse } from "./owner-metadata-write.js";
 import { detailGitHubJson } from "./repo-github.js";
+import type { BackgroundContext } from "./runtime.js";
 
 export function signalCounts(
   values: Array<string | null | undefined>,
@@ -360,7 +361,7 @@ export function withTrustProfileState(
 export async function trustProfileResponse(
   request: Request,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
 ): Promise<Response> {
   const url = new URL(request.url);
   const login = slugOwner(decodeURIComponent(url.pathname.split("/")[3] ?? ""));
@@ -581,7 +582,7 @@ export async function refreshRepoAudience(
 export async function repoAudienceResponse(
   request: Request,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
 ): Promise<Response> {
   const url = new URL(request.url);
   const [, , , rawOwner, rawRepo] = url.pathname.split("/");

@@ -3,7 +3,7 @@ import type { AuthUser, DashboardPayload, DashboardProfile } from "../src/types.
 import { authFunnelSummary } from "./auth-observability.js";
 import { githubAccessAdminHours, githubAccessSummary } from "./github-audit.js";
 import { jsonResponse } from "./http.js";
-import { canonicalDomain } from "./runtime.js";
+import { type BackgroundContext, canonicalDomain } from "./runtime.js";
 import { currentSession, uniqueSorted } from "./app-shell.js";
 import { syncGithubAppInstallations } from "./auth-oauth.js";
 import { requireAdmin } from "./auth-tokens.js";
@@ -165,7 +165,7 @@ export async function profileResponse(request: Request, env: Env): Promise<Respo
   }
   if (request.method === "DELETE") {
     await deleteProfile(env, owner);
-    await env.DASHBOARD_CACHE?.delete?.(hotCacheKey);
+    await env.DASHBOARD_CACHE.delete(hotCacheKey);
     return jsonResponse({ profile: null, canEdit: true }, 200, { "cache-control": "no-store" });
   }
   if (request.method !== "POST") {
@@ -182,7 +182,7 @@ export async function profileResponse(request: Request, env: Env): Promise<Respo
   try {
     const profile = profileFromInput(owner, input, session.user);
     await writeProfile(env, profile);
-    await env.DASHBOARD_CACHE?.delete?.(hotCacheKey);
+    await env.DASHBOARD_CACHE.delete(hotCacheKey);
     return jsonResponse({ profile, canEdit: true }, 200, { "cache-control": "no-store" });
   } catch (error) {
     return jsonResponse({ error: errorMessage(error) }, 400, { "cache-control": "no-store" });
@@ -192,7 +192,7 @@ export async function profileResponse(request: Request, env: Env): Promise<Respo
 export async function adminResponse(
   request: Request,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
 ): Promise<Response> {
   const admin = await requireAdmin(request, env);
   if (admin instanceof Response) return admin;

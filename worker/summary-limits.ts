@@ -80,13 +80,14 @@ export function parseWholeNumber(value: string | undefined): number | null {
   return wholeNumberPattern.test(trimmed) ? Number(trimmed) : null;
 }
 
-type LimitVars = Readonly<Record<string, unknown>>;
+// Any object with the limit variables on it: the Worker env or a plain record.
+type LimitVars = object;
 
 function limitValue(
   vars: LimitVars,
   { variable, defaultValue, min, max }: ReleaseSummaryLimit,
 ): number {
-  const raw = vars[variable];
+  const raw = (vars as Readonly<Record<string, unknown>>)[variable];
   const value = parseWholeNumber(typeof raw === "string" ? raw : undefined) ?? defaultValue;
   return Math.min(max, Math.max(min, value));
 }

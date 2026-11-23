@@ -58,11 +58,12 @@ import {
   rememberRefreshTarget,
 } from "./refresh-targets.js";
 import { dashboardRequest } from "./request-lock.js";
+import type { BackgroundContext } from "./runtime.js";
 
 export async function ownerResponse(
   request: Request,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
 ): Promise<Response> {
   const url = new URL(request.url);
   const allowRefresh = allowRequestRefresh(request);

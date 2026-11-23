@@ -62,7 +62,7 @@ function authEventDetail(value: string | null | undefined): string | null {
 }
 
 async function readCounter(env: Env, key: string): Promise<number> {
-  const current = Number.parseInt((await env.DASHBOARD_CACHE?.get(key)) ?? "0", 10);
+  const current = Number.parseInt((await env.DASHBOARD_CACHE.get(key)) ?? "0", 10);
   return Number.isFinite(current) ? current : 0;
 }
 
@@ -71,7 +71,6 @@ export async function recordAuthFunnelEvent(
   input: Omit<AuthFunnelEvent, "id" | "at">,
 ): Promise<void> {
   const cache = env.DASHBOARD_CACHE;
-  if (!cache) return;
   try {
     const item: AuthFunnelEvent = {
       id: randomNonce(),
@@ -106,7 +105,6 @@ function storedInstallationRecord(record: StoredInstallationRecord): AuthInstall
 }
 
 export async function listStoredInstallations(env: Env): Promise<AuthInstallationRecord[]> {
-  if (!env.DASHBOARD_CACHE?.list) return [];
   const records: AuthInstallationRecord[] = [];
   let cursor: string | undefined;
   do {
@@ -116,7 +114,7 @@ export async function listStoredInstallations(env: Env): Promise<AuthInstallatio
       ...(cursor ? { cursor } : {}),
     });
     const pageRecords = await mapConcurrent(page.keys, 16, async (key) => {
-      const raw = await env.DASHBOARD_CACHE?.get(key.name);
+      const raw = await env.DASHBOARD_CACHE.get(key.name);
       if (!raw) return null;
       const parsed = safeJsonParse(storedInstallationSchema, raw, `app installation ${key.name}`);
       return parsed ? storedInstallationRecord(parsed) : null;
@@ -132,7 +130,6 @@ export async function listStoredInstallations(env: Env): Promise<AuthInstallatio
 async function storedInstallationInventory(
   env: Env,
 ): Promise<{ total: number; installations: AuthInstallationRecord[] }> {
-  if (!env.DASHBOARD_CACHE?.list) return { total: 0, installations: [] };
   const sampleKeys: string[] = [];
   let total = 0;
   let cursor: string | undefined;
@@ -151,7 +148,7 @@ async function storedInstallationInventory(
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
   const installations = await mapConcurrent(sampleKeys, 16, async (key) => {
-    const raw = await env.DASHBOARD_CACHE?.get(key);
+    const raw = await env.DASHBOARD_CACHE.get(key);
     if (!raw) return null;
     const parsed = safeJsonParse(storedInstallationSchema, raw, `app installation ${key}`);
     return parsed ? storedInstallationRecord(parsed) : null;
@@ -165,7 +162,6 @@ async function storedInstallationInventory(
 }
 
 async function listAuthFunnelEvents(env: Env): Promise<AuthFunnelEvent[]> {
-  if (!env.DASHBOARD_CACHE?.list) return [];
   const events: AuthFunnelEvent[] = [];
   let cursor: string | undefined;
   do {
@@ -189,7 +185,6 @@ async function listAuthFunnelEvents(env: Env): Promise<AuthFunnelEvent[]> {
 async function authFunnelCountInventory(
   env: Env,
 ): Promise<{ total: number; counts: Array<{ key: string; count: number }> }> {
-  if (!env.DASHBOARD_CACHE?.list) return { total: 0, counts: [] };
   const sampleKeys: string[] = [];
   let total = 0;
   let cursor: string | undefined;
@@ -207,7 +202,7 @@ async function authFunnelCountInventory(
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
   const counts = await mapConcurrent(sampleKeys, 16, async (key) => {
-    const count = Number.parseInt((await env.DASHBOARD_CACHE?.get(key)) ?? "0", 10);
+    const count = Number.parseInt((await env.DASHBOARD_CACHE.get(key)) ?? "0", 10);
     return Number.isFinite(count) && count > 0
       ? { key: key.slice(authFunnelCounterPrefix.length), count }
       : null;

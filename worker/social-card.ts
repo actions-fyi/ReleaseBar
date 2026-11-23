@@ -1,7 +1,7 @@
 import { slugOwner, validOwnerSlug, validRepoSlug } from "../scripts/lib/dashboard.js";
 import type { ApiQuota, Project } from "../src/types.js";
 import { workerFetch } from "./http.js";
-import { canonicalDomain } from "./runtime.js";
+import { type BackgroundContext, canonicalDomain } from "./runtime.js";
 import {
   gitHubCompareSchema,
   gitHubReleaseSchema,
@@ -159,7 +159,7 @@ export async function readSocialRepo(
   owner: string,
   repo: string,
 ): Promise<StoredSocialRepo | null> {
-  const raw = await env.DASHBOARD_CACHE?.get(socialRepoCacheKey(owner, repo));
+  const raw = await env.DASHBOARD_CACHE.get(socialRepoCacheKey(owner, repo));
   const parsed = raw ? tryJsonParse<StoredSocialRepo>(raw, `social repo ${owner}/${repo}`) : null;
   return parsed?.project?.fullName?.toLowerCase() === `${slugOwner(owner)}/${repo.toLowerCase()}`
     ? parsed
@@ -167,7 +167,7 @@ export async function readSocialRepo(
 }
 
 export async function writeSocialRepo(env: Env, project: Project): Promise<void> {
-  await env.DASHBOARD_CACHE?.put(
+  await env.DASHBOARD_CACHE.put(
     socialRepoCacheKey(project.owner, project.name),
     JSON.stringify({
       generatedAt: new Date().toISOString(),
@@ -263,7 +263,7 @@ export async function socialRepoProject(
   label: string,
   request: Request,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
 ): Promise<Project | null> {
   if (!validRepoSlug(label)) return null;
   const [owner, repo] = label.split("/");
@@ -299,7 +299,7 @@ export async function socialCardForLabel(
   label: string,
   request: Request,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
 ): Promise<SocialCard> {
   const project = await socialRepoProject(label, request, env, context);
   const owner = project?.owner ?? socialOwnerFromLabel(label);
@@ -358,7 +358,6 @@ export async function socialImage(card: SocialCard): Promise<Response> {
 
 export async function socialRendererBytes(request: Request, env: Env): Promise<Uint8Array[]> {
   const assets = env.ASSETS;
-  if (!assets) throw new Error("missing assets binding");
   if (socialRendererReady) return socialRendererReady;
   socialRendererReady = (async () => {
     const fetchAsset = async (pathname: string) => {
