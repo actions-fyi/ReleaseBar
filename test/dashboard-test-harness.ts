@@ -228,7 +228,7 @@ export function deleteStoredRefreshTarget(key: string): Promise<void> {
 
 // The targets the index lists under an owner or a repository, most recently seen first.
 export function indexedTargets(kind: "owner" | "repo", value: string): Promise<RefreshTarget[]> {
-  return indexedRefreshTargets(databaseEnv, { kind, value });
+  return indexedRefreshTargets(databaseEnv, [{ kind, value }]).then(([targets]) => targets ?? []);
 }
 
 // Stores the latest state of a refresh job.
@@ -303,9 +303,10 @@ export async function fillTargetSource(kind: "owner" | "repo", value: string): P
 // A database that counts the statements the Worker sends it, and can fail one: pass it to a
 // test's env as the D1 binding. `fail` gets each statement's SQL before it runs; returning true
 // makes the statement throw. A batch counts once in `batches` and each of its statements in
-// `statements`.
+// `statements`. `queries` is what D1 counts against its limit per invocation: one for a statement
+// sent by itself and one for a batch, whatever it holds.
 export function observedDatabase(fail: (sql: string) => boolean = () => false) {
-  const counts = { statements: 0, batches: 0, sql: [] as string[] };
+  const counts = { statements: 0, batches: 0, queries: 0, sql: [] as string[] };
   const sqlOf = new WeakMap<object, string>();
   const record = (sql: string): void => {
     counts.statements += 1;
@@ -321,6 +322,7 @@ export function observedDatabase(fail: (sql: string) => boolean = () => false) {
           return (...values: unknown[]) => observe(target.bind(...values), sql);
         }
         return async (...parameters: unknown[]): Promise<unknown> => {
+          counts.queries += 1;
           record(sql);
           return Reflect.apply(member, target, parameters);
         };
@@ -336,6 +338,7 @@ export function observedDatabase(fail: (sql: string) => boolean = () => false) {
     prepare: (sql: string) => observe(real.prepare(sql), sql),
     batch: async (statements: D1PreparedStatement[]) => {
       counts.batches += 1;
+      counts.queries += 1;
       for (const statement of statements) record(sqlOf.get(statement) ?? "");
       return real.batch(statements.map((statement) => rawStatements.get(statement) ?? statement));
     },

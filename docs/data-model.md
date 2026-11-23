@@ -48,10 +48,30 @@ Migration file: `migrations/0002_audit.sql`. Durable Object migration tag: `7b-r
 
 - A counter that is only added to and read later is a D1 row. A counter whose value decides the request is in a Durable Object. `SummaryQuota` keeps the AI summary limits: they span all users and two windows, which `RateLimiter` does not do.
 - Both counters are upsert tables, not `COUNT` queries. GitHub calls have no row per call to count: there are too many. The funnel counts could be counted from the events, but the admin console would then read every event of 90 days for each view.
-- GitHub calls of one request or job are collected in memory and written as one `batch`, which D1 counts as one query against the limit per invocation (50 on the free plan, 1,000 on the paid one), while the previous write is under way (`worker/github-audit.ts`). A refresh audit event is still one statement each.
-- Retention, as the KV entries had it: 14 days for `refresh_audit_events` and `github_access_counts`, 90 days for `auth_funnel_events` and `auth_funnel_counts`. D1 expires nothing by itself: the scheduled handler deletes what is older (`worker/audit-retention.ts`), at most 5,000 rows per table and run, oldest first for the events. What a run leaves, the next one takes, 15 minutes later.
+- The refresh audit events and the GitHub calls of one request, scheduler tick or queue job are collected in memory and written as one `batch` when its work is done (`worker/audit-collector.ts`, see "D1 queries per invocation" below).
+- Retention, as the KV entries had it: 14 days for `refresh_audit_events` and `github_access_counts`, 90 days for `auth_funnel_events` and `auth_funnel_counts`. D1 expires nothing by itself: the scheduled handler deletes what is older (`worker/audit-retention.ts`), at most 5,000 rows per table and run, oldest first for the events, with one batch for each of the three store modules. What a run leaves, the next one takes, 15 minutes later.
 - `listGitHubAccessCounts` reads in pages of 1,000 rows and stops after 20,000; the admin summary logs `access_summary_truncated` when it did. `buckets` of the admin GitHub access summary is now the number of rows read, one per hour and route key.
 - `RateLimiter` deletes the counts of past minutes when a call of a new minute arrives, so an instance holds one row per client of the last two minutes.
+
+## D1 queries per invocation
+
+D1 limits the queries of one Worker invocation: 50 on the Workers free plan, 1,000 on the paid one. A statement sent by itself is one query, and so is a `batch`, whatever the number of its statements. Each statement takes at most 100 bound parameters. So nothing writes a row per item with a statement of its own:
+
+- Jobs are enqueued together (`enqueueRefreshJobs`, `worker/refresh-queue.ts`): the scheduler tick's and a webhook's jobs are stored 25 to a batch (`refreshJobBatchRows`). For each job the order is as for one: reserved, stored, audited, sent to the queue. A job that could not be stored or sent is stored as failed, in one batch with the others that failed, and its reservation is released.
+- The audit collector (`worker/audit-collector.ts`) holds the refresh audit events and the GitHub call counts of an invocation and writes them as one batch (`worker/store/audit-batch.ts`) once the handler and its `waitUntil` work have settled. Work that runs long is written every two minutes, and at 200 rows. The fetch, scheduled and queue handlers and `WebhookProcessor` each start one; code called with any other env writes at once.
+- The targets of a webhook's owner and repository are read with one batch.
+
+The most queries an invocation sends, at the limits of `worker/config.ts`:
+
+| Invocation                                                            | Queries                                                                                                                                |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Scheduler tick enqueueing 20 jobs, with the deletion of expired rows  | 15: 5 reads, the owner count cursor, 1 batch of jobs, the tick's state, 3 deletions of refresh rows, 3 of audit rows, 1 audit batch    |
+| Webhook fan-out job, a page of 200 targets                            | 10: the page, 8 batches of jobs, 1 audit batch                                                                                         |
+| `WebhookProcessor` handling 8 coalesced deliveries of 25 targets each | 17: per delivery the targets and 1 batch of jobs, then 1 audit batch                                                                   |
+| Refresh job from the queue                                            | About 12, the audit batch included, and one more audit batch for every two minutes the build runs (6 in the 12 minutes a job may take) |
+| Dashboard request that stores its target and enqueues a job           | About 10, the audit batch included                                                                                                     |
+
+When the dashboards' `BuildCoordinator` objects can't be reached, reserving falls back to the list of jobs, which is two more queries for all the jobs enqueued together.
 
 ## Step 7c: auth and registry
 

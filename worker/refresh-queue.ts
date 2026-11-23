@@ -36,7 +36,7 @@ import {
   auditScheduler,
   auditSyncEvent,
   deleteExpiredRefreshData,
-  indexRefreshJob,
+  indexRefreshJobs,
   jitterMs,
   listRefreshJobs,
   listRefreshTargets,
@@ -46,7 +46,7 @@ import {
   refreshJob,
   refreshJobActive,
   takeLocalRefreshDirty,
-  writeRefreshJob,
+  writeRefreshJobs,
 } from "./refresh-targets.ts";
 import { invalidateDashboardTargets } from "./webhook-targets.ts";
 import type { BackgroundContext } from "./runtime.ts";
@@ -69,6 +69,9 @@ export async function reserveRefreshJob(
   targetKey: string,
   jobId: string,
   dirtyOnConflict?: StoredRefreshDirty,
+  // The jobs the fallback looks for an active one in. A caller that reserves for many targets
+  // reads them once.
+  listJobs: () => Promise<RefreshJob[]> = () => listRefreshJobs(env),
 ): Promise<boolean> {
   const reserveFallback = async (): Promise<boolean> => {
     const reservations = localRefreshJobReservationStore(env);
@@ -83,7 +86,7 @@ export async function reserveRefreshJob(
       expiresAt: now + refreshJobReservationTtlMs,
     });
     try {
-      const active = (await listRefreshJobs(env)).find(
+      const active = (await listJobs()).find(
         (job) => job.targetKey === targetKey && job.id !== jobId && refreshJobActive(job),
       );
       if (!active) return true;
@@ -142,32 +145,53 @@ export async function releaseRefreshJobReservation(
   return localDirty;
 }
 
-export async function enqueueRefreshJob(
+export type RefreshJobRequest = { target: RefreshTarget; reason: string };
+
+// Enqueues a refresh job for each target that is not in backoff and whose reservation is free:
+// null for the others, in the order of `requests`.
+//
+// The jobs are stored in batches, so D1 gets a query per `refreshJobBatchRows` jobs, not per
+// job. For each job the order is as for one: reserved, stored, audited, sent to the queue. A job
+// that could not be stored or sent is stored as failed and its reservation released; the others
+// are enqueued all the same, and the first error is thrown once they are.
+export async function enqueueRefreshJobs(
   env: Env,
-  context: BackgroundContext,
-  target: RefreshTarget,
-  reason: string,
-  delaySeconds = refreshQueueDeliveryDelaySeconds,
-): Promise<RefreshJob | null> {
-  if (
-    reason !== "manual-refresh" &&
-    !reason.startsWith("webhook:") &&
-    refreshTargetBackoffActive(target)
-  ) {
-    await auditSyncEvent(env, {
-      event: "job_enqueue_skip",
-      targetKey: target.key,
-      status: "backoff",
-      reason,
-      detail: `nextDueAt=${target.nextDueAt} failureCount=${target.failureCount}`,
-    });
-    return null;
-  }
-  const job = refreshJob(target, reason);
-  const dirtyOnConflict = reason.startsWith("webhook:")
-    ? { observedAt: new Date().toISOString(), reason }
-    : undefined;
-  if (!(await reserveRefreshJob(env, target.key, job.id, dirtyOnConflict))) {
+  _context: BackgroundContext,
+  requests: RefreshJobRequest[],
+  options: { delaySeconds?: number; concurrency?: number } = {},
+): Promise<Array<RefreshJob | null>> {
+  const delaySeconds = options.delaySeconds ?? refreshQueueDeliveryDelaySeconds;
+  const concurrency = options.concurrency ?? 1;
+  const errors: unknown[] = [];
+  const failed = new Map<string, { job: RefreshJob; error: unknown }>();
+  let listedJobs: Promise<RefreshJob[]> | undefined;
+  const listJobs = (): Promise<RefreshJob[]> => (listedJobs ??= listRefreshJobs(env));
+
+  const reserved = await mapConcurrent(requests, concurrency, async ({ target, reason }) => {
+    if (
+      reason !== "manual-refresh" &&
+      !reason.startsWith("webhook:") &&
+      refreshTargetBackoffActive(target)
+    ) {
+      await auditSyncEvent(env, {
+        event: "job_enqueue_skip",
+        targetKey: target.key,
+        status: "backoff",
+        reason,
+        detail: `nextDueAt=${target.nextDueAt} failureCount=${target.failureCount}`,
+      });
+      return null;
+    }
+    const job = refreshJob(target, reason);
+    const dirtyOnConflict = reason.startsWith("webhook:")
+      ? { observedAt: new Date().toISOString(), reason }
+      : undefined;
+    try {
+      if (await reserveRefreshJob(env, target.key, job.id, dirtyOnConflict, listJobs)) return job;
+    } catch (error) {
+      errors.push(error);
+      return null;
+    }
     await auditSyncEvent(env, {
       event: "job_enqueue_skip",
       targetKey: target.key,
@@ -175,31 +199,60 @@ export async function enqueueRefreshJob(
       reason,
     });
     return null;
+  });
+
+  const jobs = reserved.filter((job): job is RefreshJob => job !== null);
+  for (const failure of await indexRefreshJobs(env, jobs)) {
+    failed.set(failure.job.id, failure);
   }
-  try {
-    await indexRefreshJob(env, job);
-    await auditScheduler(env, {
-      event: "job_enqueue",
-      targetKey: target.key,
-      jobId: job.id,
-      reason,
-    });
-    await sendQueueMessage(env, refreshQueueMessage(job), {
-      delaySeconds,
-    });
-  } catch (error) {
+  await mapConcurrent(
+    jobs.filter((job) => !failed.has(job.id)),
+    concurrency,
+    async (job) => {
+      try {
+        await auditScheduler(env, {
+          event: "job_enqueue",
+          targetKey: job.targetKey,
+          jobId: job.id,
+          reason: job.reason,
+        });
+        await sendQueueMessage(env, refreshQueueMessage(job), { delaySeconds });
+      } catch (error) {
+        failed.set(job.id, { job, error });
+      }
+    },
+  );
+
+  if (failed.size > 0) {
     const now = new Date().toISOString();
-    await writeRefreshJob(env, {
-      ...job,
-      status: "failed",
-      finishedAt: now,
-      updatedAt: now,
-      error: errorMessage(error),
-    }).catch(() => undefined);
-    await releaseRefreshJobReservation(env, target.key, job.id).catch(() => undefined);
-    throw error;
+    await writeRefreshJobs(
+      env,
+      [...failed.values()].map(({ job, error }) => ({
+        ...job,
+        status: "failed" as const,
+        finishedAt: now,
+        updatedAt: now,
+        error: errorMessage(error),
+      })),
+    ).catch(() => undefined);
+    await mapConcurrent([...failed.values()], Math.max(concurrency, 4), ({ job }) =>
+      releaseRefreshJobReservation(env, job.targetKey, job.id).catch(() => undefined),
+    );
+    errors.push(...[...failed.values()].map(({ error }) => error));
   }
-  return job;
+  if (errors.length > 0) throw errors[0];
+  return reserved;
+}
+
+export async function enqueueRefreshJob(
+  env: Env,
+  context: BackgroundContext,
+  target: RefreshTarget,
+  reason: string,
+  delaySeconds = refreshQueueDeliveryDelaySeconds,
+): Promise<RefreshJob | null> {
+  const [job] = await enqueueRefreshJobs(env, context, [{ target, reason }], { delaySeconds });
+  return job ?? null;
 }
 
 export async function finishRefreshJobReservation(
@@ -506,12 +559,13 @@ export async function schedulerTick(
         safeIso(a.target.nextDueAt) - safeIso(b.target.nextDueAt),
     );
   const picked = due.slice(0, limit);
-  let enqueued = 0;
-  for (const { target, cached } of picked) {
-    if (await enqueueRefreshJob(env, context, target, refreshReason(target, cached))) {
-      enqueued += 1;
-    }
-  }
+  const enqueued = (
+    await enqueueRefreshJobs(
+      env,
+      context,
+      picked.map(({ target, cached }) => ({ target, reason: refreshReason(target, cached) })),
+    )
+  ).filter(Boolean).length;
   await writeSchedulerState(env, {
     lastTickAt: new Date().toISOString(),
     cause,

@@ -95,7 +95,8 @@ export async function authFunnelCountInventory(
   };
 }
 
-// Deletes events and counts older than 90 days, at most 5,000 of each a call. Returns how many.
+// Deletes events and counts older than 90 days, at most 5,000 of each a call, in one batch.
+// Returns how many.
 export async function deleteExpiredAuthFunnelRows(env: Env, now: number): Promise<number> {
   const before = new Date(now - authFunnelRetentionMs).toISOString();
   const statements = [
@@ -110,13 +111,8 @@ export async function deleteExpiredAuthFunnelRows(env: Env, now: number): Promis
        )`,
     ).bind(before.slice(0, 10), deleteBatchRows),
   ];
-  let deleted = 0;
-  for (const statement of statements) {
-    for (let round = 0; round < deleteBatchRounds; round += 1) {
-      const changes = (await statement.run()).meta.changes;
-      deleted += changes;
-      if (changes < deleteBatchRows) break;
-    }
-  }
-  return deleted;
+  const results = await env.DB.batch(
+    statements.flatMap((statement) => Array.from({ length: deleteBatchRounds }, () => statement)),
+  );
+  return results.reduce((deleted, result) => deleted + result.meta.changes, 0);
 }

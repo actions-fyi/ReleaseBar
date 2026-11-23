@@ -14,7 +14,8 @@ import {
   isRepoDetailApiPath,
   isTrustProfileApiPath,
 } from "./routes.ts";
-import type { WorkerQueueMessage } from "./runtime.ts";
+import type { BackgroundContext, WorkerQueueMessage } from "./runtime.ts";
+import { collectAudit } from "./audit-collector.ts";
 import { withLockJurisdiction } from "./store/bindings.ts";
 import { ownerActivityResponse, repoActivityResponse } from "./activity.ts";
 import { adminResponse, profileResponse } from "./admin.ts";
@@ -103,7 +104,13 @@ export default {
     ) {
       return jsonResponse({ error: "method not allowed" }, 405, { allow: "GET" });
     }
-    const response = await routeRequest(request, env, context, url);
+    const audit = collectAudit(env, context);
+    let response: Response;
+    try {
+      response = await routeRequest(request, audit.env, audit.context, url);
+    } finally {
+      void audit.finish();
+    }
     if (!isHead) {
       return response;
     }
@@ -118,176 +125,192 @@ export default {
     rawEnv: Env,
     context: ExecutionContext,
   ): Promise<void> {
-    const env = withLockJurisdiction(rawEnv);
-    context.waitUntil(schedulerTick(env, context, `cron:${controller.cron}`, schedulerBatchLimit));
-    context.waitUntil(deleteExpiredAuditRows(env));
+    // The tick's audit events and GitHub call counts are one batch, written when it is done.
+    const audit = collectAudit(withLockJurisdiction(rawEnv), context);
+    audit.context.waitUntil(
+      schedulerTick(audit.env, audit.context, `cron:${controller.cron}`, schedulerBatchLimit),
+    );
+    audit.context.waitUntil(deleteExpiredAuditRows(audit.env));
+    void audit.finish();
   },
   async queue(
     batch: MessageBatch<WorkerQueueMessage>,
     rawEnv: Env,
     context: ExecutionContext,
   ): Promise<void> {
-    const env = withLockJurisdiction(rawEnv);
-    for (const message of batch.messages) {
-      if (isGitHubWebhookFanoutJob(message.body)) {
-        const fanoutJob = message.body;
-        try {
-          await processGitHubWebhookFanout(fanoutJob, env, context);
-          message.ack();
-        } catch (error) {
-          const delaySeconds = await githubWebhookRetryDelaySeconds(env, error);
-          const attempts = message.attempts ?? 1;
-          const expired = Date.now() - safeIso(fanoutJob.createdAt) >= githubWebhookDeliveryTtlMs;
-          if (attempts >= refreshQueueMaxAttempts || expired) {
-            try {
-              await abandonGitHubWebhookDelivery(env, fanoutJob.delivery, fanoutJob.payload);
-            } catch (abandonError) {
-              await auditSyncEvent(env, {
-                event: "github_webhook_admission_abandon_failed",
-                status: "failed",
-                reason: errorMessage(abandonError),
-                detail: `githubEvent=${fanoutJob.event} delivery=${fanoutJob.delivery} fanout=true`,
-              });
-              message.retry({ delaySeconds: Math.min(delaySeconds, 5 * 60) });
-              continue;
-            }
+    const audit = collectAudit(withLockJurisdiction(rawEnv), context);
+    try {
+      await processQueueBatch(batch, audit.env, audit.context);
+    } finally {
+      void audit.finish();
+    }
+  },
+} satisfies ExportedHandler<Env, WorkerQueueMessage>;
+
+async function processQueueBatch(
+  batch: MessageBatch<WorkerQueueMessage>,
+  env: Env,
+  context: BackgroundContext,
+): Promise<void> {
+  for (const message of batch.messages) {
+    if (isGitHubWebhookFanoutJob(message.body)) {
+      const fanoutJob = message.body;
+      try {
+        await processGitHubWebhookFanout(fanoutJob, env, context);
+        message.ack();
+      } catch (error) {
+        const delaySeconds = await githubWebhookRetryDelaySeconds(env, error);
+        const attempts = message.attempts ?? 1;
+        const expired = Date.now() - safeIso(fanoutJob.createdAt) >= githubWebhookDeliveryTtlMs;
+        if (attempts >= refreshQueueMaxAttempts || expired) {
+          try {
+            await abandonGitHubWebhookDelivery(env, fanoutJob.delivery, fanoutJob.payload);
+          } catch (abandonError) {
             await auditSyncEvent(env, {
-              event: "github_webhook_fanout_failed",
+              event: "github_webhook_admission_abandon_failed",
               status: "failed",
-              reason: `${errorMessage(error)}; durable retry limit reached`,
-              detail: `githubEvent=${fanoutJob.event} delivery=${fanoutJob.delivery} source=${fanoutJob.source} attempts=${attempts}`,
-            }).catch(() => undefined);
-            message.ack();
+              reason: errorMessage(abandonError),
+              detail: `githubEvent=${fanoutJob.event} delivery=${fanoutJob.delivery} fanout=true`,
+            });
+            message.retry({ delaySeconds: Math.min(delaySeconds, 5 * 60) });
             continue;
           }
           await auditSyncEvent(env, {
             event: "github_webhook_fanout_failed",
             status: "failed",
-            reason: errorMessage(error),
+            reason: `${errorMessage(error)}; durable retry limit reached`,
             detail: `githubEvent=${fanoutJob.event} delivery=${fanoutJob.delivery} source=${fanoutJob.source} attempts=${attempts}`,
           }).catch(() => undefined);
-          message.retry({ delaySeconds: Math.min(delaySeconds, 5 * 60) });
-        }
-        continue;
-      }
-      if (isGitHubWebhookJob(message.body)) {
-        const webhookJob = message.body;
-        try {
-          const owner = webhookRepo(webhookJob.payload)?.owner ?? webhookJob.delivery;
-          const result = await processWebhookJob(env, owner, webhookJob);
-          if (result.state === "busy") throw new Error("webhook processor busy");
-          if (result.state === "full") throw new Error("webhook coalescer full");
           message.ack();
-        } catch (error) {
-          const delaySeconds = await githubWebhookRetryDelaySeconds(env, error);
-          const attempts = githubWebhookProcessorBusy(error)
-            ? (webhookJob.attempts ?? 0)
-            : (webhookJob.attempts ?? 0) + 1;
-          const expired = Date.now() - safeIso(webhookJob.createdAt) >= githubWebhookDeliveryTtlMs;
-          if (attempts > githubWebhookRequeueLimit || expired) {
-            try {
-              await abandonGitHubWebhookDelivery(env, webhookJob.delivery, webhookJob.payload);
-            } catch (abandonError) {
-              await auditSyncEvent(env, {
-                event: "github_webhook_admission_abandon_failed",
-                status: "failed",
-                reason: errorMessage(abandonError),
-                detail: `githubEvent=${webhookJob.event} delivery=${webhookJob.delivery}`,
-              });
-              message.retry({ delaySeconds: webhookPriorityFanoutRetrySeconds });
-              continue;
-            }
-            await auditSyncEvent(env, {
-              event: "github_webhook_failed",
-              status: "failed",
-              reason: `${errorMessage(error)}; durable requeue limit reached`,
-              detail: `githubEvent=${webhookJob.event} delivery=${webhookJob.delivery} attempts=${attempts}`,
-            });
-            message.ack();
-            continue;
-          }
+          continue;
+        }
+        await auditSyncEvent(env, {
+          event: "github_webhook_fanout_failed",
+          status: "failed",
+          reason: errorMessage(error),
+          detail: `githubEvent=${fanoutJob.event} delivery=${fanoutJob.delivery} source=${fanoutJob.source} attempts=${attempts}`,
+        }).catch(() => undefined);
+        message.retry({ delaySeconds: Math.min(delaySeconds, 5 * 60) });
+      }
+      continue;
+    }
+    if (isGitHubWebhookJob(message.body)) {
+      const webhookJob = message.body;
+      try {
+        const owner = webhookRepo(webhookJob.payload)?.owner ?? webhookJob.delivery;
+        const result = await processWebhookJob(env, owner, webhookJob);
+        if (result.state === "busy") throw new Error("webhook processor busy");
+        if (result.state === "full") throw new Error("webhook coalescer full");
+        message.ack();
+      } catch (error) {
+        const delaySeconds = await githubWebhookRetryDelaySeconds(env, error);
+        const attempts = githubWebhookProcessorBusy(error)
+          ? (webhookJob.attempts ?? 0)
+          : (webhookJob.attempts ?? 0) + 1;
+        const expired = Date.now() - safeIso(webhookJob.createdAt) >= githubWebhookDeliveryTtlMs;
+        if (attempts > githubWebhookRequeueLimit || expired) {
           try {
-            await sendQueueMessage(
-              env,
-              {
-                ...webhookJob,
-                id: webhookJob.id,
-                attempts,
-              },
-              { delaySeconds },
-            );
+            await abandonGitHubWebhookDelivery(env, webhookJob.delivery, webhookJob.payload);
+          } catch (abandonError) {
             await auditSyncEvent(env, {
-              event: "github_webhook_requeued",
-              status: "queued",
-              reason: errorMessage(error),
-              detail: `githubEvent=${webhookJob.event} delivery=${webhookJob.delivery} delaySeconds=${delaySeconds}`,
-            });
-            message.ack();
-          } catch (requeueError) {
-            await auditSyncEvent(env, {
-              event: "github_webhook_failed",
+              event: "github_webhook_admission_abandon_failed",
               status: "failed",
-              reason: `${errorMessage(error)}; requeue failed: ${errorMessage(requeueError)}`,
+              reason: errorMessage(abandonError),
               detail: `githubEvent=${webhookJob.event} delivery=${webhookJob.delivery}`,
             });
-            message.retry({ delaySeconds: Math.min(delaySeconds, 5 * 60) });
-          }
-        }
-        continue;
-      }
-      const deliveryAttempts = message.attempts ?? message.body.attempts + 1;
-      const exhausted = deliveryAttempts >= refreshQueueMaxAttempts;
-      let processedJob: RefreshJob | null = null;
-      try {
-        const job = await processRefreshJob(message.body, env, !exhausted);
-        processedJob = job;
-        if (job.status === "queued") {
-          const delaySeconds =
-            job.error === "dashboard locked" ||
-            job.error === "dashboard stalled" ||
-            job.error === "dashboard deadline reached" ||
-            job.error === "target snapshot unavailable" ||
-            job.error === "profile snapshot unavailable"
-              ? buildLockRetrySeconds
-              : incompleteBuildRetrySeconds;
-          if (exhausted) {
-            await failExhaustedRefreshJob(job, env, deliveryAttempts);
-            await finishRefreshJobReservation(env, context, job);
-            message.retry({ delaySeconds });
+            message.retry({ delaySeconds: webhookPriorityFanoutRetrySeconds });
             continue;
           }
-          message.retry({
-            delaySeconds,
+          await auditSyncEvent(env, {
+            event: "github_webhook_failed",
+            status: "failed",
+            reason: `${errorMessage(error)}; durable requeue limit reached`,
+            detail: `githubEvent=${webhookJob.event} delivery=${webhookJob.delivery} attempts=${attempts}`,
           });
-        } else {
-          await finishRefreshJobReservation(env, context, job);
           message.ack();
+          continue;
         }
-      } catch (error) {
-        if (exhausted) {
-          const job =
-            processedJob ??
-            (await readRefreshJob(env, message.body.id).catch(() => null)) ??
-            message.body;
-          if (job.status === "queued" || job.status === "running") {
-            await failExhaustedRefreshJob(
-              { ...job, error: errorMessage(error) },
-              env,
-              deliveryAttempts,
-            ).catch(() => undefined);
-          }
-          await finishRefreshJobReservation(env, context, job).catch(() => undefined);
+        try {
+          await sendQueueMessage(
+            env,
+            {
+              ...webhookJob,
+              id: webhookJob.id,
+              attempts,
+            },
+            { delaySeconds },
+          );
+          await auditSyncEvent(env, {
+            event: "github_webhook_requeued",
+            status: "queued",
+            reason: errorMessage(error),
+            detail: `githubEvent=${webhookJob.event} delivery=${webhookJob.delivery} delaySeconds=${delaySeconds}`,
+          });
+          message.ack();
+        } catch (requeueError) {
+          await auditSyncEvent(env, {
+            event: "github_webhook_failed",
+            status: "failed",
+            reason: `${errorMessage(error)}; requeue failed: ${errorMessage(requeueError)}`,
+            detail: `githubEvent=${webhookJob.event} delivery=${webhookJob.delivery}`,
+          });
+          message.retry({ delaySeconds: Math.min(delaySeconds, 5 * 60) });
         }
-        message.retry({ delaySeconds: 300 });
       }
+      continue;
     }
-  },
-} satisfies ExportedHandler<Env, WorkerQueueMessage>;
+    const deliveryAttempts = message.attempts ?? message.body.attempts + 1;
+    const exhausted = deliveryAttempts >= refreshQueueMaxAttempts;
+    let processedJob: RefreshJob | null = null;
+    try {
+      const job = await processRefreshJob(message.body, env, !exhausted);
+      processedJob = job;
+      if (job.status === "queued") {
+        const delaySeconds =
+          job.error === "dashboard locked" ||
+          job.error === "dashboard stalled" ||
+          job.error === "dashboard deadline reached" ||
+          job.error === "target snapshot unavailable" ||
+          job.error === "profile snapshot unavailable"
+            ? buildLockRetrySeconds
+            : incompleteBuildRetrySeconds;
+        if (exhausted) {
+          await failExhaustedRefreshJob(job, env, deliveryAttempts);
+          await finishRefreshJobReservation(env, context, job);
+          message.retry({ delaySeconds });
+          continue;
+        }
+        message.retry({
+          delaySeconds,
+        });
+      } else {
+        await finishRefreshJobReservation(env, context, job);
+        message.ack();
+      }
+    } catch (error) {
+      if (exhausted) {
+        const job =
+          processedJob ??
+          (await readRefreshJob(env, message.body.id).catch(() => null)) ??
+          message.body;
+        if (job.status === "queued" || job.status === "running") {
+          await failExhaustedRefreshJob(
+            { ...job, error: errorMessage(error) },
+            env,
+            deliveryAttempts,
+          ).catch(() => undefined);
+        }
+        await finishRefreshJobReservation(env, context, job).catch(() => undefined);
+      }
+      message.retry({ delaySeconds: 300 });
+    }
+  }
+}
 
 export async function routeRequest(
   request: Request,
   env: Env,
-  context: ExecutionContext,
+  context: BackgroundContext,
   url: URL,
 ): Promise<Response> {
   if (!decodedPathParts(url.pathname)) {

@@ -6,6 +6,7 @@ import {
   githubWebhookProcessingLeaseMs,
   type StoredWebhookProcessing,
 } from "../config.ts";
+import { collectAudit } from "../audit-collector.ts";
 import { randomNonce } from "../crypto.ts";
 import { sleep } from "../dashboard-rebuild.ts";
 import { safeIso } from "../owner-metadata-write.ts";
@@ -75,7 +76,11 @@ export class WebhookProcessor extends DurableObject<Env> {
     if (reservation.state !== "leader") return reservation;
     const { leaseId } = reservation;
     // Processing calls other Durable Objects, which live in the Worker's jurisdiction.
-    const env = withLockJurisdiction(this.env);
+    // The audit rows of the whole batch are written together, before the object answers.
+    const audit = collectAudit(withLockJurisdiction(this.env), {
+      waitUntil: (promise) => this.ctx.waitUntil(promise),
+    });
+    const env = audit.env;
     try {
       await sleep(githubWebhookCoalescingWaitMs);
       const batch = pendingWebhookBatch(this.#pending(), job.delivery);
@@ -102,6 +107,8 @@ export class WebhookProcessor extends DurableObject<Env> {
     } catch (error) {
       this.#releaseLease(leaseId);
       throw error;
+    } finally {
+      await audit.finish();
     }
   }
 
