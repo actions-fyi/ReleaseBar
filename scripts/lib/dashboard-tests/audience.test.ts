@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import test from "node:test";
 import type { AudienceRange, RepoAudiencePayload } from "../../../src/types.js";
-import worker from "../../../worker/index.js";
-import { crawlerRequest, kvStore, signedJson } from "../dashboard-test-harness.js";
+import { crawlerRequest, kvStore, signedJson, worker } from "../dashboard-test-harness.js";
 
 test("worker builds cached repository audience from public stargazers", async () => {
   const originalFetch = globalThis.fetch;

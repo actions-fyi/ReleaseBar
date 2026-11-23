@@ -11,7 +11,6 @@ import type {
   RefreshTarget,
 } from "../src/types.js";
 import { type StoredInstallationRecord, storedInstallationSchema } from "./auth-observability.js";
-import type { Env, ExecutionContext } from "./runtime.js";
 import { type GitHubInstallationRepository, safeJsonParse } from "./schemas.js";
 import { uniqueSorted } from "./app-shell.js";
 import { appTokenConfigured } from "./auth-oauth.js";

@@ -27,7 +27,6 @@ import {
   responseRateLimitSignal,
 } from "./github-audit.js";
 import { workerFetch } from "./http.js";
-import type { Env } from "./runtime.js";
 import {
   gitHubRepositorySchema,
   type GitHubStargazer,

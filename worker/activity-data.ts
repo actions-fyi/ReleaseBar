@@ -12,7 +12,6 @@ import type {
 } from "../src/types.js";
 import { sha256Base64Url } from "./crypto.js";
 import { auditGitHubFetch, quotaFromGitHubResponse } from "./github-audit.js";
-import type { Env } from "./runtime.js";
 import { type GitHubPublicEvent, gitHubPublicEventListSchema, tryJsonParse } from "./schemas.js";
 import {
   activityEventPageLimit,

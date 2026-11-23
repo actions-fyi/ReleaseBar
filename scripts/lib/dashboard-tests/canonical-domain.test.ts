@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { assetResponse } from "../../../worker/app-shell.js";
-import { canonicalDomain, type Env } from "../../../worker/runtime.js";
+import { canonicalDomain } from "../../../worker/runtime.js";
 import { socialSvg } from "../../../worker/social-card.js";
 
 const shell =

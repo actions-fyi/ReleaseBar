@@ -8,7 +8,6 @@ import type {
 import { listStoredInstallations, recordAuthFunnelEvent } from "./auth-observability.js";
 import { randomNonce, signedJson } from "./crypto.js";
 import { jsonResponse, redirectResponse, workerFetch } from "./http.js";
-import type { Env } from "./runtime.js";
 import {
   gitHubInstallationListSchema,
   gitHubInstallationRepositoryListSchema,

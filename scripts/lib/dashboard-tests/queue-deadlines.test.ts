@@ -3,7 +3,6 @@ import { generateKeyPairSync } from "node:crypto";
 import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../../../src/types.js";
-import worker from "../../../worker/index.js";
 import {
   crawlerRequest,
   kvStore,
@@ -11,6 +10,7 @@ import {
   signedJson,
   testDashboard,
   testProject,
+  worker,
 } from "../dashboard-test-harness.js";
 
 test("worker terminalizes exhausted refresh retries before dead-lettering", async () => {

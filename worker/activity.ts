@@ -14,7 +14,6 @@ import type {
 import { sha256Base64Url } from "./crypto.js";
 import { auditGitHubFetch } from "./github-audit.js";
 import { jsonResponse } from "./http.js";
-import type { Env, ExecutionContext } from "./runtime.js";
 import { gitHubRepositorySchema } from "./schemas.js";
 import {
   type ActivitySummaryPayload,

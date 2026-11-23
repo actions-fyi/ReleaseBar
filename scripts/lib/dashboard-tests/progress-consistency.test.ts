@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../../../src/types.js";
-import worker from "../../../worker/index.js";
-import { kvStore, testProject } from "../dashboard-test-harness.js";
+import { kvStore, testProject, worker } from "../dashboard-test-harness.js";
 
 test("worker does not restore stale KV progress after an authoritative Durable Object miss", async () => {
   const key = dashboardCacheKey({

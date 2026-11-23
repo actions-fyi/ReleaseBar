@@ -14,7 +14,6 @@ import {
   responseRateLimitSignal,
 } from "./github-audit.js";
 import { workerFetch } from "./http.js";
-import type { Env } from "./runtime.js";
 import { gitHubSearchCountSchema, parseGitHubResponse, tryJsonParse } from "./schemas.js";
 import type { GenericSchema, InferOutput } from "valibot";
 import { lastPageFromLink } from "./audience-data.js";

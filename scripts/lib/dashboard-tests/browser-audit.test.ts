@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { isGitHubRateLimit } from "../../../src/rate-limit.js";
-import worker from "../../../worker/index.js";
 import {
   githubAccessRouteRecords,
   kvStore,
   refreshAuditEvents,
+  worker,
 } from "../dashboard-test-harness.js";
 
 test("browser rate-limit detection covers HTTP and cached GitHub quota failures", () => {

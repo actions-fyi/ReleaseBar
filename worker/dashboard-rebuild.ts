@@ -13,7 +13,7 @@ import {
   sharedQuotaDeferUntil,
 } from "./github-audit.js";
 import { corsHeaders, jsonResponse } from "./http.js";
-import { canonicalDomain, type Env, type ExecutionContext } from "./runtime.js";
+import { canonicalDomain } from "./runtime.js";
 import { statusPayload } from "./admin.js";
 import { ownerListFromUrl, repoListFromUrl, uniqueSorted } from "./app-shell.js";
 import { appTokenConfigured, dashboardReleaseDataAllowed } from "./auth-oauth.js";

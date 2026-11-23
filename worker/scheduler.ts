@@ -6,7 +6,7 @@ import {
   sharedQuotaCooldown,
   sharedQuotaDeferUntil,
 } from "./github-audit.js";
-import { canonicalDomain, type Env } from "./runtime.js";
+import { canonicalDomain } from "./runtime.js";
 import { tryJsonParse } from "./schemas.js";
 import { resolveOwners } from "./app-shell.js";
 import { sourceInstallationToken } from "./auth-tokens.js";

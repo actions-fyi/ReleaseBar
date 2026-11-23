@@ -1,7 +1,7 @@
 import { slugOwner } from "../scripts/lib/dashboard.js";
 import type { DashboardPayload } from "../src/types.js";
 import { jsonResponse } from "./http.js";
-import type { Env, RequestCf } from "./runtime.js";
+import type { RequestCf } from "./runtime.js";
 import { dashboardTotals } from "./build-progress.js";
 import {
   crawlerUserAgentPattern,

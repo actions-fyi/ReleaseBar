@@ -1,6 +1,5 @@
 import type { ApiQuota, GitHubAccessRouteSummary, GitHubAccessSummary } from "../src/types.js";
 import { jsonResponse, workerFetch } from "./http.js";
-import type { Env, ExecutionContext } from "./runtime.js";
 import { tryJsonParse } from "./schemas.js";
 
 const githubAccessPrefix = "github:access:v1:";

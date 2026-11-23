@@ -5,13 +5,13 @@ import type {
   RepoDetailActivityPayload,
   RepoDetailPayload,
 } from "../../../src/types.js";
-import worker from "../../../worker/index.js";
 import {
   claudeJson,
   claudeText,
   kvStore,
-  testProject,
   signedIn,
+  testProject,
+  worker,
 } from "../dashboard-test-harness.js";
 
 test("worker includes lower-ranked repositories in the overall activity summary batch", async () => {

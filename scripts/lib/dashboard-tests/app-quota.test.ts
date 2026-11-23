@@ -3,8 +3,13 @@ import { generateKeyPairSync } from "node:crypto";
 import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, RefreshJob } from "../../../src/types.js";
-import worker from "../../../worker/index.js";
-import { kvStore, signedJson, testDashboard, testProject } from "../dashboard-test-harness.js";
+import {
+  kvStore,
+  signedJson,
+  testDashboard,
+  testProject,
+  worker,
+} from "../dashboard-test-harness.js";
 
 test("worker only exposes public selected installation repositories", async () => {
   const sessionId = "session-public-repos";

@@ -12,7 +12,7 @@ import {
   sharedQuotaCooldown,
 } from "./github-audit.js";
 import { jsonResponse, workerFetch } from "./http.js";
-import { canonicalDomain, type Env, type ExecutionContext } from "./runtime.js";
+import { canonicalDomain } from "./runtime.js";
 import {
   gitHubReleaseSchema,
   type GitHubSearchRepository,

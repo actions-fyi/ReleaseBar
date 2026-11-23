@@ -11,7 +11,6 @@ import {
   verifySignedJson,
 } from "./crypto.js";
 import { jsonResponse, redirectResponse, workerFetch } from "./http.js";
-import type { Env, ExecutionContext } from "./runtime.js";
 import { gitHubInstallationTokenSchema, parseGitHubResponse } from "./schemas.js";
 import {
   appSlug,

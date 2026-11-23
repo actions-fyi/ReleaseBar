@@ -1,7 +1,7 @@
 import { slugOwner, validOwnerSlug, validRepoSlug } from "../scripts/lib/dashboard.js";
 import type { ApiQuota, Project } from "../src/types.js";
 import { workerFetch } from "./http.js";
-import { canonicalDomain, type Env, type ExecutionContext } from "./runtime.js";
+import { canonicalDomain } from "./runtime.js";
 import {
   gitHubCompareSchema,
   gitHubReleaseSchema,

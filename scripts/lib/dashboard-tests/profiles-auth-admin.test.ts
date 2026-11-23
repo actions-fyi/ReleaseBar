@@ -9,8 +9,7 @@ import type {
   RefreshTarget,
   SchedulerAdminPayload,
 } from "../../../src/types.js";
-import worker from "../../../worker/index.js";
-import { kvStore, signedJson, testDashboard } from "../dashboard-test-harness.js";
+import { kvStore, signedJson, testDashboard, worker } from "../dashboard-test-harness.js";
 
 test("worker discovers and stores source-owned app installs for anonymous dashboards", async () => {
   const { privateKey } = generateKeyPairSync("rsa", {

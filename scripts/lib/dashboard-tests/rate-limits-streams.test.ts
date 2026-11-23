@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildDashboard, dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload } from "../../../src/types.js";
-import worker from "../../../worker/index.js";
 import {
   kvStore,
   refreshAuditEvents,
   testDashboard,
   testProject,
+  worker,
 } from "../dashboard-test-harness.js";
 
 test("worker rejects POST to reserved read-only owner-like APIs", async () => {

@@ -3,7 +3,6 @@ import type { ActivityRange, RefreshTarget } from "../src/types.js";
 import { mapConcurrent } from "./concurrency.js";
 import { randomNonce } from "./crypto.js";
 import type {
-  Env,
   GitHubWebhookFanoutJob,
   GitHubWebhookJob,
   StoredWebhookPending,

@@ -2,8 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../../../src/types.js";
-import worker, { DashboardBuildLock } from "../../../worker/index.js";
-import { kvStore, testDashboard, testProject } from "../dashboard-test-harness.js";
+import {
+  DashboardBuildLock,
+  kvStore,
+  testDashboard,
+  testProject,
+  worker,
+} from "../dashboard-test-harness.js";
 
 test("worker Queue messages stay bounded when profile filters are large", async () => {
   const key = dashboardCacheKey({

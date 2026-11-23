@@ -12,7 +12,6 @@ import {
   graphqlBackoffActive,
   sharedQuotaCooldown,
 } from "./github-audit.js";
-import type { Env, ExecutionContext } from "./runtime.js";
 import { tryJsonParse } from "./schemas.js";
 import { sourceInstallationRegistryCovers, sourceInstallationToken } from "./auth-tokens.js";
 import { markHotCacheStale } from "./build-progress.js";

@@ -7,7 +7,6 @@ import type {
   RepoDetailPayload,
 } from "../../../src/types.js";
 import { activitySummaryPromptVersion } from "../../../worker/config.js";
-import worker from "../../../worker/index.js";
 import { summaryRateLimitSettings, summaryRateLimits } from "../../../worker/summary-limits.js";
 import {
   summaryGlobalLimitMessage,
@@ -21,6 +20,7 @@ import {
   kvStore,
   signedIn,
   testProject,
+  worker,
 } from "../dashboard-test-harness.js";
 import { deployConfig } from "../deploy-config.js";
 

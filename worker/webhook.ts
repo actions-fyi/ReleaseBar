@@ -7,12 +7,7 @@ import {
   sharedQuotaDeferUntil,
 } from "./github-audit.js";
 import { jsonResponse } from "./http.js";
-import type {
-  Env,
-  ExecutionContext,
-  GitHubWebhookFanoutJob,
-  WebhookTargetAction,
-} from "./runtime.js";
+import type { GitHubWebhookFanoutJob, WebhookTargetAction } from "./runtime.js";
 import { tryJsonParse } from "./schemas.js";
 import { markHotCacheStale } from "./build-progress.js";
 import {

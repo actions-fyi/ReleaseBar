@@ -7,7 +7,6 @@ import type {
   RepoDetailReleaseSummary,
 } from "../src/types.js";
 import { workerFetch } from "./http.js";
-import type { Env } from "./runtime.js";
 import {
   gitHubCheckRunsSchema,
   gitHubCommitSchema,

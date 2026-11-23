@@ -15,7 +15,7 @@ import type {
 import { hmac, verifySignedJson } from "./crypto.js";
 import { auditGitHubFetch } from "./github-audit.js";
 import { jsonResponse } from "./http.js";
-import { canonicalDomain, type Env, type ExecutionContext } from "./runtime.js";
+import { canonicalDomain } from "./runtime.js";
 import { safeJsonParse, storedAuthSessionSchema, tryJsonParse } from "./schemas.js";
 import { authDependentAppShellHeaders } from "./auth-oauth.js";
 import { cachedHotInitialData } from "./build-progress.js";

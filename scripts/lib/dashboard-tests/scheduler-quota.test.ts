@@ -2,8 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { RefreshJob, RefreshTarget } from "../../../src/types.js";
-import worker from "../../../worker/index.js";
-import { kvStore, signedJson, testDashboard, testProject } from "../dashboard-test-harness.js";
+import {
+  kvStore,
+  signedJson,
+  testDashboard,
+  testProject,
+  worker,
+} from "../dashboard-test-harness.js";
 
 test("worker scheduler preserves queued backlog jobs until reservation expiry", async () => {
   const sessionId = "session-admin-stale-queued";

@@ -12,7 +12,6 @@ import type {
   TrustProfilePayload,
 } from "../src/types.js";
 import { jsonResponse } from "./http.js";
-import type { Env, ExecutionContext } from "./runtime.js";
 import { gitHubRepositorySchema, type GitHubUserProfile } from "./schemas.js";
 import {
   audienceOrgSignals,

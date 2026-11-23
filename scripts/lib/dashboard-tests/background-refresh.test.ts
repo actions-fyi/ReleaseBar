@@ -5,14 +5,14 @@ import type {
   RepoDetailActivityPayload,
   RepoDetailPayload,
 } from "../../../src/types.js";
-import worker from "../../../worker/index.js";
 import {
   claudeJson,
   claudeText,
   crawlerRequest,
   kvStore,
-  testProject,
   signedIn,
+  testProject,
+  worker,
 } from "../dashboard-test-harness.js";
 
 test("worker throttles cached warming repository detail refreshes", async () => {

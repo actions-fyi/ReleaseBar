@@ -3,12 +3,12 @@ import { generateKeyPairSync } from "node:crypto";
 import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../../../src/types.js";
-import worker from "../../../worker/index.js";
 import {
   kvStore,
   refreshAuditEvents,
   testDashboard,
   testProject,
+  worker,
 } from "../dashboard-test-harness.js";
 
 test("worker refresh jobs can use shared quota when no source app token exists", async () => {

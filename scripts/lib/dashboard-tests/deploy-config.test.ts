@@ -4,11 +4,7 @@ import test from "node:test";
 import { claudeText } from "../dashboard-test-harness.js";
 import { type RawWranglerConfig, deployConfig } from "../deploy-config.js";
 import { claudeSummaryText } from "../../../worker/release-summary.js";
-import {
-  type DurableObjectNamespace,
-  type Env,
-  withLockJurisdiction,
-} from "../../../worker/runtime.js";
+import { withLockJurisdiction } from "../../../worker/runtime.js";
 
 const kvId = "0123456789abcdef0123456789abcdef";
 

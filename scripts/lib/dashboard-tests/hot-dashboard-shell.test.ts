@@ -3,8 +3,7 @@ import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
 import { attentionReasons, needsAttention, releaseDebtText } from "../../../src/dashboard-view.js";
 import type { DashboardPayload } from "../../../src/types.js";
-import worker from "../../../worker/index.js";
-import { kvStore, testDashboard, testProject } from "../dashboard-test-harness.js";
+import { kvStore, testDashboard, testProject, worker } from "../dashboard-test-harness.js";
 
 test("need attention explains release debt, stale releases, CI, and open work", () => {
   const stale = testProject({

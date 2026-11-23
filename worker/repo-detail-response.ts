@@ -2,7 +2,6 @@ import { slugOwner, validRepoSlug } from "../scripts/lib/dashboard.js";
 import type { RepoDetailPayload } from "../src/types.js";
 import { sharedQuotaCooldown } from "./github-audit.js";
 import { jsonResponse } from "./http.js";
-import type { Env, ExecutionContext } from "./runtime.js";
 import type { InitialPageData } from "./app-shell.js";
 import { withRepoDetailContributorTrustProfiles } from "./audience-data.js";
 import { sourceInstallationRegistryCovers } from "./auth-tokens.js";

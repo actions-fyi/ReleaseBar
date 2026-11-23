@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { TrustProfilePayload } from "../../../src/types.js";
-import worker from "../../../worker/index.js";
-import { kvStore } from "../dashboard-test-harness.js";
+import { kvStore, worker } from "../dashboard-test-harness.js";
 
 test("worker builds bounded trust profiles for people pages", async () => {
   const originalFetch = globalThis.fetch;

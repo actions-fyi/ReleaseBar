@@ -8,7 +8,6 @@
 import { currentSession } from "./app-shell.js";
 import { jsonResponse } from "./http.js";
 import { isCrawlerRequest } from "./owner-metadata-write.js";
-import type { DurableObjectState, Env, ExecutionContext } from "./runtime.js";
 import { summaryRateLimits } from "./summary-limits.js";
 
 export const summarySignInMessage = "Sign in to generate this AI summary.";

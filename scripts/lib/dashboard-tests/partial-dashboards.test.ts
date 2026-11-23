@@ -3,8 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, Project, RefreshJob } from "../../../src/types.js";
-import worker from "../../../worker/index.js";
-import { kvStore, testDashboard, testProject } from "../dashboard-test-harness.js";
+import { kvStore, testDashboard, testProject, worker } from "../dashboard-test-harness.js";
 
 test("worker filters shared owner snapshots for cold combined dashboards", async () => {
   const originalFetch = globalThis.fetch;

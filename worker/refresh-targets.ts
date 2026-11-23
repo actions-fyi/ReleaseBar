@@ -9,7 +9,7 @@ import type {
 import { mapConcurrent } from "./concurrency.js";
 import { randomNonce, sha256Base64Url } from "./crypto.js";
 import { jsonResponse } from "./http.js";
-import type { Env, ExecutionContext, GitHubWebhookFanoutJob, GitHubWebhookJob } from "./runtime.js";
+import type { GitHubWebhookFanoutJob, GitHubWebhookJob } from "./runtime.js";
 import { tryJsonParse } from "./schemas.js";
 import {
   adminTargetListLimit,

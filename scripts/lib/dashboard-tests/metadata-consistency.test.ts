@@ -2,8 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { dashboardCacheKey } from "../dashboard.js";
 import type { DashboardPayload, Project, RefreshTarget } from "../../../src/types.js";
-import worker, { DashboardBuildLock } from "../../../worker/index.js";
-import { durableLocks, kvStore, testDashboard, testProject } from "../dashboard-test-harness.js";
+import {
+  DashboardBuildLock,
+  durableLocks,
+  kvStore,
+  testDashboard,
+  testProject,
+  worker,
+} from "../dashboard-test-harness.js";
 
 test("worker serves fresh dashboard cache before GitHub App token discovery", async () => {
   const now = new Date().toISOString();

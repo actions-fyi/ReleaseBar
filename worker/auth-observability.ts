@@ -8,7 +8,6 @@ import type {
 import * as v from "valibot";
 import { mapConcurrent } from "./concurrency.js";
 import { randomNonce } from "./crypto.js";
-import type { Env } from "./runtime.js";
 import { safeJsonParse, tryJsonParse } from "./schemas.js";
 
 const authFunnelPrefix = "auth:funnel:v1:";

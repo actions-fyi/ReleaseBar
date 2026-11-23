@@ -2,7 +2,7 @@ import { slugOwner, validOwnerSlug } from "../scripts/lib/dashboard.js";
 import type { DashboardProfile, Owner, RefreshTarget } from "../src/types.js";
 import { randomNonce } from "./crypto.js";
 import { jsonResponse } from "./http.js";
-import type { DurableObjectState, Env, GitHubWebhookJob, StoredWebhookPending } from "./runtime.js";
+import type { GitHubWebhookJob, StoredWebhookPending } from "./runtime.js";
 import { tryJsonParse } from "./schemas.js";
 import { dashboardSubtitle } from "./app-shell.js";
 import { isStoredBuildProgress, storedBuildProgressExpired } from "./build-progress.js";

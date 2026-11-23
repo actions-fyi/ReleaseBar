@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import worker from "../../../worker/index.js";
-import { kvStore, signedJson } from "../dashboard-test-harness.js";
+import { kvStore, signedJson, worker } from "../dashboard-test-harness.js";
 
 const context = { waitUntil: () => undefined };
 
