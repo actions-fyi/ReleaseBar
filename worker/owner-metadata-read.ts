@@ -2,8 +2,8 @@ import { type OwnerRepoCount, slugOwner, validOwnerSlug } from "../shared/dashbo
 import type { Project } from "../src/types.ts";
 import { type OwnerMetadataSnapshot } from "./config.ts";
 import { normalizeOwnerMetadataSnapshot } from "./dashboard-cache.ts";
-import { safeIso } from "./owner-metadata-write.ts";
 import { readStoredOwnerMetadata, readStoredOwnerMetadataOf } from "./store/owner-metadata.ts";
+import { safeIso } from "./time.ts";
 
 // The owner's snapshot, validated. Null when there is none. Rejects when the database can't be
 // reached, so that a caller hiding private repositories does not take "unknown" for "public".
@@ -34,10 +34,6 @@ export async function readOwnerMetadataOf(
   );
 }
 
-// The same read under the name it had while the snapshot of record was in a Durable Object and
-// `readOwnerMetadata` read a copy. Step 8 of the stack migration merges the two names.
-export const readDurableOwnerMetadata = readOwnerMetadata;
-
 export type PublicCacheBarrier = "clear" | "blocked" | "unknown";
 
 export async function repositoryPublicCacheBarrier(
@@ -48,7 +44,7 @@ export async function repositoryPublicCacheBarrier(
   const owner = normalized.split("/")[0];
   if (!owner) return "blocked";
   try {
-    const snapshot = await readDurableOwnerMetadata(env, owner);
+    const snapshot = await readOwnerMetadata(env, owner);
     return snapshot?.removedRepos[normalized] || snapshot?.privateRepos[normalized]
       ? "blocked"
       : "clear";

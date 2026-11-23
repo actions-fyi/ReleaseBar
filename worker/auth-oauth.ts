@@ -5,11 +5,7 @@ import type {
   AuthPayload,
   AuthUser,
 } from "../src/types.ts";
-import {
-  listStoredInstallations,
-  recordAuthFunnelEvent,
-  recordAuthFunnelEvents,
-} from "./auth-observability.ts";
+import { recordAuthFunnelEvent, recordAuthFunnelEvents } from "./auth-observability.ts";
 import { randomNonce, signedJson } from "./crypto.ts";
 import { jsonResponse, redirectResponse, workerFetch } from "./http.ts";
 import {
@@ -58,6 +54,7 @@ import {
   deleteStoredInstallations,
   installationMissRecorded,
   recordInstallationMiss,
+  listStoredInstallations,
 } from "./store/installations.ts";
 import { readStoredSession as readSessionRecord, writeStoredSession } from "./store/sessions.ts";
 

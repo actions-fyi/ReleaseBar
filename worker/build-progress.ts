@@ -47,7 +47,6 @@ import {
   mergeOwnerMetadata,
   readCachedWithOwnerMetadata,
   readCachedWithOwnerMetadataOf,
-  safeIso,
 } from "./owner-metadata-write.ts";
 import {
   deleteCoordinatedProgress,
@@ -62,6 +61,7 @@ import {
   writeCacheEntry,
   writeCacheText,
 } from "./store/cache.ts";
+import { safeIso } from "./time.ts";
 
 export function progressKey(key: string): string {
   return `progress:v1:${key}`;

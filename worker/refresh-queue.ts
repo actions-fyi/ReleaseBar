@@ -41,14 +41,12 @@ import { readOwnerMetadata } from "./owner-metadata-read.ts";
 import {
   mutateOwnerMetadataSnapshot,
   mutateOwnerMetadataSnapshots,
-  safeIso,
 } from "./owner-metadata-write.ts";
 import { readOwnerCountTimes } from "./store/owner-metadata.ts";
 import {
   auditScheduler,
   auditSyncEvent,
   deleteExpiredRefreshData,
-  indexRefreshJobs,
   jitterMs,
   listRefreshJobs,
   listRefreshTargets,
@@ -58,7 +56,6 @@ import {
   refreshJob,
   refreshJobActive,
   takeLocalRefreshDirty,
-  writeRefreshJobs,
 } from "./refresh-targets.ts";
 import { invalidateDashboardTargets } from "./webhook-targets.ts";
 import type { BackgroundContext } from "./runtime.ts";
@@ -70,6 +67,8 @@ import {
   writeOwnerCountCursor,
   writeSchedulerState,
 } from "./store/scheduler-state.ts";
+import { safeIso } from "./time.ts";
+import { indexRefreshJobs, writeRefreshJobs } from "./store/refresh-jobs.ts";
 
 export function refreshQueueMessage(job: RefreshJob): RefreshJob {
   const { target: _target, ...message } = job;

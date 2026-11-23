@@ -11,7 +11,6 @@ import type {
   RefreshTarget,
 } from "../src/types.ts";
 import {
-  installationMissKey,
   readStoredInstallation,
   readStoredInstallationsOf,
   type StoredInstallationRecord,
@@ -24,11 +23,11 @@ import { appTokenConfigured } from "./auth-oauth.ts";
 import { installationRegistryCovers, installationRegistryFor } from "./auth-tokens.ts";
 import { dashboardSchemaVersion, fullTtlMs, maxCustomSources } from "./config.ts";
 import { cacheAgeMs, canDisplayCached, errorMessage, readCached } from "./dashboard-cache.ts";
-import { safeIso } from "./owner-metadata-write.ts";
 import { mapConcurrent } from "./concurrency.ts";
 import { enqueueRefreshJobs, refreshTargetBackoffActive } from "./refresh-queue.ts";
 import { auditSyncEvent, rememberRefreshTargets } from "./refresh-targets.ts";
 import type { BackgroundContext } from "./runtime.ts";
+import { safeIso } from "./time.ts";
 
 export function isPublicInstallationRepository(repo: GitHubInstallationRepository): boolean {
   if (repo.private === true) {
@@ -36,8 +35,6 @@ export function isPublicInstallationRepository(repo: GitHubInstallationRepositor
   }
   return repo.private === false || repo.visibility === "public";
 }
-
-export { installationMissKey };
 
 export function normalizedInstallation(installation: AuthInstallation): StoredInstallationRecord {
   return {

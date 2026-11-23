@@ -4,7 +4,13 @@ import {
   slugOwner,
   validOwnerSlug,
 } from "../shared/dashboard.ts";
-import type { DashboardPayload, Project, RefreshTarget } from "../src/types.ts";
+import type {
+  DashboardPayload,
+  DashboardProfile,
+  Owner,
+  Project,
+  RefreshTarget,
+} from "../src/types.ts";
 import { randomNonce } from "./crypto.ts";
 import {
   auditGitHubFetch,
@@ -15,7 +21,7 @@ import {
 import { corsHeaders, jsonResponse } from "./http.ts";
 import { type BackgroundContext, canonicalDomain } from "./runtime.ts";
 import { statusPayload } from "./admin.ts";
-import { ownerListFromUrl, repoListFromUrl, uniqueSorted } from "./app-shell.ts";
+import { dashboardSubtitle, ownerListFromUrl, repoListFromUrl, uniqueSorted } from "./app-shell.ts";
 import { appTokenConfigured, dashboardReleaseDataAllowed } from "./auth-oauth.ts";
 import {
   bestInstallationToken,
@@ -41,6 +47,7 @@ import {
   buildLockTtlMs,
   type DashboardOwnerCredentials,
   type DashboardRequest,
+  type RequestToken,
   dashboardSchemaVersion,
   fullTtlMs,
   initialMetadataRepoLimit,
@@ -59,12 +66,12 @@ import {
   canDisplayCached,
   dashboardErrorMessage,
   errorMessage,
+  hydrationOptionsFromUrl,
   isAbortError,
   optionsFromUrl,
   quotaForDashboard,
   readCached,
   readCachedRaw,
-  readProfile,
   withCacheState,
   writeCached,
 } from "./dashboard-cache.ts";
@@ -82,6 +89,7 @@ import {
   releaseCoordinatedLock,
 } from "./store/build-coordinator.ts";
 import { projectCache } from "./store/cache.ts";
+import { readProfile } from "./store/profiles.ts";
 
 export async function dashboardEventParts(
   request: Request,
@@ -233,6 +241,34 @@ export async function ownerEventsResponse(request: Request, env: Env): Promise<R
       ...corsHeaders,
     },
   });
+}
+
+export function dashboardRequest(
+  owners: Owner[],
+  includeRepos: string[],
+  profile: DashboardProfile | null,
+  key: string,
+  url: URL,
+  includeReleaseData: boolean,
+  token?: RequestToken | null,
+): DashboardRequest {
+  return {
+    owners,
+    includeRepos,
+    profile,
+    subtitle: dashboardSubtitle(owners, includeRepos),
+    key,
+    url,
+    includeReleaseData,
+    ...hydrationOptionsFromUrl(url),
+    ...(token
+      ? {
+          token: token.token,
+          quotaSource: token.quotaSource,
+          quotaAccount: token.quotaAccount,
+        }
+      : {}),
+  };
 }
 
 export async function acquireBuildLock(env: Env, key: string): Promise<BuildLock | null> {

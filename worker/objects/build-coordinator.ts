@@ -8,9 +8,9 @@ import {
   type StoredBuildProgress,
   type StoredRefreshDirty,
 } from "../config.ts";
-import { safeIso } from "../owner-metadata-write.ts";
 import { applyRefreshTargetMutation, isRefreshTarget } from "../refresh-targets.ts";
 import { firstRow, parseStored } from "./sql.ts";
+import { safeIso } from "../time.ts";
 
 type LockRow = { token: string; expires_at: number };
 type JobRow = { job_id: string; expires_at: number };

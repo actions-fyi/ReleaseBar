@@ -28,14 +28,17 @@ import {
   webhookTargetBatchSize,
   webhookTargetConcurrency,
 } from "./config.ts";
-import { safeIso } from "./owner-metadata-write.ts";
 import { isRefreshTarget } from "./refresh-targets.ts";
 import { repoDetailCacheKey } from "./release-summary.ts";
 import { ownerActivityCacheKey, repoDetailAuxCachePrefix } from "./repo-github.ts";
-import { webhookHex } from "./request-lock.ts";
 import { socialRepoCacheKey } from "./social-card.ts";
 import { deleteCacheEntries, deleteCacheEntry } from "./store/cache.ts";
 import { indexedRefreshTargetPage, indexedRefreshTargets } from "./store/refresh-targets.ts";
+import { safeIso } from "./time.ts";
+
+function webhookHex(bytes: ArrayBuffer): string {
+  return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 
 export async function validWebhookSignature(
   secret: string,

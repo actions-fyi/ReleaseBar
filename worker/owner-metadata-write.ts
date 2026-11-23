@@ -631,8 +631,6 @@ export async function rememberOwnerMetadata(
   }
 }
 
-export { safeIso };
-
 export function isCrawlerRequest(request: Request): boolean {
   // verifiedBotCategory is not in the generated request properties yet.
   const cf: (Partial<IncomingRequestCfProperties> & { verifiedBotCategory?: string }) | undefined =
