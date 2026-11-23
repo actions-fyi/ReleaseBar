@@ -17,7 +17,7 @@ cd ReleaseBar
 npm ci
 ```
 
-ReleaseBar requires Node.js 22.12 or newer. Node.js 24 is the version used by CI.
+ReleaseBar requires Node.js 22.18 or newer; `.nvmrc` names Node.js 26.
 
 ## Quick start
 
