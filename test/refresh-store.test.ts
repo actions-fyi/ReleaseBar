@@ -241,3 +241,40 @@ test("a scheduler tick sends D1 a bounded number of statements", async () => {
   expect(await measured()).toStrictEqual({ statements: 5 + 1 + 5, batches: 2 });
   expect(sent.length).toBe(20);
 });
+
+test("a job whose snapshot is gone is retried, not run without its target", async () => {
+  const queued = job("job-no-snapshot", Date.now(), {
+    targetKey: "dashboard:v6:no-snapshot",
+    status: "queued",
+    attempts: 0,
+    targetSnapshotKey: "refresh-job:job-no-snapshot",
+  });
+  let acknowledged = false;
+  let retried = false;
+
+  await worker.queue(
+    {
+      messages: [
+        {
+          body: queued,
+          attempts: 1,
+          ack: () => {
+            acknowledged = true;
+          },
+          retry: () => {
+            retried = true;
+          },
+        },
+      ],
+    },
+    { DASHBOARD_CACHE: kvStore() },
+    { waitUntil: () => undefined },
+  );
+
+  expect(acknowledged).toBe(false);
+  expect(retried).toBe(true);
+  const stored = await storedRefreshJob(queued.id);
+  expect(stored?.status).toBe("queued");
+  expect(stored?.error).toBe("target snapshot unavailable");
+  expect(stored?.attempts).toBe(1);
+});
