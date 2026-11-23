@@ -77,6 +77,14 @@ function summaryLimitVars(settings: DeploySettings): Record<string, string> {
   return vars;
 }
 
+// Whether the environment asks for a deployment's own config at all.
+export function hasDeploySettings(settings: DeploySettings): boolean {
+  return (
+    deploySettingNames.some((name) => setting(settings, name)) ||
+    settings.RELEASEBAR_ALLOW_GENERIC?.trim() === "true"
+  );
+}
+
 export function deployConfig(base: RawWranglerConfig, settings: DeploySettings): RawWranglerConfig {
   const domain = setting(settings, "RELEASEBAR_DOMAIN").toLowerCase();
   const kvId = setting(settings, "RELEASEBAR_KV_NAMESPACE_ID").toLowerCase();

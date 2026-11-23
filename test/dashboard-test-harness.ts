@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import font400 from "@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2?inline";
+import font700 from "@fontsource/jetbrains-mono/files/jetbrains-mono-latin-700-normal.woff2?inline";
 
 import type { DashboardPayload, Project, SchedulerAuditEvent } from "../src/types.ts";
 import handler, { DashboardBuildLock as WorkerBuildLock } from "../worker/index.ts";
@@ -102,19 +103,19 @@ class TestDate extends systemDate {
 
 globalThis.Date = TestDate as DateConstructor;
 
+// The font files the Worker reads from ASSETS to render a social card. Vite inlines each as a
+// data URL: the Workers runtime has no file system to read them from.
+const socialFonts: Record<string, string> = {
+  "/jetbrains-mono-latin-400-normal.woff2": font400,
+  "/jetbrains-mono-latin-700-normal.woff2": font700,
+};
+
 export async function socialRenderAsset(request: Request, paths?: string[]): Promise<Response> {
   const pathname = new URL(request.url).pathname;
   paths?.push(pathname);
-  const assets: Record<string, string> = {
-    "/resvg.wasm": "node_modules/@resvg/resvg-wasm/index_bg.wasm",
-    "/jetbrains-mono-latin-400-normal.woff2":
-      "node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2",
-    "/jetbrains-mono-latin-700-normal.woff2":
-      "node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-700-normal.woff2",
-  };
-  const file = assets[pathname];
-  return file
-    ? new Response(await readFile(file))
+  const font = socialFonts[pathname];
+  return font
+    ? new Response(Buffer.from(font.slice(font.indexOf(",") + 1), "base64"))
     : new Response("not found", {
         status: 404,
       });

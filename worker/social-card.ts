@@ -75,7 +75,6 @@ export type SocialCard = {
 export const socialNumberFormat = new Intl.NumberFormat("en", { notation: "compact" });
 export const socialAvatarMaxBytes = 256 * 1024;
 export const socialAvatarTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-export const socialRendererWasmAsset = "/resvg.wasm";
 export const socialRendererFontAssets = [
   "/jetbrains-mono-latin-400-normal.woff2",
   "/jetbrains-mono-latin-700-normal.woff2",
@@ -368,10 +367,7 @@ export async function socialRendererBytes(request: Request, env: Env): Promise<U
       if (!response.ok) throw new Error(`missing social renderer asset ${pathname}`);
       return new Uint8Array(await response.arrayBuffer());
     };
-    const isNode = typeof process !== "undefined" && Boolean(process.versions?.node);
-    const wasm = isNode
-      ? await fetchAsset(socialRendererWasmAsset)
-      : (await import("@resvg/resvg-wasm/index_bg.wasm")).default;
+    const wasm = (await import("@resvg/resvg-wasm/index_bg.wasm")).default;
     const fontBuffers = await Promise.all(socialRendererFontAssets.map(fetchAsset));
     await initWasm(wasm);
     return fontBuffers;

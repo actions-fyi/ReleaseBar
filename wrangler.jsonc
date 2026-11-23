@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "releasebar",
-  "main": "node_modules/.cache/releasebar-build/worker/index.js",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-11-23",
   "workers_dev": true,
   // Deploys keep the plain-text variables set on the Worker in the dashboard, such as GITHUB_APP_SLUG.
@@ -10,8 +10,8 @@
   "upload_source_maps": true,
 
   // This file holds no deployment of its own: no custom domain, admin logins or resource IDs.
-  // `npm run deploy` adds them from RELEASEBAR_* environment variables (see docs/self-hosting.md)
-  // and deploys from the generated wrangler.deploy.json.
+  // `npm run deploy` builds with Vite, which adds them from RELEASEBAR_* environment variables
+  // (see docs/self-hosting.md) to the config it writes for the deploy: dist/releasebar/wrangler.json.
 
   "vars": {
     "ANTHROPIC_SUMMARY_MODEL": "claude-haiku-5-5",
@@ -21,12 +21,15 @@
     "crons": ["*/15 * * * *"],
   },
 
+  // Only for Wrangler commands that read this file instead of the built config, such as the dry
+  // run of .github/workflows/cloudflare.yml: they bundle `main` themselves and need the app built.
+  // The Cloudflare Vite plugin ignores it, and says so in a warning.
   "build": {
     "command": "npm run build",
   },
 
   "assets": {
-    "directory": "./dist",
+    "directory": "./dist/client",
     "binding": "ASSETS",
     "html_handling": "none",
     "run_worker_first": true,

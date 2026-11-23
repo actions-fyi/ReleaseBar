@@ -11,5 +11,11 @@
     "types": ["node"],
     "verbatimModuleSyntax": true
   },
-  "include": ["scripts/**/*.ts", "worker/**/*.ts", "worker-configuration.d.ts"]
+  "include": [
+    "scripts/**/*.ts",
+    "shared/**/*.ts",
+    "test/**/*.ts",
+    "worker/**/*.ts",
+    "worker-configuration.d.ts"
+  ]
 }

@@ -1,7 +1,11 @@
 import { expect, test } from "vitest";
 
 import { type FakeLocks, claudeText, testEnv } from "./dashboard-test-harness.ts";
-import { type RawWranglerConfig, deployConfig } from "../shared/deploy-config.ts";
+import {
+  type RawWranglerConfig,
+  deployConfig,
+  hasDeploySettings,
+} from "../shared/deploy-config.ts";
 import { claudeSummaryText } from "../worker/release-summary.ts";
 import { withLockJurisdiction } from "../worker/runtime.ts";
 
@@ -16,6 +20,13 @@ const base: RawWranglerConfig = {
 
 test("deploy config refuses to deploy without any setting unless allowed", () => {
   expect(() => deployConfig(base, {})).toThrow("RELEASEBAR_ALLOW_GENERIC");
+});
+
+test("the build applies deployment settings only when the environment has some", () => {
+  expect(hasDeploySettings({})).toBe(false);
+  expect(hasDeploySettings({ RELEASEBAR_DOMAIN: " " })).toBe(false);
+  expect(hasDeploySettings({ RELEASEBAR_ADMIN_LOGINS: "octocat" })).toBe(true);
+  expect(hasDeploySettings({ RELEASEBAR_ALLOW_GENERIC: "true" })).toBe(true);
 });
 
 test("deploy config without settings is the generic wrangler.jsonc when allowed", () => {

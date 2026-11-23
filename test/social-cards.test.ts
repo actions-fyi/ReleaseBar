@@ -82,7 +82,6 @@ test("worker social cards include owner avatars and repository release metrics",
     expect(Array.from(pngBytes.slice(0, 8))).toStrictEqual([137, 80, 78, 71, 13, 10, 26, 10]);
     assert.ok(pngBytes.byteLength > 1_000);
     expect(pngAssetPaths).toStrictEqual([
-      "/resvg.wasm",
       "/jetbrains-mono-latin-400-normal.woff2",
       "/jetbrains-mono-latin-700-normal.woff2",
     ]);
