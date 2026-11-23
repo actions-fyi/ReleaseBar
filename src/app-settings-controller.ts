@@ -123,11 +123,6 @@ export function createSettingsController(context: SettingsContext) {
     location.assign(ownerDashboardPath(owner));
   }
 
-  function openSignedInUserDashboard(): void {
-    const user = context.getState().auth?.user;
-    if (user) openOwner(user.login);
-  }
-
   function toggleSet(set: Set<string>, key: string, visible: boolean): Set<string> {
     const next = new Set(set);
     if (visible) next.delete(key);
@@ -205,7 +200,6 @@ export function createSettingsController(context: SettingsContext) {
     savePublicDefault,
     resetPublicDefault,
     openOwner,
-    openSignedInUserDashboard,
     toggleOwner,
     toggleRepo,
     resetHidden,

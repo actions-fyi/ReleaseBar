@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Signed-in users get a list of their dashboards in the account menu and the command palette: their own first, then one for each organization they installed the GitHub App on. A user's or organization's dashboard now only lists repositories that account owns, unless the dashboard adds another owner or repository itself.
 - AI summaries are now generated only for signed-in users, and each user is limited to 30 generated summaries per hour, with 1,000 per day for all users together. Anonymous visitors and crawlers still get cached summaries; where none is cached they see "Sign in to generate this AI summary." Set the build variables `RELEASEBAR_SUMMARY_USER_HOURLY_LIMIT` and `RELEASEBAR_SUMMARY_GLOBAL_DAILY_LIMIT` to change the limits within their bounds.
 - The commit titles a release summary sends the model are now capped whatever the commits hold: 48,000 characters in all and 160 per title by default, keeping the newest commits. Set the build variables `RELEASEBAR_SUMMARY_INPUT_CHARS` and `RELEASEBAR_SUMMARY_TITLE_CHARS` to change them within their bounds.
 - A failed AI summary now shows "AI summary failed; retrying later." instead of the provider's raw error response, which visitors could see. The real error goes to the Worker logs (`summary_failed`). The summary is retried after 5 minutes, and the wait doubles with each failure in a row, up to 6 hours.
