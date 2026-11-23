@@ -5,11 +5,11 @@ ReleaseBar keeps public dashboard data warm with a small scheduler on the Cloudf
 ## Runtime Pieces
 
 - Cloudflare cron runs every 15 minutes from `wrangler.jsonc`.
-- `DASHBOARD_CACHE` stores compact refresh targets, shared owner metadata/count snapshots, immutable profile and per-job snapshots, latest job states, visible dashboard snapshots, audit events, and scheduler state.
+- The D1 database `DB` stores the shared owner metadata/count snapshots, one row per owner, including repositories that turned private or were removed; a change is written only if the row is still the one that was read.
+- `DASHBOARD_CACHE` stores compact refresh targets, immutable profile and per-job snapshots, latest job states, visible dashboard snapshots, audit events, and scheduler state.
 - Durable Objects hold what must be checked and changed in one step. Each is a class with typed RPC methods and SQLite storage, under `worker/objects/`:
   - `BUILD_COORDINATOR` (`BuildCoordinator`), one per dashboard: the build lock, the active job reservation with its dirty marker, the refresh-target failure state, and the strongly consistent progressive-scan checkpoint.
   - `REFRESH_TARGET_INDEX` (`RefreshTargetIndex`), one per owner and per repository: the dashboards that show it, which a webhook refreshes.
-  - `OWNER_METADATA` (`OwnerMetadata`), one per owner: the owner's metadata snapshot, including repositories that turned private or were removed.
   - `WEBHOOK_ADMISSION` (`WebhookAdmission`), a single one: the GitHub deliveries already put on the queue.
   - `WEBHOOK_PROCESSOR` (`WebhookProcessor`), one per owner: pending and processed deliveries, and the lease of the job that drains them.
   - `SUMMARY_QUOTA` (`SummaryQuota`), a single one: the AI summary counters.
