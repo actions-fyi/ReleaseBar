@@ -7,14 +7,12 @@ import {
   sharedQuotaDeferUntil,
 } from "./github-audit.ts";
 import { canonicalDomain } from "./runtime.ts";
-import { tryJsonParse } from "./schemas.ts";
 import { resolveOwners } from "./app-shell.ts";
 import { sourceInstallationToken } from "./auth-tokens.ts";
 import {
   adminTargetListLimit,
   progressiveBuildBudgetMs,
   queuedProgressiveBuildBudgetMs,
-  refreshStateKey,
 } from "./config.ts";
 import { errorMessage, isAbortError, readCached } from "./dashboard-cache.ts";
 import { continueProgressiveBuild } from "./dashboard-rebuild.ts";
@@ -42,6 +40,7 @@ import {
   writeRefreshJobDelivery,
 } from "./refresh-targets.ts";
 import { dashboardRequest } from "./request-lock.ts";
+import { readSchedulerState } from "./store/scheduler-state.ts";
 
 export async function processRefreshJob(
   input: RefreshJob,
@@ -467,21 +466,13 @@ export async function processRefreshJobFallback(input: RefreshJob, env: Env): Pr
 }
 
 export async function schedulerAdminPayload(env: Env): Promise<SchedulerAdminPayload> {
-  const [inventory, jobs, events, stateRaw, dueOptions] = await Promise.all([
+  const [inventory, jobs, events, state, dueOptions] = await Promise.all([
     refreshTargetInventory(env),
     listRefreshJobs(env),
     listAuditEvents(env),
-    env.DASHBOARD_CACHE.get(refreshStateKey),
+    readSchedulerState(env),
     schedulerDueOptions(env),
   ]);
-  const state = stateRaw
-    ? tryJsonParse<{
-        lastTickAt?: string;
-        considered?: number;
-        due?: number;
-        nextDueAt?: string | null;
-      }>(stateRaw, "refresh state")
-    : null;
   const targets = inventory.targets;
   const activeTargetKeys = new Set(
     jobs.filter((job) => refreshJobActive(job)).map((job) => job.targetKey),

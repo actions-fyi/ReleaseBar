@@ -1,8 +1,8 @@
 import { slugOwner } from "../shared/dashboard.ts";
 import type { DashboardPayload } from "../src/types.ts";
 import { jsonResponse } from "./http.ts";
-import { ownerMetadataObjectName } from "./runtime.ts";
 import { dashboardTotals } from "./build-progress.ts";
+import { mutateCoordinatedOwnerMetadata } from "./store/owner-metadata.ts";
 import { safeIso } from "./time.ts";
 import {
   crawlerUserAgentPattern,
@@ -371,10 +371,7 @@ export async function mutateOwnerMetadataSnapshot(
   const normalizedOwner = slugOwner(owner);
   const requireDurablePrivacy = mutation.kind === "remove" || mutation.kind === "restore";
   try {
-    return await env.OWNER_METADATA.getByName(ownerMetadataObjectName(normalizedOwner)).mutate(
-      normalizedOwner,
-      mutation,
-    );
+    return await mutateCoordinatedOwnerMetadata(env, normalizedOwner, mutation);
   } catch (error) {
     if (requireDurablePrivacy) throw error;
     // The object can't be reached: the cache alone keeps what is not about privacy.

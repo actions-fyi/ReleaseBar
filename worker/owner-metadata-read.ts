@@ -1,16 +1,18 @@
 import { type OwnerRepoCount, slugOwner, validOwnerSlug } from "../shared/dashboard.ts";
 import type { Project } from "../src/types.ts";
 import { mapConcurrent } from "./concurrency.ts";
-import { tryJsonParse } from "./schemas.ts";
-import { type OwnerMetadataSnapshot, ownerMetadataTtlSeconds } from "./config.ts";
+import { type OwnerMetadataSnapshot } from "./config.ts";
 import {
   newestOwnerTimestamp,
   normalizeOwnerMetadataSnapshot,
-  ownerMetadataKey,
   ownerSnapshotIsNewer,
 } from "./dashboard-cache.ts";
 import { safeIso } from "./owner-metadata-write.ts";
-import { ownerMetadataObjectName } from "./runtime.ts";
+import {
+  readCoordinatedOwnerMetadata,
+  readOwnerMetadataCopy,
+  writeOwnerMetadata,
+} from "./store/owner-metadata.ts";
 
 export function reconcileOwnerMetadataSnapshots(
   owner: string,
@@ -171,12 +173,7 @@ export async function readOwnerMetadataKv(
   env: Env,
   owner: string,
 ): Promise<OwnerMetadataSnapshot | null> {
-  const raw = await env.DASHBOARD_CACHE.get(ownerMetadataKey(owner));
-  if (!raw) return null;
-  return normalizeOwnerMetadataSnapshot(
-    owner,
-    tryJsonParse<OwnerMetadataSnapshot>(raw, `owner metadata ${owner}`),
-  );
+  return normalizeOwnerMetadataSnapshot(owner, await readOwnerMetadataCopy(env, owner));
 }
 
 export async function readDurableOwnerMetadata(
@@ -186,9 +183,7 @@ export async function readDurableOwnerMetadata(
   const normalizedOwner = slugOwner(owner);
   return normalizeOwnerMetadataSnapshot(
     normalizedOwner,
-    await env.OWNER_METADATA.getByName(ownerMetadataObjectName(normalizedOwner)).read(
-      normalizedOwner,
-    ),
+    await readCoordinatedOwnerMetadata(env, normalizedOwner),
   );
 }
 
@@ -248,11 +243,7 @@ export async function privateRepositoryNames(
   }
 }
 
-export async function writeOwnerMetadata(env: Env, snapshot: OwnerMetadataSnapshot): Promise<void> {
-  await env.DASHBOARD_CACHE.put(ownerMetadataKey(snapshot.owner), JSON.stringify(snapshot), {
-    expirationTtl: ownerMetadataTtlSeconds,
-  });
-}
+export { writeOwnerMetadata };
 
 export function mergeProjectMetadata(project: Project, metadata: Project): Project {
   return {

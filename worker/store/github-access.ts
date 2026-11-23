@@ -64,11 +64,14 @@ export async function countGitHubAccess(
   );
 }
 
-// What is stored for the given hours ("2026-06-13T12"), not validated. `key` names the entry.
+// What is stored for the given hours ("2026-06-13T12"), not validated. `key` names the entry;
+// `stored` is null when the entry is gone or invalid.
 export async function listGitHubAccessCounts(
   env: Env,
   hours: string[],
-): Promise<Array<{ key: string; stored: StoredGitHubAccessShard | StoredGitHubAccessCounter }>> {
+): Promise<
+  Array<{ key: string; stored: StoredGitHubAccessShard | StoredGitHubAccessCounter | null }>
+> {
   const cache = env.DASHBOARD_CACHE;
   const list = cache.list.bind(cache);
   const pages = await Promise.all(
@@ -80,16 +83,16 @@ export async function listGitHubAccessCounts(
     ),
   );
   const keys = pages.flatMap((page) => page.keys.map((key) => key.name));
-  const entries = await Promise.all(
+  return Promise.all(
     keys.map(async (key) => {
       const raw = await cache.get(key);
-      if (!raw) return null;
-      const stored = tryJsonParse<StoredGitHubAccessShard | StoredGitHubAccessCounter>(
-        raw,
-        `github access ${key}`,
-      );
-      return stored ? { key, stored } : null;
+      const stored = raw
+        ? tryJsonParse<StoredGitHubAccessShard | StoredGitHubAccessCounter>(
+            raw,
+            `github access ${key}`,
+          )
+        : null;
+      return { key, stored };
     }),
   );
-  return entries.filter((entry) => entry !== null);
 }

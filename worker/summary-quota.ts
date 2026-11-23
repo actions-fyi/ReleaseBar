@@ -2,13 +2,14 @@
 // each one that calls the model counts against that user's hourly limit and the daily limit for
 // all users. Cached summaries are served to everyone and count nothing.
 //
-// The counters live in one Durable Object, the SUMMARY_QUOTA instance of that name, because a
-// limit needs an atomic read-and-add, which KV cannot give.
+// The counters live in one Durable Object (worker/store/summary-quota.ts), because a limit needs
+// an atomic read-and-add, which KV cannot give.
 
 import { currentSession } from "./app-shell.ts";
 import { isCrawlerRequest } from "./owner-metadata-write.ts";
 import { summaryRateLimits } from "./summary-limits.ts";
-import { type BackgroundContext, summaryQuotaObjectName } from "./runtime.ts";
+import type { BackgroundContext } from "./runtime.ts";
+import { checkSummaryQuota } from "./store/summary-quota.ts";
 
 export const summarySignInMessage = "Sign in to generate this AI summary.";
 export const summaryUserLimitMessage =
@@ -26,11 +27,7 @@ export class SummaryLimitError extends Error {}
 // When the object can't be reached nothing can be counted, so nothing is generated.
 async function quotaRefusal(env: Env, userId: number, reserve: boolean): Promise<string | null> {
   try {
-    const verdict = await env.SUMMARY_QUOTA.getByName(summaryQuotaObjectName).check(
-      userId,
-      summaryRateLimits(env),
-      reserve,
-    );
+    const verdict = await checkSummaryQuota(env, userId, summaryRateLimits(env), reserve);
     if (verdict.allowed) return null;
     return verdict.scope === "global" ? summaryGlobalLimitMessage : summaryUserLimitMessage;
   } catch {
