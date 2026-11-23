@@ -31,6 +31,7 @@ import {
 } from "./config.js";
 import { errorMessage, isGitHubRateLimit } from "./dashboard-cache.js";
 import { detailGitHubJson } from "./repo-github.js";
+import { releaseSummaryLimits } from "./summary-limits.js";
 
 export function repoDetailCacheKey(owner: string, repo: string): string {
   return `repo-detail:v4:${slugOwner(owner)}/${repo.toLowerCase()}`;
@@ -226,6 +227,36 @@ export function commitTitle(message: string): string {
   return message.split("\n")[0]?.trim().replace(/\s+/g, " ") ?? "";
 }
 
+// Cuts text to at most maxChars UTF-16 units plus an ellipsis, never inside a surrogate pair.
+export function clipText(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  const code = text.charCodeAt(maxChars - 1);
+  const end = code >= 0xd800 && code <= 0xdbff ? maxChars - 1 : maxChars;
+  return `${text.slice(0, end).trimEnd()}…`;
+}
+
+// The numbered title list the model reads, within inputChars, header included. Titles arrive
+// oldest first; the newest ones are kept when they don't all fit.
+export function releaseTitlesInput(
+  titles: string[],
+  inputChars: number,
+): { text: string; titlesUsed: number } {
+  const header = (left: number) =>
+    `Commit titles, oldest first${left > 0 ? ` (the ${left} oldest left out)` : ""}:`;
+  // The longest the header can get, so that adding it never breaks the cap.
+  let budget = inputChars - header(titles.length).length;
+  let first = titles.length;
+  while (first > 0) {
+    // "\n" plus a number of up to three digits, ". " and the title.
+    const chars = 6 + (titles[first - 1]?.length ?? 0);
+    if (chars > budget) break;
+    budget -= chars;
+    first -= 1;
+  }
+  const lines = titles.slice(first).map((title, index) => `${index + 1}. ${title}`);
+  return { text: [header(first), ...lines].join("\n"), titlesUsed: titles.length - first };
+}
+
 export async function compareCommitTitles(
   path: string,
   releaseTag: string,
@@ -236,6 +267,7 @@ export async function compareCommitTitles(
   onQuota: (quota: ApiQuota) => void,
   env: Env,
 ): Promise<{ titles: string[]; total: number | null }> {
+  const { titleChars } = releaseSummaryLimits(env);
   const titles: string[] = [];
   let total: number | null = null;
   for (let page = 1; titles.length < releaseSummaryCommitLimit; page += 1) {
@@ -253,7 +285,7 @@ export async function compareCommitTitles(
     );
     total = compare.total_commits ?? total;
     const pageTitles = (compare.commits ?? [])
-      .map((commit) => commitTitle(commit.commit.message))
+      .map((commit) => clipText(commitTitle(commit.commit.message), titleChars))
       .filter(Boolean);
     titles.push(...pageTitles);
     if (pageTitles.length === 0 || (total !== null && titles.length >= total)) break;
@@ -339,6 +371,7 @@ export async function summarizeReleaseDelta(
       "No commit titles were available to summarize.",
     );
   }
+  const input = releaseTitlesInput(titles, releaseSummaryLimits(env).inputChars);
   const text = await claudeSummaryText(env, {
     model,
     maxTokens: 450,
@@ -348,9 +381,9 @@ export async function summarizeReleaseDelta(
       `Repository: ${project.fullName}`,
       `Latest release: ${project.version}`,
       `Default branch head: ${project.latestCommitSha}`,
-      `Commit titles included: ${titles.length} of ${total ?? project.commitsSinceRelease ?? titles.length}`,
+      `Commit titles included: ${input.titlesUsed} of ${total ?? project.commitsSinceRelease ?? titles.length}`,
       "",
-      titles.map((title, index) => `${index + 1}. ${title}`).join("\n"),
+      input.text,
     ].join("\n"),
   });
   if (!text) throw new Error("Claude response did not include summary text");
@@ -362,7 +395,7 @@ export async function summarizeReleaseDelta(
     releaseTag: project.version,
     headSha: project.latestCommitSha,
     commitCount: total ?? project.commitsSinceRelease,
-    commitsUsed: titles.length,
+    commitsUsed: input.titlesUsed,
   };
 }
 
