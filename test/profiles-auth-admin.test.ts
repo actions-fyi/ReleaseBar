@@ -9,7 +9,16 @@ import type {
   RefreshTarget,
   SchedulerAdminPayload,
 } from "../src/types.ts";
-import { kvStore, signedJson, testDashboard, worker } from "./dashboard-test-harness.ts";
+import {
+  kvStore,
+  signedJson,
+  storedSchedulerState,
+  storeRefreshJob,
+  storeRefreshTarget,
+  storeRefreshTargets,
+  testDashboard,
+  worker,
+} from "./dashboard-test-harness.ts";
 
 test("worker discovers and stores source-owned app installs for anonymous dashboards", async () => {
   const { privateKey } = generateKeyPairSync("rsa", {
@@ -370,10 +379,6 @@ test("worker admin scheduler requires an admin session and reports refresh targe
       iat: exp - 600,
       exp,
     }),
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
-    [`refresh:target:v1:${legacyTarget.key}`]: JSON.stringify(legacyTarget),
-    [`refresh:job:v1:${activeJob.id}`]: JSON.stringify(activeJob),
-    "refresh:jobs:index:v1": JSON.stringify([activeJob.id]),
   });
   await runtimeEnv.DB.prepare(
     `INSERT INTO github_access_counts
@@ -383,6 +388,9 @@ test("worker admin scheduler requires an admin session and reports refresh targe
   )
     .bind(accessHour, `${accessHour}:00:00.000Z`)
     .run();
+  await storeRefreshTarget(target);
+  await storeRefreshTarget(legacyTarget);
+  await storeRefreshJob(activeJob);
   const sentJobs: RefreshJob[] = [];
   const env = {
     ADMIN_LOGINS: "steipete",
@@ -560,13 +568,13 @@ test("worker scheduler rotates bounded current-schema target pages", async () =>
       exp,
     }),
   };
+  const targets: RefreshTarget[] = [];
   for (let index = 0; index < 121; index += 1) {
     const owner = `page-${String(index).padStart(3, "0")}`;
     const key = `dashboard:v6:${owner}`;
     const target: RefreshTarget = {
       key,
       kind: "dashboard",
-      indexVersion: 2,
       owner,
       owners: [],
       repos: [],
@@ -579,10 +587,10 @@ test("worker scheduler rotates bounded current-schema target pages", async () =>
       nextDueAt: "2999-01-01T00:00:00Z",
       failureCount: 0,
     };
-    entries[`refresh:target:v1:${key}`] = JSON.stringify(target);
+    targets.push(target);
     entries[key] = JSON.stringify(testDashboard(owner, []));
   }
-  entries["refresh:target:v1:dashboard:v5:obsolete"] = JSON.stringify({
+  targets.push({
     key: "dashboard:v5:obsolete",
     kind: "dashboard",
     owner: "obsolete",
@@ -596,7 +604,8 @@ test("worker scheduler rotates bounded current-schema target pages", async () =>
     lastSuccessAt: now,
     nextDueAt: "2999-01-01T00:00:00Z",
     failureCount: 0,
-  } satisfies RefreshTarget);
+  });
+  await storeRefreshTargets(targets);
   const cache = kvStore(entries);
   const run = async () => {
     const response = await worker.fetch(
@@ -616,16 +625,11 @@ test("worker scheduler rotates bounded current-schema target pages", async () =>
   };
 
   expect(await run()).toStrictEqual({ ok: true, considered: 120, due: 0, enqueued: 0 });
-  const firstState = JSON.parse((await cache.get("refresh:state:v1")) ?? "{}") as {
-    targetCursor?: string;
-  };
-  expect(firstState.targetCursor).toBe("120");
+  // The cursor is the last key of the page.
+  expect((await storedSchedulerState())?.targetCursor).toBe("dashboard:v6:page-119");
 
   expect(await run()).toStrictEqual({ ok: true, considered: 1, due: 0, enqueued: 0 });
-  const secondState = JSON.parse((await cache.get("refresh:state:v1")) ?? "{}") as {
-    targetCursor?: string;
-  };
-  expect(secondState.targetCursor).toBe(undefined);
+  expect((await storedSchedulerState())?.targetCursor).toBe(undefined);
 
   const admin = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler", {

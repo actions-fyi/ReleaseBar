@@ -6,7 +6,6 @@ import type {
   RefreshTarget,
   SchedulerAuditEvent,
 } from "../src/types.ts";
-import { mapConcurrent } from "./concurrency.ts";
 import { randomNonce, sha256Base64Url } from "./crypto.ts";
 import { jsonResponse } from "./http.ts";
 import {
@@ -18,7 +17,7 @@ import { tryJsonParse } from "./schemas.ts";
 import {
   adminTargetListLimit,
   dashboardCachePrefix,
-  durableRefreshTargetEntryLimitBytes,
+  refreshExpiryBatchLimit,
   localRefreshDirtyMarkers,
   localRefreshJobReservations,
   localRefreshReservationFallbackScope,
@@ -26,8 +25,7 @@ import {
   refreshJobActiveGraceMs,
   refreshJobListLimit,
   refreshJobReservationTtlMs,
-  refreshTargetIndexBackfillLimit,
-  refreshTargetIndexVersion,
+  refreshTargetEntryLimitBytes,
   type RefreshTargetMutation,
   schedulerActiveRefreshMs,
   schedulerDormantRefreshMs,
@@ -53,41 +51,32 @@ import {
   isAuditEvent,
   listRefreshAuditEvents,
 } from "./store/refresh-audit.ts";
+import { deleteExpiredProfileSnapshots } from "./store/profile-snapshots.ts";
 import {
+  deleteExpiredRefreshJobs,
   indexRefreshJob,
   listStoredRefreshJobDeliveries,
-  listStoredRefreshJobSnapshots,
-  readLegacyRefreshJobIds,
+  listStoredRefreshJobs,
   readStoredRefreshJob,
   readStoredRefreshJobSnapshot,
-  refreshJobDeliveryStorageKey,
-  refreshJobIndexStorageKey,
-  refreshJobStorageKey,
+  refreshJobSnapshotKey,
   writeRefreshJob,
   writeRefreshJobDelivery,
 } from "./store/refresh-jobs.ts";
 import {
   countStoredRefreshTargets,
+  deleteExpiredRefreshTargets,
   deleteRefreshTarget,
   listStoredRefreshTargets,
   readStoredRefreshTarget,
-  refreshTargetIndexSource,
-  refreshTargetStorageKey,
-  removeIndexedRefreshTarget,
-  upsertIndexedRefreshTarget,
+  type RefreshTargetSource,
   writeRefreshTarget,
-  writeRefreshTargetKeyIndex,
 } from "./store/refresh-targets.ts";
 
-export { refreshTargetIndexSource, refreshTargetStorageKey, writeRefreshTarget };
 export { indexRefreshJob, writeRefreshJob, writeRefreshJobDelivery };
-export { refreshJobDeliveryStorageKey, refreshJobIndexStorageKey, refreshJobStorageKey };
 export { isAuditEvent };
 
-export function refreshTargetSources(target: RefreshTarget): Array<{
-  kind: "owner" | "repo";
-  value: string;
-}> {
+export function refreshTargetSources(target: RefreshTarget): RefreshTargetSource[] {
   return [
     ...new Set([
       ...target.owners.map((owner) => `owner:${slugOwner(owner)}`),
@@ -103,67 +92,14 @@ export function refreshTargetSources(target: RefreshTarget): Array<{
   });
 }
 
-export type RefreshTargetIndexWrite = "accepted" | "rejected" | "unavailable";
-
-export async function writeDurableRefreshTargetIndexes(
-  env: Env,
-  target: RefreshTarget,
-): Promise<RefreshTargetIndexWrite> {
-  try {
-    const writes = await Promise.all(
-      refreshTargetSources(target).map(async (source) => {
-        try {
-          return { source, result: await upsertIndexedRefreshTarget(env, source, target) };
-        } catch {
-          return { source, result: null };
-        }
-      }),
-    );
-    if (writes.every(({ result }) => result === "created" || result === "updated")) {
-      return "accepted";
-    }
-    // Take the target back out of the indexes this write added it to.
-    await Promise.allSettled(
-      writes
-        .filter(({ result }) => result === "created")
-        .map(async ({ source }) => {
-          await removeIndexedRefreshTarget(env, source, target.key);
-        }),
-    );
-    return writes.some(({ result }) => result === "full") ? "rejected" : "unavailable";
-  } catch {
-    return "unavailable";
-  }
-}
-
-export async function writeRefreshTargetIndexes(
-  env: Env,
-  target: RefreshTarget,
-): Promise<RefreshTargetIndexWrite> {
-  const sources = refreshTargetSources(target);
-  const durableIndex = await writeDurableRefreshTargetIndexes(env, target);
-  if (durableIndex === "rejected") return durableIndex;
-  await writeRefreshTargetKeyIndex(env, sources, target.key);
-  return durableIndex;
-}
-
-export async function persistRefreshTargetWithIndexes(
-  env: Env,
-  target: RefreshTarget,
-  options: { requireAdmission?: boolean } = {},
-): Promise<{ target: RefreshTarget; persisted: boolean }> {
-  const indexed = { ...target, indexVersion: refreshTargetIndexVersion };
-  const indexWrite = await writeRefreshTargetIndexes(env, indexed);
-  const admissionFailed =
-    indexWrite === "rejected" ||
-    (options.requireAdmission === true && indexWrite === "unavailable");
-  if (admissionFailed) {
-    await deleteRefreshTarget(env, target.key);
-    return { target: { ...target, indexVersion: undefined }, persisted: false };
-  }
-  const persisted = indexWrite === "accepted" ? indexed : { ...target, indexVersion: undefined };
-  await writeRefreshTarget(env, persisted);
-  return { target: persisted, persisted: true };
+// Stores the target with the index of its sources. False when the store refused it: the target
+// is too large, or one of its sources lists as many targets as it takes. A refused target is not
+// kept.
+export async function persistRefreshTarget(env: Env, target: RefreshTarget): Promise<boolean> {
+  const written = await writeRefreshTarget(env, target, refreshTargetSources(target));
+  if (written === "created" || written === "updated") return true;
+  await deleteRefreshTarget(env, target.key);
+  return false;
 }
 
 export function currentDashboardCacheKey(key: string): boolean {
@@ -266,12 +202,7 @@ export function isGitHubWebhookFanoutJob(value: unknown): value is GitHubWebhook
     typeof job.event === "string" &&
     typeof job.delivery === "string" &&
     typeof job.createdAt === "string" &&
-    (job.source === "indexed" ||
-      job.source === "owner" ||
-      job.source === "repo" ||
-      job.source === "kv-owner" ||
-      job.source === "kv-repo" ||
-      job.source === "legacy") &&
+    (job.source === "owner" || job.source === "repo") &&
     job.payload &&
     typeof job.payload === "object" &&
     job.action &&
@@ -423,10 +354,10 @@ export async function mutateRefreshTargetState(
     throw new Error("refresh target key required");
   }
   const observedCurrent = mutation.kind === "observe" ? await readRefreshTarget(env, key) : null;
-  const requireAdmission = mutation.kind === "observe" && observedCurrent === null;
+  let coordinated: RefreshTarget | null = null;
   try {
     // The object answers null when it has no state for the target yet: it then needs what the
-    // cache holds, which an observation has read already.
+    // database holds, which an observation has read already.
     const updated =
       (await mutateCoordinatedTarget(
         env,
@@ -438,21 +369,18 @@ export async function mutateRefreshTargetState(
       (await mutateCoordinatedTarget(env, key, snapshot, mutation, {
         current: await readRefreshTarget(env, key),
       }));
-    if (isRefreshTarget(updated)) {
-      const persisted = await persistRefreshTargetWithIndexes(env, updated, {
-        requireAdmission,
-      });
-      return persisted.persisted ? persisted.target : null;
-    }
+    if (isRefreshTarget(updated)) coordinated = updated;
   } catch {
-    // The object can't be reached: the cache alone keeps the target.
+    // The object can't be reached: the database alone keeps the target.
   }
-  const current = mutation.kind === "observe" ? observedCurrent : await readRefreshTarget(env, key);
-  const updated = applyRefreshTargetMutation(snapshot, current, mutation);
-  const persisted = await persistRefreshTargetWithIndexes(env, updated, {
-    requireAdmission,
-  });
-  return persisted.persisted ? persisted.target : null;
+  const updated =
+    coordinated ??
+    applyRefreshTargetMutation(
+      snapshot,
+      mutation.kind === "observe" ? observedCurrent : await readRefreshTarget(env, key),
+      mutation,
+    );
+  return (await persistRefreshTarget(env, updated)) ? updated : null;
 }
 
 export async function rememberRefreshTarget(
@@ -462,7 +390,7 @@ export async function rememberRefreshTarget(
     "key" | "owner" | "owners" | "repos" | "includeReleaseData" | "path" | "priority"
   > & { profile?: DashboardProfile | null },
 ): Promise<RefreshTarget | null> {
-  if (new TextEncoder().encode(input.path).byteLength > durableRefreshTargetEntryLimitBytes) {
+  if (new TextEncoder().encode(input.path).byteLength > refreshTargetEntryLimitBytes) {
     return null;
   }
   const now = new Date().toISOString();
@@ -500,7 +428,7 @@ export async function listRefreshTargets(
   limit = schedulerTargetPageLimit,
   cursor?: string,
 ): Promise<{ targets: RefreshTarget[]; nextCursor?: string }> {
-  const page = await listStoredRefreshTargets(env, "current", limit, cursor);
+  const page = await listStoredRefreshTargets(env, limit, cursor);
   return {
     targets: page.targets.filter(
       (target) => isRefreshTarget(target) && currentDashboardCacheKey(target.key),
@@ -522,15 +450,6 @@ export async function refreshTargetInventory(
   };
 }
 
-export async function backfillRefreshTargetIndexes(
-  env: Env,
-  targets: RefreshTarget[],
-): Promise<void> {
-  const pending = targets.filter((target) => target.indexVersion !== refreshTargetIndexVersion);
-  const batch = pending.slice(0, refreshTargetIndexBackfillLimit);
-  await mapConcurrent(batch, 4, (target) => persistRefreshTargetWithIndexes(env, target));
-}
-
 export async function readRefreshJobSnapshot(env: Env, key: string): Promise<RefreshJob | null> {
   const parsed = await readStoredRefreshJobSnapshot(env, key);
   return isRefreshJob(parsed) ? parsed : null;
@@ -543,16 +462,14 @@ export async function readRefreshJob(env: Env, id: string): Promise<RefreshJob |
 
 export async function listRefreshJobs(env: Env): Promise<RefreshJob[]> {
   const jobs = new Map<string, RefreshJob>();
-  const [snapshots, deliveries] = await Promise.all([
-    listStoredRefreshJobSnapshots(env),
+  const [stored, deliveries] = await Promise.all([
+    listStoredRefreshJobs(env),
     listStoredRefreshJobDeliveries(env),
   ]);
-  await Promise.all(
-    snapshots.map(async (indexed) => {
-      if (!isRefreshJob(indexed)) return;
-      jobs.set(indexed.id, (await readRefreshJob(env, indexed.id)) ?? indexed);
-    }),
-  );
+  for (const job of stored) {
+    if (isRefreshJob(job)) jobs.set(job.id, job);
+  }
+  // A delivery that is still running has written no job state yet: its record is the newest.
   for (const delivery of deliveries) {
     if (!isRefreshJob(delivery)) continue;
     const current = jobs.get(delivery.id);
@@ -560,18 +477,20 @@ export async function listRefreshJobs(env: Env): Promise<RefreshJob[]> {
       jobs.set(delivery.id, delivery);
     }
   }
-  if (jobs.size < refreshJobListLimit) {
-    const legacyIds = await readLegacyRefreshJobIds(env);
-    await Promise.all(
-      legacyIds.slice(0, refreshJobListLimit - jobs.size).map(async (id) => {
-        const job = await readRefreshJob(env, id);
-        if (job) jobs.set(job.id, job);
-      }),
-    );
-  }
   return [...jobs.values()]
     .sort((a, b) => safeIso(b.updatedAt) - safeIso(a.updatedAt))
     .slice(0, refreshJobListLimit);
+}
+
+// D1 keeps a row until it is deleted. Each scheduler tick deletes a bounded number of the
+// targets, jobs, delivery records and profile snapshots that are past their lifetime, so a
+// backlog is worked off over several ticks.
+export async function deleteExpiredRefreshData(env: Env): Promise<void> {
+  await Promise.all([
+    deleteExpiredRefreshTargets(env, refreshExpiryBatchLimit),
+    deleteExpiredRefreshJobs(env, refreshExpiryBatchLimit),
+    deleteExpiredProfileSnapshots(env, refreshExpiryBatchLimit),
+  ]);
 }
 
 export async function auditScheduler(
@@ -745,6 +664,6 @@ export function refreshJob(target: RefreshTarget, reason: string): RefreshJob {
     attempts: 0,
     durationMs: null,
   };
-  job.targetSnapshotKey = refreshJobIndexStorageKey(job);
+  job.targetSnapshotKey = refreshJobSnapshotKey(job);
   return job;
 }

@@ -57,7 +57,7 @@ Open `http://localhost:8787/steipete` or another owner route.
 
 - `dist/client` as Worker static assets
 - `DASHBOARD_CACHE` as KV storage for dashboard, repository, settings, installation, session, and scheduler records
-- seven Durable Object classes, which `wrangler.jsonc` creates with SQLite storage: `BUILD_COORDINATOR` for single-flight builds, checkpoints, job reservations, and failure state; `REFRESH_TARGET_INDEX` and `OWNER_METADATA` for what a webhook needs to know of an owner or repository; `WEBHOOK_ADMISSION` and `WEBHOOK_PROCESSOR` for GitHub deliveries; `SUMMARY_QUOTA` for the AI summary limits; `RATE_LIMITER` for the per-minute request limits of the client timing endpoint and the install callback. All seven are required
+- six Durable Object classes, which `wrangler.jsonc` creates with SQLite storage: `BUILD_COORDINATOR` for single-flight builds, checkpoints, job reservations, and failure state; `OWNER_METADATA` for what a webhook needs to know of an owner; `WEBHOOK_ADMISSION` and `WEBHOOK_PROCESSOR` for GitHub deliveries; `SUMMARY_QUOTA` for the AI summary limits; `RATE_LIMITER` for the per-minute request limits of the client timing endpoint and the install callback. All six are required
 - `REFRESH_QUEUE` for bounded background hydration and webhook work. It is required: the Worker has no path without it
 - `DB` as the D1 database. No table exists yet; [the data model](data-model.md) says what moves there
 

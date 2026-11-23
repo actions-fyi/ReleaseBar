@@ -5,11 +5,17 @@ import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.t
 import {
   BuildCoordinator,
   buildLocksHeld,
-  forgetRefreshTargetState,
   crawlerRequest,
+  forgetRefreshTargetState,
+  jobStateWrites,
   kvStore,
+  observedDatabase,
   refreshAuditEvents,
   signedJson,
+  storedRefreshJob,
+  storedRefreshTarget,
+  storeRefreshJob,
+  storeRefreshTarget,
   testDashboard,
   testProject,
   testQueue,
@@ -52,22 +58,13 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
     attempts: 0,
     durationMs: null,
   };
-  const backingCache = kvStore({
+  const cache = kvStore({
     [key]: JSON.stringify(
       testDashboard("openclaw", [testProject({ owner: "openclaw", name: "repo" })]),
     ),
-    [`refresh:job:v1:${job.id}`]: JSON.stringify(job),
   });
-  let jobWrites = 0;
-  const cache = {
-    ...backingCache,
-    async put(storageKey: string, value: string) {
-      if (storageKey === `refresh:job:v1:${job.id}`) {
-        jobWrites += 1;
-      }
-      await backingCache.put(storageKey, value);
-    },
-  };
+  await storeRefreshJob(job);
+  const { database, counts } = observedDatabase();
   buildLocksHeld();
   const releases = vi.spyOn(BuildCoordinator.prototype, "releaseJob");
   let retryDelaySeconds: number | undefined;
@@ -103,38 +100,34 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
           },
         ],
       },
-      { DASHBOARD_CACHE: cache },
+      { DASHBOARD_CACHE: cache, DB: database },
       { waitUntil: () => undefined },
     );
 
   await deliver(9);
   expect(retryDelaySeconds).toBe(60);
   expect(releases).not.toHaveBeenCalled();
-  const retrying = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
+  const retrying = ((await storedRefreshJob(job.id)) ?? {}) as RefreshJob;
   expect(retrying.status).toBe("queued");
   expect(retrying.error).toBe("dashboard locked");
 
   await deliver(10);
   expect(retryDelaySeconds).toBe(60);
   expect(releases).not.toHaveBeenCalled();
-  const finalRetry = JSON.parse(
-    (await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}",
-  ) as RefreshJob;
+  const finalRetry = ((await storedRefreshJob(job.id)) ?? {}) as RefreshJob;
   expect(finalRetry.status).toBe("queued");
   expect(finalRetry.error).toBe("dashboard locked");
 
   await deliver(11);
   expect(retryDelaySeconds).toBe(60);
   expect(releases).toHaveBeenCalled();
-  const updated = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
+  const updated = ((await storedRefreshJob(job.id)) ?? {}) as RefreshJob;
   expect(updated.status).toBe("failed");
   expect(updated.error ?? "").toMatch(/after 11 Queue attempts/);
   expect(updated.attempts).toBe(11);
-  expect(jobWrites).toBe(3);
+  expect(jobStateWrites(counts.sql)).toBe(3);
 
-  const failedTarget = JSON.parse(
-    (await cache.get(`refresh:target:v1:${target.key}`)) ?? "{}",
-  ) as RefreshTarget;
+  const failedTarget = ((await storedRefreshTarget(target.key)) ?? {}) as RefreshTarget;
   expect(failedTarget.failureCount).toBe(1);
   expect(Date.parse(failedTarget.nextDueAt) > Date.now()).toBe(true);
   expect(failedTarget.terminalBackoffUntil).toBe(failedTarget.nextDueAt);
@@ -183,10 +176,7 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
     await Promise.all(waits);
     expect(sentJobs.length).toBe(0);
 
-    await cache.put(
-      `refresh:target:v1:${target.key}`,
-      JSON.stringify({ ...failedTarget, terminalBackoffUntil: null }),
-    );
+    await storeRefreshTarget({ ...failedTarget, terminalBackoffUntil: null });
     await forgetRefreshTargetState(target.key);
     await cache.put(
       key,
@@ -248,18 +238,15 @@ test("worker terminalizes final-delivery queue handler failures", async () => {
     attempts: 0,
     durationMs: null,
   };
-  const backingCache = kvStore();
+  const cache = kvStore();
   let failJobRead = true;
-  const cache = {
-    ...backingCache,
-    async get(key: string) {
-      if (key === `refresh:job:v1:${job.id}` && failJobRead) {
-        failJobRead = false;
-        throw new Error("refresh job read failed");
-      }
-      return backingCache.get(key);
-    },
-  };
+  const { database } = observedDatabase((sql) => {
+    if (sql.startsWith("SELECT value FROM refresh_jobs WHERE id = ?") && failJobRead) {
+      failJobRead = false;
+      throw new Error("refresh job read failed");
+    }
+    return false;
+  });
   const releases = vi.spyOn(BuildCoordinator.prototype, "releaseJob");
   let retryDelaySeconds: number | undefined;
 
@@ -293,13 +280,13 @@ test("worker terminalizes final-delivery queue handler failures", async () => {
         },
       ],
     },
-    { DASHBOARD_CACHE: cache },
+    { DASHBOARD_CACHE: cache, DB: database },
     { waitUntil: () => undefined },
   );
 
   expect(retryDelaySeconds).toBe(300);
   expect(releases).toHaveBeenCalled();
-  const stored = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
+  const stored = ((await storedRefreshJob(job.id)) ?? {}) as RefreshJob;
   expect(stored.status).toBe("failed");
   expect(stored.attempts).toBe(11);
   expect(stored.error ?? "").toMatch(/refresh job read failed/);
@@ -341,8 +328,6 @@ test("worker refresh jobs defer shared work while shared quota is paused", async
     durationMs: null,
   };
   const cache = kvStore({
-    [`refresh:target:v1:${key}`]: JSON.stringify(target),
-    [`refresh:job:v1:${job.id}`]: JSON.stringify(job),
     "github:budget:v1:shared:_": JSON.stringify({
       active: true,
       resource: "core",
@@ -352,6 +337,8 @@ test("worker refresh jobs defer shared work while shared quota is paused", async
       reason: "remaining 42 <= 500",
     }),
   });
+  await storeRefreshTarget(target);
+  await storeRefreshJob(job);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => {
     throw new Error("shared quota pause should skip GitHub fetches");
@@ -393,12 +380,10 @@ test("worker refresh jobs defer shared work while shared quota is paused", async
     globalThis.fetch = originalFetch;
   }
   expect(acked).toBe(true);
-  const updated = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
+  const updated = ((await storedRefreshJob(job.id)) ?? {}) as RefreshJob;
   expect(updated.status).toBe("skipped");
   expect(updated.error ?? "").toMatch(/remaining 42/);
-  const storedTarget = JSON.parse(
-    (await cache.get(`refresh:target:v1:${key}`)) ?? "{}",
-  ) as RefreshTarget;
+  const storedTarget = ((await storedRefreshTarget(key)) ?? {}) as RefreshTarget;
   expect(storedTarget.message ?? "").toMatch(/shared GitHub quota paused/);
 });
 
@@ -438,8 +423,6 @@ test("worker refresh jobs defer shared work while GraphQL is backed off", async 
     durationMs: null,
   };
   const cache = kvStore({
-    [`refresh:target:v1:${key}`]: JSON.stringify(target),
-    [`refresh:job:v1:${job.id}`]: JSON.stringify(job),
     "github:backoff:v2:graphql:shared:_:ReleaseBarRepoDetails": JSON.stringify({
       active: true,
       status: 502,
@@ -448,6 +431,8 @@ test("worker refresh jobs defer shared work while GraphQL is backed off", async 
       at: new Date().toISOString(),
     }),
   });
+  await storeRefreshTarget(target);
+  await storeRefreshJob(job);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => {
     throw new Error("GraphQL backoff should skip GitHub fetches");
@@ -489,12 +474,10 @@ test("worker refresh jobs defer shared work while GraphQL is backed off", async 
     globalThis.fetch = originalFetch;
   }
   expect(acked).toBe(true);
-  const updated = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
+  const updated = ((await storedRefreshJob(job.id)) ?? {}) as RefreshJob;
   expect(updated.status).toBe("skipped");
   expect(updated.error ?? "").toMatch(/GraphQL temporarily paused/);
-  const storedTarget = JSON.parse(
-    (await cache.get(`refresh:target:v1:${key}`)) ?? "{}",
-  ) as RefreshTarget;
+  const storedTarget = ((await storedRefreshTarget(key)) ?? {}) as RefreshTarget;
   expect(storedTarget.failureCount).toBe(0);
   expect(storedTarget.message ?? "").toMatch(/GitHub GraphQL paused/);
 });
@@ -625,7 +608,7 @@ test("worker serves cached dashboards to crawlers without scheduling refreshes",
     const events = await refreshAuditEvents();
     expect(events.some((event) => event.event === "dashboard_refresh_schedule")).toBe(false);
     expect(installationListCalls).toBe(0);
-    expect(await cache.get(`refresh:target:v1:${key}`)).toBe(null);
+    expect(await storedRefreshTarget(key)).toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }

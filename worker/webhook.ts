@@ -33,12 +33,10 @@ import { enqueueRefreshJob, refreshOwnerCounts } from "./refresh-queue.ts";
 import { auditSyncEvent } from "./refresh-targets.ts";
 import {
   compactGitHubWebhookPayload,
-  freshestWebhookTargets,
   invalidateDashboardTargets,
   invalidatePublicRepoCaches,
   invalidateRepoDetailCaches,
   invalidateRepoProjectCache,
-  legacyOwnerWebhookSeedTargets,
   mapWebhookTargets,
   releaseWebhookAffectsDashboard,
   validWebhookSignature,
@@ -263,7 +261,6 @@ export async function enqueueWebhookFanout(
     source: next.source,
     ...(priorityBatchStartedAt ? { priorityBatchStartedAt } : {}),
     ...(next.cursor ? { cursor: next.cursor } : {}),
-    ...(next.backfillFailed ? { backfillFailed: true } : {}),
   });
 }
 
@@ -292,14 +289,7 @@ export async function processGitHubWebhookFanout(
   ) {
     throw new Error("webhook priority refreshes still active");
   }
-  const page = await webhookTargetPage(
-    env,
-    repo.owner,
-    repo.fullName,
-    job.source,
-    job.cursor,
-    job.backfillFailed,
-  );
+  const page = await webhookTargetPage(env, repo.owner, repo.fullName, job.source, job.cursor);
   await applyWebhookTargetAction(env, context, page.targets, job.action);
   await enqueueWebhookFanout(
     env,
@@ -329,23 +319,15 @@ export async function processGitHubWebhook(
     repo.fullName,
     undefined,
     undefined,
-    undefined,
     event === "push" || event === "release",
   );
-  const ownerSeedTargets = await legacyOwnerWebhookSeedTargets(env, repo.owner, repo.fullName);
-  const seedTargets = freshestWebhookTargets([...page.targets, ...ownerSeedTargets]);
-  const action = await prepareGitHubWebhookEvent(event, payload, env, context, repo, seedTargets);
+  const action = await prepareGitHubWebhookEvent(event, payload, env, context, repo, page.targets);
   if (!action) return;
-  const fallbackTargets = webhookTargetsForAction(ownerSeedTargets, action);
-  const appliedTargets = page.prioritized
-    ? webhookTargetsForAction([...fallbackTargets, ...page.targets], action).slice(
-        0,
-        webhookPriorityTargetLimit,
-      )
-    : seedTargets;
-  const fanoutSkipKeys = page.prioritized
-    ? appliedTargets.map((target) => target.key)
-    : ownerSeedTargets.map((target) => target.key).slice(0, webhookPriorityTargetLimit);
+  const appliedTargets = webhookTargetsForAction(page.targets, action).slice(
+    0,
+    webhookPriorityTargetLimit,
+  );
+  const fanoutSkipKeys = appliedTargets.map((target) => target.key);
   await applyWebhookTargetAction(env, context, appliedTargets, action);
   const priorityBatchStartedAt =
     action.recentTargetsOnly && fanoutSkipKeys.length > 0 ? new Date().toISOString() : undefined;

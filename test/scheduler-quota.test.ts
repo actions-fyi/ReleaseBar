@@ -4,7 +4,12 @@ import type { RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
   kvStore,
   objectsUnavailable,
+  observedDatabase,
   signedJson,
+  storedRefreshJob,
+  storedRefreshJobs,
+  storeRefreshJob,
+  storeRefreshTarget,
   testDashboard,
   testProject,
   worker,
@@ -57,10 +62,9 @@ test("worker scheduler preserves queued backlog jobs until reservation expiry", 
       iat: exp - 600,
       exp,
     }),
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
-    [`refresh:job:v1:${queuedJob.id}`]: JSON.stringify(queuedJob),
-    "refresh:jobs:index:v1": JSON.stringify([queuedJob.id]),
   });
+  await storeRefreshTarget(target);
+  await storeRefreshJob(queuedJob);
   const sentJobs: RefreshJob[] = [];
 
   const env = {
@@ -91,7 +95,7 @@ test("worker scheduler preserves queued backlog jobs until reservation expiry", 
     createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
     updatedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
   };
-  await cache.put(`refresh:job:v1:${queuedJob.id}`, JSON.stringify(expiredJob));
+  await storeRefreshJob(expiredJob);
 
   const expiredResponse = await worker.fetch(request(), env, { waitUntil: () => undefined });
 
@@ -122,7 +126,7 @@ test("worker clears fallback reservations after active-job scans fail", async ()
     nextDueAt: "2000-01-01T00:00:00Z",
     failureCount: 0,
   };
-  const backingCache = kvStore({
+  const cache = kvStore({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -135,27 +139,25 @@ test("worker clears fallback reservations after active-job scans fail", async ()
       iat: exp - 600,
       exp,
     }),
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
   });
+  await storeRefreshTarget(target);
+  // A tick lists the jobs and the delivery records; the third listing is the scan for an active
+  // job that stands in for the reservation.
   let refreshJobListCalls = 0;
-  const cache = {
-    ...backingCache,
-    async list(options: { prefix?: string; limit?: number; cursor?: string } = {}) {
-      if (options.prefix?.startsWith("refresh:job")) {
-        refreshJobListCalls += 1;
-      }
-      if (refreshJobListCalls === 3) {
-        throw new Error("active job scan failed");
-      }
-      return backingCache.list(options);
-    },
-  };
+  const { database } = observedDatabase((sql) => {
+    if (sql.includes("FROM refresh_job") && sql.trimStart().startsWith("SELECT")) {
+      refreshJobListCalls += 1;
+      if (refreshJobListCalls === 3) throw new Error("active job scan failed");
+    }
+    return false;
+  });
   objectsUnavailable();
   const sentJobs: RefreshJob[] = [];
   const env = {
     ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
     DASHBOARD_CACHE: cache,
+    DB: database,
     REFRESH_QUEUE: {
       async send(job: RefreshJob) {
         sentJobs.push(job);
@@ -213,8 +215,8 @@ test("worker scheduler falls back when the reservation Durable Object is unavail
       iat: exp - 600,
       exp,
     }),
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
   });
+  await storeRefreshTarget(target);
   const sentJobs: RefreshJob[] = [];
   objectsUnavailable();
 
@@ -382,8 +384,8 @@ test("worker admin scheduler defers shared quota paused targets even with missin
       iat: exp - 600,
       exp,
     }),
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
   });
+  await storeRefreshTarget(target);
 
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler/run", {
@@ -455,8 +457,8 @@ test("worker admin scheduler lets app-token targets bypass shared quota pauses",
       updatedAt: new Date().toISOString(),
     }),
     "auth:installation-token:42": "installation-token",
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
   });
+  await storeRefreshTarget(target);
 
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler/run", {
@@ -529,8 +531,8 @@ test("worker admin scheduler uses app registry coverage without minting tokens",
       repositories: [],
       updatedAt: new Date().toISOString(),
     }),
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
   });
+  await storeRefreshTarget(target);
 
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler/run", {
@@ -612,8 +614,8 @@ test("worker admin scheduler bypasses shared quota defer time with app coverage"
     [key]: JSON.stringify(
       testDashboard("openclaw", [testProject({ owner: "openclaw", name: "repo" })]),
     ),
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
   });
+  await storeRefreshTarget(target);
 
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler/run", {
@@ -674,8 +676,8 @@ test("worker scheduler marks jobs failed when queue delivery fails", async () =>
       iat: exp - 600,
       exp,
     }),
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
   });
+  await storeRefreshTarget(target);
 
   await expect(
     worker.fetch(
@@ -697,14 +699,9 @@ test("worker scheduler marks jobs failed when queue delivery fails", async () =>
     ),
   ).rejects.toThrow(/queue unavailable/);
 
-  const indexedJobs = await cache.list({ prefix: "refresh:jobs:v2:" });
-  expect(indexedJobs.keys.length).toBe(1);
-  const indexed = JSON.parse(
-    (await cache.get(indexedJobs.keys[0]?.name ?? "")) ?? "{}",
-  ) as RefreshJob;
-  const stored = JSON.parse(
-    (await cache.get(`refresh:job:v1:${indexed.id}`)) ?? "{}",
-  ) as RefreshJob;
+  const jobs = await storedRefreshJobs();
+  expect(jobs.length).toBe(1);
+  const stored = ((await storedRefreshJob(jobs[0]?.id ?? "")) ?? {}) as RefreshJob;
   expect(stored.status).toBe("failed");
   expect(stored.error ?? "").toMatch(/queue unavailable/);
 });

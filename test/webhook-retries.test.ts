@@ -8,12 +8,14 @@ import { webhookProcessorObjectName } from "../worker/runtime.ts";
 import {
   kvStore,
   objectsUnavailable,
+  observedDatabase,
+  storeRefreshTarget,
+  testDashboard,
   type TestEnv,
   testEnv,
+  testProject,
   WebhookAdmission,
   WebhookProcessor,
-  testDashboard,
-  testProject,
   worker,
 } from "./dashboard-test-harness.ts";
 
@@ -47,8 +49,8 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
     "hot:v3": JSON.stringify(
       testDashboard("hot", [testProject({ owner, name: "repo", commitsSinceRelease: 5 })]),
     ),
-    [`refresh:target:v1:${key}`]: JSON.stringify(target),
   });
+  await storeRefreshTarget(target);
   const queued: unknown[] = [];
   const queuedDelays: Array<number | undefined> = [];
   const dashboardCacheAtEnqueue: Array<string | null> = [];
@@ -195,8 +197,8 @@ test("reserved webhook refreshes queue one follow-up after the active job", asyn
   };
   const cache = kvStore({
     [key]: JSON.stringify(testDashboard(owner, [testProject({ owner, name: "sibling" })])),
-    [`refresh:target:v1:${key}`]: JSON.stringify(target),
   });
+  await storeRefreshTarget(target);
   const queued: unknown[] = [];
   const delays: Array<number | undefined> = [];
   const env: TestEnv = {
@@ -566,12 +568,7 @@ test("terminal webhook fanout clears admission and processing deduplication", as
   const admissionAbandons = vi.spyOn(WebhookAdmission.prototype, "abandon");
   const processorAbandons = vi.spyOn(WebhookProcessor.prototype, "abandon");
   const objectName = (object: unknown) => (object as { ctx: DurableObjectState }).ctx.id.name;
-  const cache = {
-    ...kvStore(),
-    async list() {
-      throw new Error("fanout page failed");
-    },
-  };
+  const cache = kvStore();
 
   await worker.queue(
     {
@@ -633,12 +630,9 @@ test("terminal webhook fanout retries when durable abandonment fails", async () 
   let acknowledged = false;
   let retried = false;
   objectsUnavailable();
-  const cache = {
-    ...kvStore(),
-    async list() {
-      throw new Error("fanout page failed");
-    },
-  };
+  const cache = kvStore();
+  // The page of the target index can't be read.
+  const { database } = observedDatabase((sql) => sql.includes("FROM refresh_target_sources"));
 
   await worker.queue(
     {
@@ -676,6 +670,7 @@ test("terminal webhook fanout retries when durable abandonment fails", async () 
     },
     {
       DASHBOARD_CACHE: cache,
+      DB: database,
     },
     { waitUntil: () => undefined },
   );

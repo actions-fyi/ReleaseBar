@@ -12,7 +12,6 @@ const durableObjectBindingNames: Record<DurableObjectBinding, true> = {
   BUILD_COORDINATOR: true,
   OWNER_METADATA: true,
   RATE_LIMITER: true,
-  REFRESH_TARGET_INDEX: true,
   SUMMARY_QUOTA: true,
   WEBHOOK_ADMISSION: true,
   WEBHOOK_PROCESSOR: true,

@@ -1,6 +1,6 @@
 # Data model
 
-Where each kind of data lives, and where steps 7a, 7b and 7c of the stack migration (`AGENTS.md`) move it. Until a step lands, its data is where the "Today" column says.
+Where each kind of data lives, and where steps 7a, 7b and 7c of the stack migration (`AGENTS.md`) move it. Until a step lands, its data is where the "Today" column says; a step that is done lists its tables only.
 
 The rule: KV holds cached payloads and short-lived entries. Anything queried, listed or counted is in D1. Anything that must be checked and changed in one step is in a Durable Object.
 
@@ -12,23 +12,27 @@ Only `worker/store/` names a binding; `npm run lint` fails otherwise (`scripts/c
 - A function documented as "not validated" returns what was stored as it is; the caller checks it (`isRefreshTarget`, `isRefreshJob`, `normalizeOwnerMetadataSnapshot`).
 - `worker/store/cache.ts` is for data that stays in KV. Data of a table below must not go through it.
 
-## Step 7a: refresh data
+## Step 7a: refresh data (done)
 
 Migration file: `migrations/0001_refresh.sql`. Durable Object migration tag: `7a-refresh`.
 
-| Data                                                         | Today                                                                                                                                              | Target table                                                                                                    | Store module           |
-| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| Refresh targets                                              | KV `refresh:target:v1:<key>`                                                                                                                       | `refresh_targets`: one row per target, keyed by `key`, with `next_due_at` and `last_seen_at` as indexed columns | `refresh-targets.ts`   |
-| Target index: the targets that show an owner or a repository | Durable Object `RefreshTargetIndex` per source, KV `refresh:target-index:v1:<kind>:<source>:<hash>` and the marker `refresh:target-index:v1:ready` | `refresh_target_sources`: one row per target and source (`kind`, `value`, `target_key`)                         | `refresh-targets.ts`   |
-| Refresh jobs                                                 | KV `refresh:job:v1:<id>`, the snapshots `refresh:jobs:v2:<time>:<id>` and the older list `refresh:jobs:index:v1`                                   | `refresh_jobs`: one row per job, with the target as it was when the job was enqueued                            | `refresh-jobs.ts`      |
-| Job delivery records                                         | KV `refresh:job-deliveries:v1:<time>:<id>:<attempt>`                                                                                               | `refresh_job_deliveries`: one row per job and attempt                                                           | `refresh-jobs.ts`      |
-| Scheduler state                                              | KV `refresh:state:v1` and `refresh:owner-count-cursor:v1`                                                                                          | `scheduler_state`: one row per name                                                                             | `scheduler-state.ts`   |
-| Profile snapshots                                            | KV `refresh:profile-snapshot:v1:<owner>:<updatedAt>`                                                                                               | `profile_snapshots`: one row per snapshot, keyed by what a target carries as `profileSnapshotKey`               | `profile-snapshots.ts` |
+| Data                                                         | Table                                                                                                                         | Store module           |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| Refresh targets                                              | `refresh_targets`: one row per target, keyed by `key`, with `next_due_at` and `last_seen_at` as indexed columns               | `refresh-targets.ts`   |
+| Target index: the targets that show an owner or a repository | `refresh_target_sources`: one row per target and source (`kind`, `value`, `target_key`)                                       | `refresh-targets.ts`   |
+| Refresh jobs                                                 | `refresh_jobs`: one row per job, with its latest state (`value`) and the job as it was enqueued, with its target (`snapshot`) | `refresh-jobs.ts`      |
+| Job delivery records                                         | `refresh_job_deliveries`: one row per job and attempt                                                                         | `refresh-jobs.ts`      |
+| Scheduler state                                              | `scheduler_state`: one row per name (`last-tick`, `owner-count-cursor`)                                                       | `scheduler-state.ts`   |
+| Profile snapshots                                            | `profile_snapshots`: one row per snapshot, keyed by what a target carries as `profileSnapshotKey`                             | `profile-snapshots.ts` |
 
-- The step deletes the class `RefreshTargetIndex` and its binding. Its limits (targets per source, entry size) become checks in the store function.
-- With every target in `refresh_target_sources`, the index needs no backfill: the "any-version" and owner listings of `listStoredRefreshTargets`, the key index and the ready marker go.
-- A job's `targetSnapshotKey` and a target's `profileSnapshotKey` are KV keys today. They stay opaque strings to the callers.
-- `BuildCoordinator` stays (see below): it still applies each change to a target's scheduling state in one step, and the result is written to `refresh_targets` instead of KV.
+- Each table keeps the record as JSON in `value`; the other columns are what a query filters or sorts by. Times are milliseconds.
+- A target is written with its source rows in one `batch`, which is one transaction: it is listed under all of its sources or under none. The class `RefreshTargetIndex` and its binding are gone, and with them the backfill, the key index, the ready marker and the "any-version" and owner listings.
+- The limits of the index are checks in `writeRefreshTarget`: a target over 8 KiB is refused, and so is a new target of a source that lists 512 already. The count is read before the write, not with it, so targets admitted at the same moment can take a source a few rows over. The limit on the serialized size of one source's index went with the object that had to hold it in one value.
+- A webhook reads the targets of a source with a join, so it gets each target as it is stored now: there is no copy in an index to compare with.
+- A job's `targetSnapshotKey` (`refresh-job:<id>`) and a target's `profileSnapshotKey` (`profile-snapshot:<owner>:<updatedAt>`) are opaque strings to the callers.
+- `BuildCoordinator` stays (see below): it still applies each change to a target's scheduling state in one step, and the result is written to `refresh_targets`.
+- KV expired these entries by itself; D1 does not. Each scheduler tick deletes up to 500 rows of each kind that are past their lifetime, the oldest first (`deleteExpiredRefreshData`): targets nobody has seen for 90 days with their source rows, jobs and delivery records not updated for 14 days, profile snapshots written more than 90 days ago. A target past its lifetime that is not deleted yet is not handed to a webhook.
+- The listings are queries: the scheduler pages the targets by key (`key > cursor`, the cursor is the last key), the admin overview counts them and takes the ones due soonest, and the jobs and delivery records are read newest first with a limit. No query returns more than 512 rows of at most 8 KiB.
 
 ## Step 7b: audit and counters (done)
 

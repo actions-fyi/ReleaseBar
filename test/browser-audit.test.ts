@@ -72,19 +72,33 @@ test("worker stores GitHub access counters and cached owner identity", async () 
   const auditWriteGate = new Promise<void>((resolve) => {
     releaseAuditWrites = resolve;
   });
-  // The local database, with its batches held back: the GitHub call counts are written in one.
-  const database = new Proxy(runtimeEnv.DB, {
-    get(target, property) {
-      const member: unknown = Reflect.get(target, property);
-      if (property === "batch") {
-        return async (statements: D1PreparedStatement[]) => {
-          await auditWriteGate;
-          return target.batch(statements);
-        };
-      }
-      return typeof member === "function" ? member.bind(target) : member;
+  // The local database, with the batches that count GitHub calls held back. Other writes of the
+  // request, such as its refresh target, go through.
+  const real = runtimeEnv.DB;
+  const auditStatements = new WeakSet<object>();
+  const database = {
+    prepare(sql: string): D1PreparedStatement {
+      const statement = real.prepare(sql);
+      if (!sql.includes("github_access_counts")) return statement;
+      return new Proxy(statement, {
+        get(target, property) {
+          const member: unknown = Reflect.get(target, property);
+          if (property === "bind") {
+            return (...values: unknown[]) => {
+              const bound = target.bind(...values);
+              auditStatements.add(bound);
+              return bound;
+            };
+          }
+          return typeof member === "function" ? member.bind(target) : member;
+        },
+      });
     },
-  });
+    async batch(statements: D1PreparedStatement[]) {
+      if (statements.some((statement) => auditStatements.has(statement))) await auditWriteGate;
+      return real.batch(statements);
+    },
+  } as unknown as D1Database;
   const originalFetch = globalThis.fetch;
   const waits: Array<Promise<unknown>> = [];
   try {

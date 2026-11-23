@@ -1,11 +1,15 @@
 import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.ts";
-import { durableRefreshTargetIndexLimit, refreshTargetSourceLimit } from "../worker/config.ts";
+import { refreshTargetSourceLimit } from "../worker/config.ts";
 import {
-  fillTargetIndex,
+  deleteStoredRefreshTarget,
+  fillTargetSource,
+  indexedTargets,
   kvStore,
-  targetIndex,
+  storedRefreshTarget,
+  storeRefreshTarget,
+  storeRefreshTargets,
   testDashboard,
   type TestEnv,
   testEnv,
@@ -14,7 +18,7 @@ import {
   worker,
 } from "./dashboard-test-harness.ts";
 
-test("GitHub push webhooks prioritize recent targets beyond the durable hot-cache limit", async () => {
+test("GitHub push webhooks prioritize recent targets beyond one page of the target index", async () => {
   type QueuedWebhook = {
     kind: "github-webhook";
     id: string;
@@ -38,7 +42,7 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
       recentTargetsOnly?: boolean;
       prioritizedTargetKeys?: string[];
     };
-    source: "indexed" | "owner" | "repo" | "kv-owner" | "kv-repo" | "legacy";
+    source: "owner" | "repo";
     priorityBatchStartedAt?: string;
     cursor?: string;
   };
@@ -50,7 +54,6 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
   const firstReleaseTargetIndex = 26;
   const movedTargetIndex = 201;
   const newestTargetIndex = 202;
-  const durableOnlyTargetIndex = 203;
   const metadataOnlyTargetIndexes = new Set(Array.from({ length: 25 }, (_, index) => index + 1));
   const project = testProject({ owner, name: "repo" });
   const degradedRepoTarget = {
@@ -94,32 +97,16 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
       lastSuccessAt: now,
       nextDueAt: "2999-01-01T00:00:00Z",
       failureCount: 0,
-      indexVersion: 2,
     } satisfies RefreshTarget;
   });
   const cache = kvStore({
-    "refresh:target-index:v1:ready": "2",
     ...Object.fromEntries(
-      targets.flatMap((target, index) => [
-        [`refresh:target:v1:${target.key}`, JSON.stringify(target)],
-        [
-          `refresh:target-index:v1:owner:${owner}:${String(index).padStart(3, "0")}`,
-          JSON.stringify(target.key),
-        ],
-        [target.key, JSON.stringify(testDashboard(owner, [project]))],
-      ]),
+      targets.map((target) => [target.key, JSON.stringify(testDashboard(owner, [project]))]),
     ),
-    [`refresh:target:v1:${degradedRepoTarget.key}`]: JSON.stringify(degradedRepoTarget),
     [degradedRepoTarget.key]: JSON.stringify(testDashboard("custom", [project])),
   });
-  await cache.put(
-    `refresh:target-index:v1:repo:${encodeURIComponent(`${owner}/repo`)}:duplicate`,
-    JSON.stringify(targets[0].key),
-  );
-  await cache.put(
-    `refresh:target-index:v1:repo:${encodeURIComponent(`${owner}/repo`)}:degraded`,
-    JSON.stringify(degradedRepoTarget.key),
-  );
+  await storeRefreshTarget(degradedRepoTarget);
+  await storeRefreshTargets(targets);
   const queued: Array<RefreshJob | QueuedWebhook | QueuedFanout> = [];
   const env: TestEnv = {
     DASHBOARD_CACHE: cache,
@@ -130,24 +117,6 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
       },
     },
   };
-  const durableOwnerIndex = targetIndex(env, "owner", owner);
-  for (const [index, target] of targets.entries()) {
-    const indexedTarget =
-      index === fallbackTargetIndex
-        ? {
-            ...target,
-            lastSeenAt: new Date(Date.parse(now) - 2 * 24 * 60 * 60 * 1_000).toISOString(),
-          }
-        : target;
-    expect(await durableOwnerIndex.upsert(indexedTarget)).toBe("created");
-  }
-  await cache.delete(`refresh:target:v1:${targets[durableOnlyTargetIndex].key}`);
-  const durableRepoIndex = targetIndex(env, "repo", `${owner}/repo`);
-  const staleRepoDuplicate = {
-    ...targets[newestTargetIndex],
-    lastSeenAt: new Date(Date.parse(now) - 2 * 24 * 60 * 60 * 1_000).toISOString(),
-  };
-  expect(await durableRepoIndex.upsert(staleRepoDuplicate)).toBe("created");
   const payload = {
     ref: "refs/heads/main",
     after: "abcdef1234567890",
@@ -248,7 +217,6 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
   const newestTarget = targets[newestTargetIndex];
   const staleTarget = targets[staleTargetIndex];
   const fallbackTarget = targets[fallbackTargetIndex];
-  const durableOnlyTarget = targets[durableOnlyTargetIndex];
   const firstReleaseTarget = targets[firstReleaseTargetIndex];
   const secondTarget = targets[1];
   const lastTarget = targets.at(-1);
@@ -256,11 +224,10 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
   assert.ok(newestTarget);
   assert.ok(staleTarget);
   assert.ok(fallbackTarget);
-  assert.ok(durableOnlyTarget);
   assert.ok(firstReleaseTarget);
   assert.ok(secondTarget);
   assert.ok(lastTarget);
-  const moved = await durableOwnerIndex.upsert({
+  const moved = await storeRefreshTarget({
     ...movedTarget,
     lastSeenAt: new Date(Date.parse(now) + 4_000).toISOString(),
   });
@@ -312,7 +279,6 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
   expect(dashboardJobs.some((job) => job.targetKey === staleTarget.key)).toBe(false);
   expect(dashboardJobs.some((job) => job.targetKey === fallbackTarget.key)).toBe(true);
   expect(dashboardJobs.some((job) => job.targetKey === movedTarget.key)).toBe(true);
-  expect(dashboardJobs.some((job) => job.targetKey === durableOnlyTarget.key)).toBe(true);
   expect(dashboardJobs.some((job) => job.targetKey === degradedRepoTarget.key)).toBe(true);
   expect(dashboardJobs[0]?.targetKey).toBe(newestTarget.key);
   const firstJob = dashboardJobs.find((job) => job.targetKey === firstReleaseTarget.key);
@@ -330,13 +296,8 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
   expect(await cache.get(degradedRepoTarget.key)).toBe(null);
 });
 
-test("durable target indexes cap persistent variants per source", async () => {
+test("the target index caps the targets of a source", async () => {
   const now = new Date().toISOString();
-  const cache = kvStore();
-  const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
-  };
-  const index = targetIndex(env, "owner", "owner");
   const variant = (name: string): RefreshTarget => ({
     key: `dashboard:v6:owner:variant-${name}`,
     kind: "dashboard",
@@ -353,23 +314,19 @@ test("durable target indexes cap persistent variants per source", async () => {
     failureCount: 0,
   });
   for (let count = 0; count < refreshTargetSourceLimit; count += 1) {
-    expect(await index.upsert(variant(String(count)))).toBe("created");
+    expect(await storeRefreshTarget(variant(String(count)))).toBe("created");
   }
-  expect(await index.upsert(variant("overflow"))).toBe("full");
+  expect(await storeRefreshTarget(variant("overflow"))).toBe("full");
+  expect(await storedRefreshTarget(variant("overflow").key)).toBe(null);
   // A target the index holds already is still updated, and removing one makes room.
-  expect(await index.upsert(variant("0"))).toBe("updated");
-  await index.remove(variant("1").key);
-  expect(await index.upsert(variant("overflow"))).toBe("created");
-  expect((await index.list()).length).toBe(durableRefreshTargetIndexLimit);
+  expect(await storeRefreshTarget(variant("0"))).toBe("updated");
+  await deleteStoredRefreshTarget(variant("1").key);
+  expect(await storeRefreshTarget(variant("overflow"))).toBe("created");
+  expect((await indexedTargets("owner", "owner")).length).toBe(refreshTargetSourceLimit);
 });
 
-test("durable target indexes reject oversized entries and serialized source state", async () => {
+test("a refresh target over the entry size is refused", async () => {
   const now = new Date().toISOString();
-  const cache = kvStore();
-  const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
-  };
-  const index = targetIndex(env, "owner", "owner");
   const target = (index: number, padding: number): RefreshTarget => ({
     key: `dashboard:v6:owner:large-${index}`,
     kind: "dashboard",
@@ -385,20 +342,10 @@ test("durable target indexes reject oversized entries and serialized source stat
     nextDueAt: now,
     failureCount: 0,
   });
-  expect(await index.upsert(target(0, 9 * 1024))).toBe("too-large");
-
-  let accepted = 0;
-  let rejected = 0;
-  for (let count = 1; count <= 512; count += 1) {
-    const result = await index.upsert(target(count, 4 * 1024));
-    if (result === "created") accepted += 1;
-    if (result === "full") {
-      rejected = count;
-      break;
-    }
-  }
-  expect(accepted > 0).toBe(true);
-  expect(rejected > 0 && rejected < 512).toBe(true);
+  expect(await storeRefreshTarget(target(0, 9 * 1024))).toBe("too-large");
+  expect(await storedRefreshTarget(target(0, 9 * 1024).key)).toBe(null);
+  expect(await indexedTargets("owner", "owner")).toStrictEqual([]);
+  expect(await storeRefreshTarget(target(1, 4 * 1024))).toBe("created");
 });
 
 test("repo-only refresh targets do not consume a shared custom-owner index", async () => {
@@ -422,8 +369,8 @@ test("repo-only refresh targets do not consume a shared custom-owner index", asy
     [target.key]: JSON.stringify(
       testDashboard("custom", [testProject({ owner: "owner", name: "repo" })]),
     ),
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
   });
+  await storeRefreshTarget(target);
   const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
@@ -434,11 +381,11 @@ test("repo-only refresh targets do not consume a shared custom-owner index", asy
   });
   await Promise.all(waits);
 
-  expect(await targetIndex(env, "owner", "custom").list()).toStrictEqual([]);
-  expect((await targetIndex(env, "repo", "owner/repo").list())[0]?.key).toBe(target.key);
+  expect(await indexedTargets("owner", "custom")).toStrictEqual([]);
+  expect((await indexedTargets("repo", "owner/repo"))[0]?.key).toBe(target.key);
 });
 
-test("multi-source target admission rolls back newly-created durable indexes", async () => {
+test("a target is stored under all of its sources or under none", async () => {
   const now = new Date().toISOString();
   const target: RefreshTarget = {
     key: "dashboard:v6:atomic-index",
@@ -455,26 +402,13 @@ test("multi-source target admission rolls back newly-created durable indexes", a
     nextDueAt: "2999-01-01T00:00:00Z",
     failureCount: 0,
   };
-  const cache = kvStore({
-    [target.key]: JSON.stringify(
-      testDashboard("owner", [testProject({ owner: "other", name: "repo" })]),
-    ),
-    [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
-  });
-  const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
-  };
   // The repository's index is full; the owner's has room.
-  await fillTargetIndex(env, "repo", "other/repo");
-  const waits: Promise<unknown>[] = [];
+  await fillTargetSource("repo", "other/repo");
 
-  await worker.scheduled({ cron: "0 * * * *" } as never, env, {
-    waitUntil: (promise) => waits.push(promise),
-  });
-  await Promise.all(waits);
+  expect(await storeRefreshTarget(target)).toBe("full");
 
-  expect(await targetIndex(env, "owner", "owner").list()).toStrictEqual([]);
-  expect(await cache.get(`refresh:target:v1:${target.key}`)).toBe(null);
+  expect(await indexedTargets("owner", "owner")).toStrictEqual([]);
+  expect(await storedRefreshTarget(target.key)).toBe(null);
 });
 
 test("rejected target admission does not persist or queue the target", async () => {
@@ -514,7 +448,7 @@ test("rejected target admission does not persist or queue the target", async () 
       },
     },
   };
-  await fillTargetIndex(env, "owner", owner);
+  await fillTargetSource("owner", owner);
   const waits: Promise<unknown>[] = [];
   const response = await worker.fetch(new Request(`https://release.bar/api/${owner}`), env, {
     waitUntil: (promise) => waits.push(promise),
@@ -523,7 +457,7 @@ test("rejected target admission does not persist or queue the target", async () 
 
   expect(response.status).toBe(200);
   expect(queued.length).toBe(0);
-  expect(await cache.get(`refresh:target:v1:${key}`)).toBe(null);
+  expect(await storedRefreshTarget(key)).toBe(null);
 });
 
 test("archive webhooks invalidate caches when owner snapshots omit the repository", async () => {
@@ -554,7 +488,6 @@ test("archive webhooks invalidate caches when owner snapshots omit the repositor
   };
   const cache = kvStore({
     [key]: JSON.stringify(dashboard),
-    [`refresh:target:v1:${key}`]: JSON.stringify(target),
     [`repo-detail:aux:v2:${encodeURIComponent(`${owner}/repo`)}:repository:${encodeURIComponent(`/repos/${owner}/repo`)}`]:
       JSON.stringify({ generatedAt: now, data: { name: "repo" } }),
     [`owner-metadata:v1:${owner}`]: JSON.stringify({
@@ -566,6 +499,7 @@ test("archive webhooks invalidate caches when owner snapshots omit the repositor
       projects: [testProject({ owner, name: "sibling" })],
     }),
   });
+  await storeRefreshTarget(target);
   const queued: unknown[] = [];
   const env: TestEnv = {
     DASHBOARD_CACHE: cache,

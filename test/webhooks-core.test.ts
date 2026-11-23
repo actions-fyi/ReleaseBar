@@ -9,7 +9,10 @@ import type {
 } from "../src/types.ts";
 import {
   BuildCoordinator,
+  indexedTargets,
   kvStore,
+  storeRefreshTarget,
+  storeRefreshTargets,
   testDashboard,
   type TestEnv,
   testEnv,
@@ -102,71 +105,54 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     owners: ["primary", "owner"],
     path: "/primary?owners=owner",
   };
-  const legacyTargets = Object.fromEntries(
-    Array.from({ length: 201 }, (_, index) => {
-      const owner = `legacy${String(index).padStart(3, "0")}`;
-      const legacyKey = dashboardCacheKey({
+  // Targets of other owners, more than one page of them: no webhook for "owner/repo" asks for
+  // them.
+  const unrelatedTargets = Array.from({ length: 201 }, (_, index) => {
+    const owner = `unrelated${String(index).padStart(3, "0")}`;
+    return {
+      ...target,
+      key: dashboardCacheKey({
         owner,
         includeUnreleased: true,
         includeReleaseData: true,
         schemaVersion: 6,
-      });
-      return [
-        `refresh:target:v1:${legacyKey}`,
-        JSON.stringify({
-          ...target,
-          key: legacyKey,
-          owner,
-          owners: [owner],
-          path: `/${owner}`,
-        } satisfies RefreshTarget),
-      ];
-    }),
-  );
-  const repoMatchedLegacyTargets = Array.from({ length: 30 }, (_, index) => {
+      }),
+      owner,
+      owners: [owner],
+      path: `/${owner}`,
+    } satisfies RefreshTarget;
+  });
+  const repoMatchedTargets = Array.from({ length: 30 }, (_, index) => {
     const suffix = String(index).padStart(2, "0");
-    const legacyKey = `dashboard:v6:aaa${suffix}:noforks-noarchived-unreleased-release`;
+    const targetKey = `dashboard:v6:aaa${suffix}:noforks-noarchived-unreleased-release`;
     return {
-      key: legacyKey,
-      storageKey: `refresh:target:v1:${legacyKey}`,
+      key: targetKey,
       target: {
         ...target,
-        key: legacyKey,
+        key: targetKey,
         owner: `aaa${suffix}`,
         owners: [],
         repos: ["owner/repo"],
         path: `/?repos=owner/repo&variant=${suffix}`,
+        // Seen before the owner's own dashboards: those go first.
+        lastSeenAt: new Date(Date.parse(now) - 60_000).toISOString(),
       } satisfies RefreshTarget,
     };
   });
-  const ownerLegacyPriorityTargets = Array.from({ length: 30 }, (_, index) => {
+  const ownerPriorityTargets = Array.from({ length: 30 }, (_, index) => {
     const suffix = String(index).padStart(2, "0");
-    const legacyKey = `dashboard:v6:owner:noforks-noarchived-unreleased-release:sources-priority-${suffix}`;
+    const targetKey = `dashboard:v6:owner:noforks-noarchived-unreleased-release:sources-priority-${suffix}`;
     return {
-      key: legacyKey,
-      storageKey: `refresh:target:v1:${legacyKey}`,
+      key: targetKey,
       target: {
         ...target,
-        key: legacyKey,
+        key: targetKey,
         path: `/owner?priority=${suffix}`,
         lastSeenAt: new Date(Date.parse(now) - (30 - index) * 1_000).toISOString(),
       } satisfies RefreshTarget,
     };
   });
   const cache = kvStore({
-    ...legacyTargets,
-    ...Object.fromEntries(
-      repoMatchedLegacyTargets.map(({ storageKey, target: matchedTarget }) => [
-        storageKey,
-        JSON.stringify(matchedTarget),
-      ]),
-    ),
-    ...Object.fromEntries(
-      ownerLegacyPriorityTargets.map(({ storageKey, target: priorityTarget }) => [
-        storageKey,
-        JSON.stringify(priorityTarget),
-      ]),
-    ),
     "owner:v1:owner": JSON.stringify({ type: "user", login: "owner" }),
     [key]: JSON.stringify(dashboard),
     [combinedKey]: JSON.stringify({
@@ -187,9 +173,6 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
         { type: "user", login: "owner" },
       ],
     } satisfies DashboardPayload),
-    [`refresh:target:v1:${key}`]: JSON.stringify(target),
-    [`refresh:target:v1:${combinedKey}`]: JSON.stringify(combinedTarget),
-    [`refresh:target:v1:${secondaryKey}`]: JSON.stringify(secondaryTarget),
     "owner-metadata:v1:owner": JSON.stringify({
       owner: "owner",
       generatedAt: now,
@@ -207,6 +190,14 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       projects: [testProject({ owner: "other", name: "repo" })],
     }),
   });
+  await storeRefreshTarget(target);
+  await storeRefreshTarget(combinedTarget);
+  await storeRefreshTarget(secondaryTarget);
+  await storeRefreshTargets([
+    ...unrelatedTargets,
+    ...repoMatchedTargets.map((matched) => matched.target),
+    ...ownerPriorityTargets.map((priority) => priority.target),
+  ]);
   const queued: unknown[] = [];
   const queuedDashboardTargets: string[] = [];
   let delivery7ImmediateTargets: string[] = [];
@@ -535,7 +526,6 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     expect(featurePush.projects[0]?.latestCommitSha).toBe("abcdef1");
 
     queuedDashboardTargets.length = 0;
-    await cache.delete("refresh:target-index:v1:ready");
     await send("push", "delivery-7", {
       ref: "refs/heads/main",
       after: "22222223333333",
@@ -543,18 +533,18 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       repository,
     });
     expect(
-      repoMatchedLegacyTargets.every(({ key: matchedKey }) =>
+      repoMatchedTargets.every(({ key: matchedKey }) =>
         queuedDashboardTargets.includes(matchedKey),
       ),
     ).toBe(true);
     expect(delivery7ImmediateTargets?.includes(key)).toBe(true);
     expect(delivery7ImmediateTargets.length <= 25).toBe(true);
-    const newestLegacyPriorityTarget = ownerLegacyPriorityTargets.at(-1);
-    assert.ok(newestLegacyPriorityTarget);
-    expect(delivery7ImmediateTargets.includes(newestLegacyPriorityTarget.key)).toBe(true);
-    expect(delivery7ImmediateTargets.includes(ownerLegacyPriorityTargets[0].key)).toBe(false);
+    const newestPriorityTarget = ownerPriorityTargets.at(-1);
+    assert.ok(newestPriorityTarget);
+    expect(delivery7ImmediateTargets.includes(newestPriorityTarget.key)).toBe(true);
+    expect(delivery7ImmediateTargets.includes(ownerPriorityTargets[0].key)).toBe(false);
     expect(
-      ownerLegacyPriorityTargets.every(({ key: priorityKey }) =>
+      ownerPriorityTargets.every(({ key: priorityKey }) =>
         queuedDashboardTargets.includes(priorityKey),
       ),
     ).toBe(true);
@@ -814,8 +804,7 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       ?.payload as Record<string, unknown> | undefined;
     expect("commits" in (compactPush ?? {})).toBe(false);
     expect(JSON.stringify(compactPush).length < 2_000).toBe(true);
-    const indexes = await cache.list({ prefix: "refresh:target-index:v1:owner:owner:" });
-    expect(indexes.keys.length > 0).toBe(true);
+    expect((await indexedTargets("owner", "owner")).length > 0).toBe(true);
     expect(objectNames(admissions.mock.contexts)).toStrictEqual(["github-webhook-admission"]);
     expect(objectNames(processing.mock.contexts)).toStrictEqual(["github-webhook-process:owner"]);
   } finally {
