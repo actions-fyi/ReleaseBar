@@ -52,8 +52,5 @@ export async function mutateCoordinatedOwnerMetadata(
   owner: string,
   mutation: OwnerMetadataMutation,
 ): Promise<OwnerMetadataSnapshot | null> {
-  return await env.OWNER_METADATA.getByName(ownerMetadataObjectName(owner)).mutate(
-    owner,
-    mutation,
-  );
+  return await env.OWNER_METADATA.getByName(ownerMetadataObjectName(owner)).mutate(owner, mutation);
 }

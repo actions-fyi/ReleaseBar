@@ -6,11 +6,7 @@
 // Every function rejects when the object can't be reached; the callers decide what stands in.
 
 import type { RefreshTarget } from "../../src/types.ts";
-import type {
-  RefreshTargetMutation,
-  StoredBuildProgress,
-  StoredRefreshDirty,
-} from "../config.ts";
+import type { RefreshTargetMutation, StoredBuildProgress, StoredRefreshDirty } from "../config.ts";
 import type { RefreshTargetSeed } from "../objects/build-coordinator.ts";
 
 function coordinator(env: Env, key: string) {
