@@ -15,8 +15,6 @@ import {
   gitHubOAuthTokenSchema,
   gitHubOAuthUserSchema,
   parseGitHubResponse,
-  safeJsonParse,
-  storedAuthSessionSchema,
 } from "./schemas.ts";
 import * as v from "valibot";
 import type { GenericSchema, InferOutput } from "valibot";
@@ -48,11 +46,15 @@ import {
   type StoredAuthSession,
 } from "./config.ts";
 import {
-  installationMissKey,
-  installationRegistryKey,
   isPublicInstallationRepository,
   writeInstallationRegistry,
 } from "./installation-registry.ts";
+import {
+  deleteStoredInstallation,
+  installationMissRecorded,
+  recordInstallationMiss,
+} from "./store/installations.ts";
+import { readStoredSession as readSessionRecord, writeStoredSession } from "./store/sessions.ts";
 
 export async function meResponse(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
@@ -375,7 +377,7 @@ export async function syncGithubAppInstallations(env: Env): Promise<AuthInstalla
     existing
       .filter((installation) => !freshAccounts.has(installation.accountLogin))
       .map(async (installation) => {
-        await env.DASHBOARD_CACHE.delete(installationRegistryKey(installation.accountLogin));
+        await deleteStoredInstallation(env, installation.accountLogin);
         await recordAuthFunnelEvent(env, {
           event: "install_removed",
           account: installation.accountLogin,
@@ -540,7 +542,7 @@ export async function githubAppInstallationForAccount(
   if (!appTokenConfigured(env)) return null;
   const account = slugOwner(accountLogin);
   if (!validOwnerSlug(account)) return null;
-  if (await env.DASHBOARD_CACHE.get(installationMissKey(account))) return null;
+  if (await installationMissRecorded(env, account)) return null;
   const jwt = await githubAppJwt(env);
   for (let page = 1; page <= 10; page += 1) {
     const response = await workerFetch(
@@ -584,12 +586,7 @@ export async function githubAppInstallationForAccount(
     }
     if (result.length < 100) break;
   }
-  await Promise.all([
-    env.DASHBOARD_CACHE.delete(installationRegistryKey(account)),
-    env.DASHBOARD_CACHE.put(installationMissKey(account), new Date().toISOString(), {
-      expirationTtl: 10 * 60,
-    }),
-  ]);
+  await Promise.all([deleteStoredInstallation(env, account), recordInstallationMiss(env, account)]);
   return null;
 }
 
@@ -650,9 +647,7 @@ export async function writeSessionRecord(
   // KV rejects expirationTtl below 60s; a session that close to expiry is not worth rewriting.
   const ttl = session.exp - Math.floor(Date.now() / 1000);
   if (ttl < 60) return;
-  await env.DASHBOARD_CACHE.put(`auth:session:${id}`, JSON.stringify(session), {
-    expirationTtl: ttl,
-  });
+  await writeStoredSession(env, id, session, ttl);
 }
 
 // KV allows only one write per key per second; concurrent /api/me calls (e.g. a browser
@@ -675,9 +670,7 @@ export async function bestEffortWriteSessionRecord(
 }
 
 async function readStoredSession(env: Env, id: string): Promise<StoredAuthSession | null> {
-  const stored = await env.DASHBOARD_CACHE.get(`auth:session:${id}`);
-  if (!stored) return null;
-  return safeJsonParse(storedAuthSessionSchema, stored, "auth session");
+  return (await readSessionRecord(env, id))?.session ?? null;
 }
 
 // Refresh tokens are single-use: once GitHub rotates a grant, losing the KV write would

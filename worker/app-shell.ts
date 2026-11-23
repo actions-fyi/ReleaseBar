@@ -10,7 +10,6 @@ import type {
 import { hmac, verifySignedJson } from "./crypto.ts";
 import { auditGitHubFetch } from "./github-audit.ts";
 import { type BackgroundContext, canonicalDomain } from "./runtime.ts";
-import { safeJsonParse, storedAuthSessionSchema, tryJsonParse } from "./schemas.ts";
 import { authDependentAppShellHeaders } from "./auth-oauth.ts";
 import { cachedHotInitialData } from "./build-progress.ts";
 import {
@@ -27,6 +26,9 @@ import {
 import { cachedDashboardInitialData, cachedDiscoverInitialData } from "./discover.ts";
 import { cachedRepoInitialData } from "./repo-detail-response.ts";
 import { socialLabel, socialPreviewTitle } from "./social-card.ts";
+import { fetchAsset } from "./store/assets.ts";
+import { readCacheEntry, writeCacheEntry } from "./store/cache.ts";
+import { readStoredSession } from "./store/sessions.ts";
 
 export type TokenSources = {
   owners: string[];
@@ -175,9 +177,9 @@ export async function currentSessionRecord(
   const pointer = await verifySignedJson<AuthSession>(env.AUTH_COOKIE_SECRET, token);
   if (!pointer || pointer.exp < Math.floor(Date.now() / 1000)) return null;
 
-  const stored = await env.DASHBOARD_CACHE.get(`auth:session:${pointer.id}`);
+  const stored = await readStoredSession(env, pointer.id);
   if (stored) {
-    const session = safeJsonParse(storedAuthSessionSchema, stored, "auth session");
+    const session = stored.session;
     if (!session) return null;
     return session.exp < Math.floor(Date.now() / 1000) ? null : { id: pointer.id, session };
   }
@@ -226,16 +228,12 @@ export function isCachedOwner(value: unknown): value is Owner {
 }
 
 export async function readCachedOwner(env: Env, login: string): Promise<Owner | null> {
-  const raw = await env.DASHBOARD_CACHE.get(ownerCacheKey(login));
-  if (!raw) return null;
-  const parsed = tryJsonParse<Owner>(raw, `owner ${login}`);
+  const parsed = await readCacheEntry<Owner>(env, ownerCacheKey(login), `owner ${login}`);
   return isCachedOwner(parsed) ? parsed : null;
 }
 
 export async function writeCachedOwner(env: Env, owner: Owner): Promise<void> {
-  await env.DASHBOARD_CACHE.put(ownerCacheKey(owner.login), JSON.stringify(owner), {
-    expirationTtl: ownerCacheTtlSeconds,
-  });
+  await writeCacheEntry(env, ownerCacheKey(owner.login), owner, ownerCacheTtlSeconds);
 }
 
 export function repoFullNameFromPath(pathname: string): string | null {
@@ -328,7 +326,7 @@ export async function assetResponse(request: Request, env: Env): Promise<Respons
   const url = new URL(request.url);
   if (shouldServeAppShell(url)) {
     url.pathname = "/index.html";
-    const response = await env.ASSETS.fetch(new Request(url, request));
+    const response = await fetchAsset(env, new Request(url, request));
     if (!response.ok) {
       return response;
     }
@@ -388,7 +386,7 @@ export async function assetResponse(request: Request, env: Env): Promise<Respons
     });
   }
 
-  const asset = await env.ASSETS.fetch(request);
+  const asset = await fetchAsset(env, request);
   if (asset.status !== 404) {
     return asset;
   }

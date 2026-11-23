@@ -3,7 +3,7 @@ import type { DashboardPayload, DashboardProfile, Project } from "../src/types.t
 import { mapConcurrent } from "./concurrency.ts";
 import { jsonResponse } from "./http.ts";
 import { type BackgroundContext, canonicalDomain } from "./runtime.ts";
-import { hotIndexSchema, safeJsonParse, tryJsonParse } from "./schemas.ts";
+import { hotIndexSchema, safeJsonParse } from "./schemas.ts";
 import type { InitialPageData } from "./app-shell.ts";
 import {
   dashboardCachePrefixes,
@@ -48,6 +48,19 @@ import {
   readCachedWithOwnerMetadata,
   safeIso,
 } from "./owner-metadata-write.ts";
+import {
+  deleteCoordinatedProgress,
+  readCoordinatedProgress,
+  writeCoordinatedProgress,
+} from "./store/build-coordinator.ts";
+import {
+  deleteCacheEntry,
+  listCacheKeys,
+  readCacheEntry,
+  readCacheText,
+  writeCacheEntry,
+  writeCacheText,
+} from "./store/cache.ts";
 
 export function progressKey(key: string): string {
   return `progress:v1:${key}`;
@@ -102,9 +115,7 @@ export async function readFallbackProgress(
   env: Env,
   key: string,
 ): Promise<StoredBuildProgress | StoredBuildProgressTombstone | null> {
-  const raw = await env.DASHBOARD_CACHE.get(progressKey(key));
-  if (!raw) return null;
-  const stored = tryJsonParse<unknown>(raw, `progress ${key}`);
+  const stored = await readCacheEntry<unknown>(env, progressKey(key), `progress ${key}`);
   if (isStoredBuildProgress(stored) || isStoredBuildProgressTombstone(stored)) {
     return stored;
   }
@@ -115,9 +126,11 @@ export async function readProgressTombstone(
   env: Env,
   key: string,
 ): Promise<StoredBuildProgressTombstone | null> {
-  const raw = await env.DASHBOARD_CACHE.get(progressTombstoneKey(key));
-  if (!raw) return null;
-  const stored = tryJsonParse<unknown>(raw, `progress tombstone ${key}`);
+  const stored = await readCacheEntry<unknown>(
+    env,
+    progressTombstoneKey(key),
+    `progress tombstone ${key}`,
+  );
   return isStoredBuildProgressTombstone(stored) ? stored : null;
 }
 
@@ -160,7 +173,7 @@ async function readDurableProgress(
   key: string,
 ): Promise<{ progress: StoredBuildProgress | null } | null> {
   try {
-    const progress = await env.BUILD_COORDINATOR.getByName(key).progress();
+    const progress = await readCoordinatedProgress(env, key);
     return { progress: isStoredBuildProgress(progress) ? progress : null };
   } catch {
     return null;
@@ -169,7 +182,7 @@ async function readDurableProgress(
 
 async function deleteDurableProgress(env: Env, key: string): Promise<void> {
   try {
-    await env.BUILD_COORDINATOR.getByName(key).deleteProgress();
+    await deleteCoordinatedProgress(env, key);
   } catch {
     // The tombstone in the cache still hides the progress.
   }
@@ -202,7 +215,7 @@ export async function readProgress(env: Env, key: string): Promise<StoredBuildPr
     if (progress === durableProgress) {
       await deleteDurableProgress(env, key);
     }
-    await env.DASHBOARD_CACHE.delete(progressKey(key));
+    await deleteCacheEntry(env, progressKey(key));
     return null;
   }
   return progress;
@@ -216,18 +229,17 @@ export async function writeProgress(
   const tombstone = await readProgressTombstone(env, key);
   if (progressCleared(progress, tombstone)) return;
   try {
-    await env.BUILD_COORDINATOR.getByName(key).putProgress(progress);
-    await env.DASHBOARD_CACHE.delete(progressKey(key)).catch(() => undefined);
+    await writeCoordinatedProgress(env, key, progress);
+    await deleteCacheEntry(env, progressKey(key)).catch(() => undefined);
     return;
   } catch {
     // The object can't be reached: the cache keeps the progress, marked as standing in for it.
   }
-  await env.DASHBOARD_CACHE.put(
+  await writeCacheEntry(
+    env,
     progressKey(key),
-    JSON.stringify({ ...progress, durableFallback: true } satisfies StoredBuildProgress),
-    {
-      expirationTtl: progressTtlSeconds,
-    },
+    { ...progress, durableFallback: true } satisfies StoredBuildProgress,
+    progressTtlSeconds,
   );
 }
 
@@ -238,9 +250,7 @@ export async function writeProgressTombstone(
   const tombstone = {
     clearedAt: new Date().toISOString(),
   } satisfies StoredBuildProgressTombstone;
-  await env.DASHBOARD_CACHE.put(progressTombstoneKey(key), JSON.stringify(tombstone), {
-    expirationTtl: progressTtlSeconds,
-  });
+  await writeCacheEntry(env, progressTombstoneKey(key), tombstone, progressTtlSeconds);
   return tombstone;
 }
 
@@ -550,17 +560,12 @@ export async function partialDashboardPayload(
 }
 
 export async function readCachedDashboards(env: Env): Promise<DashboardPayload[]> {
-  const cache = env.DASHBOARD_CACHE;
-
   let keys = await readHotIndex(env);
   if (keys.length < hotSourceLimit) {
     for (const prefix of dashboardCachePrefixes) {
       if (keys.length >= hotSourceLimit) break;
-      const page = await cache.list({
-        prefix,
-        limit: hotSourceLimit,
-      });
-      keys = [...new Set([...keys, ...page.keys.map((key) => key.name)])];
+      const listed = await listCacheKeys(env, prefix, hotSourceLimit);
+      keys = [...new Set([...keys, ...listed])];
     }
   }
 
@@ -568,9 +573,7 @@ export async function readCachedDashboards(env: Env): Promise<DashboardPayload[]
     keys.slice(0, hotSourceLimit),
     hotReadConcurrency,
     async (key) => {
-      const raw = await cache.get(key);
-      if (!raw) return null;
-      const rawPayload = tryJsonParse<DashboardPayload>(raw, `dashboard ${key}`);
+      const rawPayload = await readCacheEntry<DashboardPayload>(env, key, `dashboard ${key}`);
       if (!canDisplayCached(rawPayload)) return null;
       const payload = await mergeOwnerMetadata(env, rawPayload);
       if (
@@ -588,7 +591,7 @@ export async function readCachedDashboards(env: Env): Promise<DashboardPayload[]
 }
 
 export async function readHotIndex(env: Env): Promise<string[]> {
-  const raw = await env.DASHBOARD_CACHE.get(hotIndexKey);
+  const raw = await readCacheText(env, hotIndexKey);
   if (!raw) return [];
   const keys = safeJsonParse(hotIndexSchema, raw, "hot index");
   return keys
@@ -605,9 +608,7 @@ export async function rememberHotDashboard(
   if (!payload.projects.some(canContributeToHotDashboard)) return;
   const keys = await readHotIndex(env);
   const next = [key, ...keys.filter((existing) => existing !== key)].slice(0, hotIndexLimit);
-  await env.DASHBOARD_CACHE.put(hotIndexKey, JSON.stringify(next), {
-    expirationTtl: dashboardStorageTtlSeconds,
-  });
+  await writeCacheEntry(env, hotIndexKey, next, dashboardStorageTtlSeconds);
 }
 
 export function canContributeToHotDashboard(project: Project): boolean {
@@ -683,13 +684,16 @@ export async function refreshHotCache(env: Env): Promise<DashboardPayload | null
 }
 
 export async function markHotCacheStale(env: Env): Promise<void> {
-  await env.DASHBOARD_CACHE.put(hotInvalidatedAtKey, new Date().toISOString(), {
-    expirationTtl: dashboardStorageTtlSeconds,
-  });
+  await writeCacheText(
+    env,
+    hotInvalidatedAtKey,
+    new Date().toISOString(),
+    dashboardStorageTtlSeconds,
+  );
 }
 
 export async function hotInvalidatedAt(env: Env): Promise<number> {
-  return safeIso(await env.DASHBOARD_CACHE.get(hotInvalidatedAtKey));
+  return safeIso(await readCacheText(env, hotInvalidatedAtKey));
 }
 
 export function hotCacheIsStale(payload: DashboardPayload, invalidatedAt: number): boolean {

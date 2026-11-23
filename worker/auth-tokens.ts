@@ -47,7 +47,6 @@ import {
   type AuthSession,
   type AuthState,
   installationRegistryFastPathMaxAgeMs,
-  installationTokenTtlSeconds,
   installReturnCookie,
   type RequestToken,
   sessionCookie,
@@ -57,13 +56,18 @@ import {
 } from "./config.ts";
 import { isAbortError } from "./dashboard-cache.ts";
 import {
-  installationMissKey,
   readInstallationRegistry,
   scheduleInstallationCacheWarm,
   writeInstallationRegistry,
 } from "./installation-registry.ts";
 import { authInstallCallbackRateLimited } from "./refresh-targets.ts";
 import type { BackgroundContext } from "./runtime.ts";
+import {
+  installationMissRecorded,
+  readCachedInstallationToken,
+  writeCachedInstallationToken,
+} from "./store/installations.ts";
+import { deleteStoredSession, writeStoredSession } from "./store/sessions.ts";
 
 export async function requireAdmin(
   request: Request,
@@ -191,14 +195,11 @@ export async function cachedInstallationToken(
   installationId: number,
   signal?: AbortSignal,
 ): Promise<string | null> {
-  const cacheKey = `auth:installation-token:${installationId}`;
-  const cached = await env.DASHBOARD_CACHE.get(cacheKey);
+  const cached = await readCachedInstallationToken(env, installationId);
   if (cached) return cached;
   const token = await githubInstallationToken(env, installationId, signal);
   if (token) {
-    await env.DASHBOARD_CACHE.put(cacheKey, token, {
-      expirationTtl: installationTokenTtlSeconds,
-    });
+    await writeCachedInstallationToken(env, installationId, token);
   }
   return token;
 }
@@ -231,7 +232,7 @@ export async function sourceInstallationToken(
       !installation &&
       registryStale &&
       registryInstallation &&
-      !(await env.DASHBOARD_CACHE.get(installationMissKey(account)))
+      !(await installationMissRecorded(env, account))
     ) {
       installation = registryInstallation;
     }
@@ -454,9 +455,7 @@ export async function storedSessionCookie(env: Env, session: StoredAuthSession):
     throw new Error("missing auth cookie secret");
   }
   const id = randomNonce();
-  await env.DASHBOARD_CACHE.put(`auth:session:${id}`, JSON.stringify(session), {
-    expirationTtl: sessionMaxAgeSeconds,
-  });
+  await writeStoredSession(env, id, session, sessionMaxAgeSeconds);
   const token = await signedJson(env.AUTH_COOKIE_SECRET, { id, exp: session.exp });
   return authCookie(token);
 }
@@ -576,7 +575,7 @@ export async function logoutResponse(request: Request, env: Env): Promise<Respon
       ? await verifySignedJson<AuthSession>(env.AUTH_COOKIE_SECRET, token)
       : null;
     if (session?.id) {
-      await env.DASHBOARD_CACHE.delete(`auth:session:${session.id}`);
+      await deleteStoredSession(env, session.id);
     }
   }
   return redirectResponse(safeReturnTo(url.searchParams.get("returnTo"), url.origin), {
