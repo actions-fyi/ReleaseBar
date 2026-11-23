@@ -21,9 +21,11 @@
     "crons": ["*/15 * * * *"],
   },
 
-  // Only for Wrangler commands that read this file instead of the built config, such as the dry
-  // run of .github/workflows/cloudflare.yml: they bundle `main` themselves and need the app built.
-  // The Cloudflare Vite plugin ignores it, and says so in a warning.
+  // Needed by the Wrangler commands that read this file instead of the built config: the dry run
+  // of .github/workflows/cloudflare.yml (`wrangler deploy --dry-run` on a fresh checkout) and
+  // `npm run dev:worker:real`. They bundle `main` themselves and need the app built first, for
+  // `assets.directory`. The Cloudflare Vite plugin has no use for it and says so in a warning on
+  // every `vite build`; it is the only option that warning names.
   "build": {
     "command": "npm run build",
   },
@@ -73,10 +75,17 @@
       "invocation_logs": false,
     },
 
-    // Groups exceptions and failed invocations into Issues. Traces stay off; enable them
-    // (`observability.traces`) only while investigating something.
+    // Groups exceptions and failed invocations into Issues.
     "issues": {
       "enabled": true,
+    },
+
+    // Traces of one invocation in twenty: enough to see where a request, a tick or a queue job
+    // spends its time (KV, D1, the objects, GitHub) without a span for every call of every
+    // invocation. Query strings are redacted in traces as in logs.
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.05,
     },
   },
 
@@ -94,8 +103,8 @@
   },
 
   // A migration is applied once and never edited afterwards: a change to the classes is a new
-  // entry with a new tag, at the end. v2 deleted DashboardBuildLock with everything it stored;
-  // 7c-registry deleted OwnerMetadata the same way, when owner metadata moved to D1.
+  // entry with a new tag, at the end. The tags and the deleted classes are history: Cloudflare
+  // has applied them to the deployed Worker, so they stay as they are.
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["DashboardBuildLock"] },
     {
