@@ -40,16 +40,37 @@ export async function writeProfileSnapshot(env: Env, profile: DashboardProfile):
     .run();
 }
 
-// Stores the snapshot of `profile` unless it is stored already. Returns its key.
-export async function ensureProfileSnapshot(env: Env, profile: DashboardProfile): Promise<string> {
-  const key = profileSnapshotStorageKey(profile);
-  await env.DB.prepare(
+// Snapshots per batch: a snapshot carries the profile's lists.
+const snapshotsPerWrite = 25;
+
+// Stores the snapshot of each profile unless it is stored already, `snapshotsPerWrite` to a
+// batch. Returns their keys, in the order of `profiles`.
+export async function ensureProfileSnapshots(
+  env: Env,
+  profiles: DashboardProfile[],
+): Promise<string[]> {
+  const insert = env.DB.prepare(
     `INSERT INTO profile_snapshots (key, created_at, value) VALUES (?, ?, ?)
      ON CONFLICT (key) DO NOTHING`,
-  )
-    .bind(key, Date.now(), JSON.stringify(profile))
-    .run();
-  return key;
+  );
+  const keys = profiles.map(profileSnapshotStorageKey);
+  const now = Date.now();
+  for (let index = 0; index < profiles.length; index += snapshotsPerWrite) {
+    await env.DB.batch(
+      profiles
+        .slice(index, index + snapshotsPerWrite)
+        .map((profile, offset) =>
+          insert.bind(keys[index + offset] ?? "", now, JSON.stringify(profile)),
+        ),
+    );
+  }
+  return keys;
+}
+
+// Stores the snapshot of `profile` unless it is stored already. Returns its key.
+export async function ensureProfileSnapshot(env: Env, profile: DashboardProfile): Promise<string> {
+  const [key] = await ensureProfileSnapshots(env, [profile]);
+  return key ?? profileSnapshotStorageKey(profile);
 }
 
 // Deletes up to `limit` snapshots written before the storage lifetime, the oldest first. Returns

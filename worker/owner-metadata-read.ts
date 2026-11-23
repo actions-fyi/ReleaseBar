@@ -1,10 +1,9 @@
 import { type OwnerRepoCount, slugOwner, validOwnerSlug } from "../shared/dashboard.ts";
 import type { Project } from "../src/types.ts";
-import { mapConcurrent } from "./concurrency.ts";
 import { type OwnerMetadataSnapshot } from "./config.ts";
 import { normalizeOwnerMetadataSnapshot } from "./dashboard-cache.ts";
 import { safeIso } from "./owner-metadata-write.ts";
-import { readStoredOwnerMetadata } from "./store/owner-metadata.ts";
+import { readStoredOwnerMetadata, readStoredOwnerMetadataOf } from "./store/owner-metadata.ts";
 
 // The owner's snapshot, validated. Null when there is none. Rejects when the database can't be
 // reached, so that a caller hiding private repositories does not take "unknown" for "public".
@@ -16,6 +15,22 @@ export async function readOwnerMetadata(
   return normalizeOwnerMetadataSnapshot(
     normalizedOwner,
     await readStoredOwnerMetadata(env, normalizedOwner),
+  );
+}
+
+// The snapshots of the owners, validated, by the owner's slug: null for an owner that has none.
+// One query, however many owners. Rejects when the database can't be reached, as
+// `readOwnerMetadata` does.
+export async function readOwnerMetadataOf(
+  env: Env,
+  owners: string[],
+): Promise<Map<string, OwnerMetadataSnapshot | null>> {
+  const stored = await readStoredOwnerMetadataOf(env, owners);
+  return new Map(
+    [...stored].map(([owner, snapshot]) => [
+      owner,
+      normalizeOwnerMetadataSnapshot(owner, snapshot),
+    ]),
   );
 }
 
@@ -55,12 +70,7 @@ export async function privateRepositoryNames(
     ),
   ];
   try {
-    const snapshots = await mapConcurrent(
-      owners,
-      8,
-      async (owner) => [owner, await readDurableOwnerMetadata(env, owner)] as const,
-    );
-    const byOwner = new Map(snapshots);
+    const byOwner = await readOwnerMetadataOf(env, owners);
     return new Set(
       normalized.filter((fullName) => {
         const owner = fullName.split("/")[0] ?? "";

@@ -56,6 +56,7 @@ import {
 } from "./config.ts";
 import { isAbortError } from "./dashboard-cache.ts";
 import {
+  readInstallationRegistries,
   readInstallationRegistry,
   scheduleInstallationCacheWarm,
   writeInstallationRegistry,
@@ -65,6 +66,7 @@ import type { BackgroundContext } from "./runtime.ts";
 import {
   installationMissRecorded,
   readCachedInstallationToken,
+  type StoredInstallationRecord,
   writeCachedInstallationToken,
 } from "./store/installations.ts";
 import { deleteStoredSession, writeStoredSession } from "./store/sessions.ts";
@@ -75,10 +77,14 @@ export async function requireAdmin(
 ): Promise<StoredAuthSession | Response> {
   const session = await currentSession(request, env);
   if (!session) {
-    return jsonResponse({ error: "login required" }, 401, { "cache-control": "no-store" });
+    return jsonResponse({ error: "login required" }, 401, {
+      "cache-control": "no-store",
+    });
   }
   if (!isAdminLogin(session.user.login, env)) {
-    return jsonResponse({ error: "admin required" }, 403, { "cache-control": "no-store" });
+    return jsonResponse({ error: "admin required" }, 403, {
+      "cache-control": "no-store",
+    });
   }
   return session;
 }
@@ -207,14 +213,22 @@ export async function cachedInstallationToken(
 export async function sourceInstallationToken(
   env: Env,
   sources: TokenSources,
-  options: { discover?: boolean; maxRegistryAgeMs?: number; signal?: AbortSignal } = {},
+  options: {
+    discover?: boolean;
+    maxRegistryAgeMs?: number;
+    signal?: AbortSignal;
+    // The installations the invocation has read already: the account's is taken from there.
+    registry?: InstallationRegistry;
+  } = {},
 ): Promise<RequestToken | null> {
   if (!appTokenConfigured(env)) return null;
   const accounts = sourceAccounts(sources);
   if (accounts.length !== 1) return null;
   const account = accounts[0];
   if (account === undefined) return null;
-  const registryInstallation = await readInstallationRegistry(env, account);
+  const registryInstallation = options.registry
+    ? (options.registry.get(slugOwner(account)) ?? null)
+    : await readInstallationRegistry(env, account);
   let installation = registryInstallation;
   let registryStale = false;
   if (installation && options.maxRegistryAgeMs !== undefined) {
@@ -248,22 +262,48 @@ export async function sourceInstallationToken(
     : null;
 }
 
-export async function sourceInstallationRegistryCovers(
+// The stored installations of some accounts, by the account's slug: what the checks below ask
+// the registry, read once for all the sources an invocation handles.
+export type InstallationRegistry = Map<string, StoredInstallationRecord | null>;
+
+// The installations of every account the sources name. One query, however many sources.
+export function installationRegistryFor(
   env: Env,
+  sources: TokenSources[],
+): Promise<InstallationRegistry> {
+  return readInstallationRegistries(env, sources.flatMap(sourceAccounts));
+}
+
+// Whether every account of the sources has an installation in `registry` that covers them.
+export function installationRegistryCovers(
+  registry: InstallationRegistry,
   sources: TokenSources,
-): Promise<boolean> {
-  if (!appTokenConfigured(env)) return false;
+): boolean {
   const accounts = sourceAccounts(sources);
   if (accounts.length === 0) return false;
-  const installations = await Promise.all(
-    accounts.map((account) => readInstallationRegistry(env, account)),
-  );
-  return accounts.every((account, index) => {
-    const installation = installations[index];
+  return accounts.every((account) => {
+    const installation = registry.get(slugOwner(account));
     return Boolean(
       installation && installationCoversSources(installation, sourcesForAccount(sources, account)),
     );
   });
+}
+
+// Whether the stored installations cover the sources: one query for all their accounts. With
+// `registry`, the installations an invocation has read already, none: null there says that the
+// read failed, and nothing is covered.
+export async function sourceInstallationRegistryCovers(
+  env: Env,
+  sources: TokenSources,
+  registry?: InstallationRegistry | null,
+): Promise<boolean> {
+  if (!appTokenConfigured(env)) return false;
+  if (registry === null) return false;
+  if (sourceAccounts(sources).length === 0) return false;
+  return installationRegistryCovers(
+    registry ?? (await installationRegistryFor(env, [sources])),
+    sources,
+  );
 }
 
 export async function requestInstallationToken(
@@ -410,7 +450,10 @@ export function sourceCoverage(
   }
   if (sources.owners.length === 0 && sources.repos.length === 0) {
     return installations.length === 0
-      ? { needed: true, reason: "Install the GitHub App for dedicated API quota." }
+      ? {
+          needed: true,
+          reason: "Install the GitHub App for dedicated API quota.",
+        }
       : { needed: false, reason: null };
   }
 
@@ -456,7 +499,10 @@ export async function storedSessionCookie(env: Env, session: StoredAuthSession):
   }
   const id = randomNonce();
   await writeStoredSession(env, id, session, sessionMaxAgeSeconds);
-  const token = await signedJson(env.AUTH_COOKIE_SECRET, { id, exp: session.exp });
+  const token = await signedJson(env.AUTH_COOKIE_SECRET, {
+    id,
+    exp: session.exp,
+  });
   return authCookie(token);
 }
 

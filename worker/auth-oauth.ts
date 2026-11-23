@@ -5,7 +5,11 @@ import type {
   AuthPayload,
   AuthUser,
 } from "../src/types.ts";
-import { listStoredInstallations, recordAuthFunnelEvent } from "./auth-observability.ts";
+import {
+  listStoredInstallations,
+  recordAuthFunnelEvent,
+  recordAuthFunnelEvents,
+} from "./auth-observability.ts";
 import { randomNonce, signedJson } from "./crypto.ts";
 import { jsonResponse, redirectResponse, workerFetch } from "./http.ts";
 import {
@@ -51,6 +55,7 @@ import {
 } from "./installation-registry.ts";
 import {
   deleteStoredInstallation,
+  deleteStoredInstallations,
   installationMissRecorded,
   recordInstallationMiss,
 } from "./store/installations.ts";
@@ -373,20 +378,22 @@ export async function syncGithubAppInstallations(env: Env): Promise<AuthInstalla
   const installations = await githubAppInstallations(env, null, true);
   const freshAccounts = new Set(installations.map((installation) => installation.accountLogin));
   const existing = await listStoredInstallations(env);
-  await Promise.all(
-    existing
-      .filter((installation) => !freshAccounts.has(installation.accountLogin))
-      .map(async (installation) => {
-        await deleteStoredInstallation(env, installation.accountLogin);
-        await recordAuthFunnelEvent(env, {
-          event: "install_removed",
-          account: installation.accountLogin,
-          installationId: installation.id,
-          repositorySelection: installation.repositorySelection,
-          status: "sync_absent",
-          detail: null,
-        });
-      }),
+  const removed = existing.filter((installation) => !freshAccounts.has(installation.accountLogin));
+  // One query deletes them and one batch records them, however many there are.
+  await deleteStoredInstallations(
+    env,
+    removed.map((installation) => installation.accountLogin),
+  );
+  await recordAuthFunnelEvents(
+    env,
+    removed.map((installation) => ({
+      event: "install_removed",
+      account: installation.accountLogin,
+      installationId: installation.id,
+      repositorySelection: installation.repositorySelection,
+      status: "sync_absent",
+      detail: null,
+    })),
   );
   await writeInstallationRegistry(env, installations);
   await recordAuthFunnelEvent(env, {

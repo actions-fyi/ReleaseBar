@@ -78,6 +78,49 @@ function installationFromRow(row: InstallationRow): AuthInstallationRecord | nul
   return parsed.success ? { ...parsed.output, updatedAt: row.updated_at } : null;
 }
 
+// Accounts per statement of a lookup: D1 takes 100 bound parameters per statement, and the time
+// is one of them.
+const accountsPerRead = 90;
+
+// Installations per batch of writes. A row carries the installation's repository list.
+const installationsPerWrite = 25;
+
+function chunks<Item>(items: Item[], size: number): Item[][] {
+  const result: Item[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+  return result;
+}
+
+// The installations of the accounts, by the account's slug: null for an account that has none
+// stored. One query, however many accounts: a statement per `accountsPerRead` of them, in one
+// batch. An account is matched by its slug, exactly, as by `=`: no prefix, no pattern, no case
+// folding beyond the slug's own. Only the number of "?" depends on the accounts; the slugs are
+// bound.
+export async function readStoredInstallationsOf(
+  env: Env,
+  accounts: string[],
+): Promise<Map<string, StoredInstallationRecord | null>> {
+  const found = new Map<string, StoredInstallationRecord | null>(
+    accounts.map((account) => [slugOwner(account), null]),
+  );
+  if (found.size === 0) return found;
+  const now = Date.now();
+  const results = await env.DB.batch<InstallationRow>(
+    chunks([...found.keys()], accountsPerRead).map((chunk) =>
+      env.DB.prepare(
+        `SELECT ${installationColumns} FROM installations
+         WHERE account_login IN (${chunk.map(() => "?").join(", ")}) AND expires_at > ?`,
+      ).bind(...chunk, now),
+    ),
+  );
+  for (const row of results.flatMap((result) => result.results)) {
+    found.set(row.account_login, installationFromRow(row));
+  }
+  return found;
+}
+
 // The account's installation. Null when none is stored. The account is matched by its slug,
 // exactly: no prefix, no pattern, no case folding beyond the slug's own.
 export async function readStoredInstallation(
@@ -93,15 +136,14 @@ export async function readStoredInstallation(
   return row ? installationFromRow(row) : null;
 }
 
-// Stores the installation as the one of its account. One transaction: an installation the
-// account had before under another id goes, and the row of this id is inserted or replaced, so
-// an account never has two rows and a reader never sees none in between.
-export async function writeStoredInstallation(
+// The two statements that store the installation as the one of its account: an installation the
+// account had before under another id goes, and the row of this id is inserted or replaced.
+function installationWrite(
   env: Env,
   installation: StoredInstallationRecord,
-): Promise<void> {
+): D1PreparedStatement[] {
   const account = slugOwner(installation.accountLogin);
-  await env.DB.batch([
+  return [
     env.DB.prepare("DELETE FROM installations WHERE account_login = ?1 AND id <> ?2").bind(
       account,
       installation.id,
@@ -131,13 +173,45 @@ export async function writeStoredInstallation(
       installation.updatedAt ?? new Date(0).toISOString(),
       Date.now() + installationTtlMs,
     ),
-  ]);
+  ];
+}
+
+// Stores each installation as the one of its account, `installationsPerWrite` to a batch. A
+// batch is one transaction, and its statements run in the order given: an account never has two
+// rows, and a reader never sees none in between.
+export async function writeStoredInstallations(
+  env: Env,
+  installations: StoredInstallationRecord[],
+): Promise<void> {
+  for (const chunk of chunks(installations, installationsPerWrite)) {
+    await env.DB.batch(chunk.flatMap((installation) => installationWrite(env, installation)));
+  }
+}
+
+// Stores the installation as the one of its account. One transaction: an installation the
+// account had before under another id goes, and the row of this id is inserted or replaced, so
+// an account never has two rows and a reader never sees none in between.
+export async function writeStoredInstallation(
+  env: Env,
+  installation: StoredInstallationRecord,
+): Promise<void> {
+  await writeStoredInstallations(env, [installation]);
+}
+
+// Deletes the installations of the accounts: one query for `accountsPerRead` of them.
+export async function deleteStoredInstallations(env: Env, accountLogins: string[]): Promise<void> {
+  const accounts = [...new Set(accountLogins.map(slugOwner))];
+  for (const chunk of chunks(accounts, accountsPerRead)) {
+    await env.DB.prepare(
+      `DELETE FROM installations WHERE account_login IN (${chunk.map(() => "?").join(", ")})`,
+    )
+      .bind(...chunk)
+      .run();
+  }
 }
 
 export async function deleteStoredInstallation(env: Env, accountLogin: string): Promise<void> {
-  await env.DB.prepare("DELETE FROM installations WHERE account_login = ?1")
-    .bind(slugOwner(accountLogin))
-    .run();
+  await deleteStoredInstallations(env, [accountLogin]);
 }
 
 function newestFirst(records: AuthInstallationRecord[]): AuthInstallationRecord[] {
