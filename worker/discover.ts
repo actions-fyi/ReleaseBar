@@ -1,34 +1,30 @@
-import {
-  dashboardCacheKey,
-  GitHubRateLimitError,
-  validOwnerSlug,
-} from "../scripts/lib/dashboard.js";
-import type { ApiQuota, DashboardPayload, Project } from "../src/types.js";
+import { dashboardCacheKey, GitHubRateLimitError, validOwnerSlug } from "../shared/dashboard.ts";
+import type { ApiQuota, DashboardPayload, Project } from "../src/types.ts";
 import {
   isRateLimitResponse,
   parseHeaderInt,
   quotaFromResponse,
   recordAuditedGitHubAccess,
   sharedQuotaCooldown,
-} from "./github-audit.js";
-import { jsonResponse, workerFetch } from "./http.js";
-import { type BackgroundContext, canonicalDomain } from "./runtime.js";
+} from "./github-audit.ts";
+import { jsonResponse, workerFetch } from "./http.ts";
+import { type BackgroundContext, canonicalDomain } from "./runtime.ts";
 import {
   gitHubReleaseSchema,
   type GitHubSearchRepository,
   gitHubSearchRepositoryListSchema,
   parseGitHubResponse,
-} from "./schemas.js";
+} from "./schemas.ts";
 import * as v from "valibot";
 import {
   type InitialPageData,
   ownerListFromUrl,
   repoListFromUrl,
   uniqueSorted,
-} from "./app-shell.js";
-import { appTokenConfigured, dashboardReleaseDataAllowed } from "./auth-oauth.js";
-import { bestInstallationToken, sourceInstallationRegistryCovers } from "./auth-tokens.js";
-import { dashboardTotals } from "./build-progress.js";
+} from "./app-shell.ts";
+import { appTokenConfigured, dashboardReleaseDataAllowed } from "./auth-oauth.ts";
+import { bestInstallationToken, sourceInstallationRegistryCovers } from "./auth-tokens.ts";
+import { dashboardTotals } from "./build-progress.ts";
 import {
   buildLockRefreshMs,
   dashboardSchemaVersion,
@@ -38,7 +34,7 @@ import {
   discoverLimit,
   fullTtlMs,
   maxCustomSources,
-} from "./config.js";
+} from "./config.ts";
 import {
   cacheAgeMs,
   canDisplayCached,
@@ -51,10 +47,10 @@ import {
   retryAfterHeaders,
   withCacheState,
   writeCached,
-} from "./dashboard-cache.js";
-import { acquireBuildLock, dashboardStreamState } from "./dashboard-rebuild.js";
-import { allowRequestRefresh, readCachedWithOwnerMetadata } from "./owner-metadata-write.js";
-import { auditDashboardSync, auditSyncEvent, dashboardSyncDetail } from "./refresh-targets.js";
+} from "./dashboard-cache.ts";
+import { acquireBuildLock, dashboardStreamState } from "./dashboard-rebuild.ts";
+import { allowRequestRefresh, readCachedWithOwnerMetadata } from "./owner-metadata-write.ts";
+import { auditDashboardSync, auditSyncEvent, dashboardSyncDetail } from "./refresh-targets.ts";
 import {
   discoverCacheKey,
   discoverLanguage,
@@ -63,7 +59,7 @@ import {
   type DiscoverPeriod,
   discoverPeriodLabel,
   discoverSearchQuery,
-} from "./repo-github.js";
+} from "./repo-github.ts";
 
 export function discoverFreshness(repo: GitHubSearchRepository): Project["freshness"] {
   const stars = repo.stargazers_count ?? 0;

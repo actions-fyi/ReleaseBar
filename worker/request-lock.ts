@@ -1,11 +1,11 @@
-import { slugOwner, validOwnerSlug } from "../scripts/lib/dashboard.js";
-import type { DashboardProfile, Owner, RefreshTarget } from "../src/types.js";
-import { randomNonce } from "./crypto.js";
-import { jsonResponse } from "./http.js";
-import type { GitHubWebhookJob, StoredWebhookPending } from "./runtime.js";
-import { tryJsonParse } from "./schemas.js";
-import { dashboardSubtitle } from "./app-shell.js";
-import { isStoredBuildProgress, storedBuildProgressExpired } from "./build-progress.js";
+import { slugOwner, validOwnerSlug } from "../shared/dashboard.ts";
+import type { DashboardProfile, Owner, RefreshTarget } from "../src/types.ts";
+import { randomNonce } from "./crypto.ts";
+import { jsonResponse } from "./http.ts";
+import type { GitHubWebhookJob, StoredWebhookPending } from "./runtime.ts";
+import { tryJsonParse } from "./schemas.ts";
+import { dashboardSubtitle } from "./app-shell.ts";
+import { isStoredBuildProgress, storedBuildProgressExpired } from "./build-progress.ts";
 import {
   buildLockTtlMs,
   type DashboardRequest,
@@ -29,33 +29,33 @@ import {
   type StoredWebhookDelivery,
   type StoredWebhookProcessing,
   webhookTargetPageSize,
-} from "./config.js";
-import { hydrationOptionsFromUrl, normalizeOwnerMetadataSnapshot } from "./dashboard-cache.js";
-import { sleep } from "./dashboard-rebuild.js";
+} from "./config.ts";
+import { hydrationOptionsFromUrl, normalizeOwnerMetadataSnapshot } from "./dashboard-cache.ts";
+import { sleep } from "./dashboard-rebuild.ts";
 import {
   readOwnerMetadataKv,
   reconcileOwnerMetadataSnapshots,
   writeOwnerMetadata,
-} from "./owner-metadata-read.js";
+} from "./owner-metadata-read.ts";
 import {
   applyOwnerMetadataMutation,
   isOwnerMetadataMutation,
   safeIso,
-} from "./owner-metadata-write.js";
+} from "./owner-metadata-write.ts";
 import {
   applyRefreshTargetMutation,
   isRefreshTarget,
   isRefreshTargetMutation,
   refreshTargetStorageKey,
-} from "./refresh-targets.js";
-import { summaryQuotaResponse } from "./summary-quota.js";
-import { processGitHubWebhook } from "./webhook.js";
+} from "./refresh-targets.ts";
+import { summaryQuotaResponse } from "./summary-quota.ts";
+import { processGitHubWebhook } from "./webhook.ts";
 import {
   compareWebhookTargets,
   mergePendingWebhook,
   pendingWebhookBatch,
   pendingWebhookFits,
-} from "./webhook-targets.js";
+} from "./webhook-targets.ts";
 
 export function dashboardRequest(
   owners: Owner[],

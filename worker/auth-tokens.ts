@@ -1,6 +1,6 @@
-import { slugOwner, validOwnerSlug } from "../scripts/lib/dashboard.js";
-import type { AuthInstallation } from "../src/types.js";
-import { recordAuthFunnelEvent } from "./auth-observability.js";
+import { slugOwner, validOwnerSlug } from "../shared/dashboard.ts";
+import type { AuthInstallation } from "../src/types.ts";
+import { recordAuthFunnelEvent } from "./auth-observability.ts";
 import {
   base64Url,
   base64UrlJson,
@@ -9,9 +9,9 @@ import {
   signedJson,
   timingSafeEqual,
   verifySignedJson,
-} from "./crypto.js";
-import { jsonResponse, redirectResponse, workerFetch } from "./http.js";
-import { gitHubInstallationTokenSchema, parseGitHubResponse } from "./schemas.js";
+} from "./crypto.ts";
+import { jsonResponse, redirectResponse, workerFetch } from "./http.ts";
+import { gitHubInstallationTokenSchema, parseGitHubResponse } from "./schemas.ts";
 import {
   appSlug,
   authConfigured,
@@ -29,7 +29,7 @@ import {
   repoListFromUrl,
   safeReturnTo,
   type TokenSources,
-} from "./app-shell.js";
+} from "./app-shell.ts";
 import {
   acknowledgedInstallations,
   appTokenConfigured,
@@ -42,7 +42,7 @@ import {
   loginResponse,
   resolvedInstallations,
   sessionAccessToken,
-} from "./auth-oauth.js";
+} from "./auth-oauth.ts";
 import {
   type AuthSession,
   type AuthState,
@@ -54,16 +54,16 @@ import {
   sessionMaxAgeSeconds,
   stateMaxAgeSeconds,
   type StoredAuthSession,
-} from "./config.js";
-import { isAbortError } from "./dashboard-cache.js";
+} from "./config.ts";
+import { isAbortError } from "./dashboard-cache.ts";
 import {
   installationMissKey,
   readInstallationRegistry,
   scheduleInstallationCacheWarm,
   writeInstallationRegistry,
-} from "./installation-registry.js";
-import { authInstallCallbackRateLimited } from "./refresh-targets.js";
-import type { BackgroundContext } from "./runtime.js";
+} from "./installation-registry.ts";
+import { authInstallCallbackRateLimited } from "./refresh-targets.ts";
+import type { BackgroundContext } from "./runtime.ts";
 
 export async function requireAdmin(
   request: Request,

@@ -3,8 +3,8 @@ import {
   type AudienceRepoSignal,
   type AudienceScoreTier,
   calculateAudienceScore,
-} from "../scripts/lib/audience.js";
-import { GitHubRateLimitError, slugOwner, validOwnerSlug } from "../scripts/lib/dashboard.js";
+} from "../shared/audience.ts";
+import { GitHubRateLimitError, slugOwner, validOwnerSlug } from "../shared/dashboard.ts";
 import type {
   ApiQuota,
   AudienceRange,
@@ -13,7 +13,7 @@ import type {
   RepoAudienceUser,
   RepoDetailPayload,
   TrustProfilePayload,
-} from "../src/types.js";
+} from "../src/types.ts";
 import {
   type GitHubAuditArea,
   githubGraphqlAuditPath,
@@ -25,8 +25,8 @@ import {
   quotaFromGitHubResponse,
   recordAuditedGitHubAccess,
   responseRateLimitSignal,
-} from "./github-audit.js";
-import { workerFetch } from "./http.js";
+} from "./github-audit.ts";
+import { workerFetch } from "./http.ts";
 import {
   gitHubRepositorySchema,
   type GitHubStargazer,
@@ -39,9 +39,9 @@ import {
   gitHubUserRepositoryListSchema,
   safeJsonParse,
   tryJsonParse,
-} from "./schemas.js";
+} from "./schemas.ts";
 import type { InferOutput } from "valibot";
-import { buildTrustProfile } from "./audience.js";
+import { buildTrustProfile } from "./audience.ts";
 import {
   dashboardStorageTtlSeconds,
   githubGraphqlRepoStargazersOperation,
@@ -49,11 +49,11 @@ import {
   repoAudienceUserRepoLimit,
   repoAudienceUserTtlSeconds,
   type UserTrustSignal,
-} from "./config.js";
-import { isGitHubRateLimit } from "./dashboard-cache.js";
-import { acquireBuildLock } from "./dashboard-rebuild.js";
-import { privateRepositoryNames } from "./owner-metadata-read.js";
-import { detailGitHubJson, detailGitHubJsonWithHeaders } from "./repo-github.js";
+} from "./config.ts";
+import { isGitHubRateLimit } from "./dashboard-cache.ts";
+import { acquireBuildLock } from "./dashboard-rebuild.ts";
+import { privateRepositoryNames } from "./owner-metadata-read.ts";
+import { detailGitHubJson, detailGitHubJsonWithHeaders } from "./repo-github.ts";
 
 export function lastPageFromLink(link: string | null): number | null {
   if (!link) return null;

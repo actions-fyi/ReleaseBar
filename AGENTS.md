@@ -10,13 +10,14 @@ Work style: terse.
 - Canonical prod: Cloudflare Worker + Worker Assets at `releasebar.actions.fyi`. Worker name: `releasebar`.
 - Repo/product name: ReleaseBar. Config file: `releasebar.config.json`.
 - Not GitHub Pages. No deploy workflow: Cloudflare's GitHub app (Workers Builds) runs `npm run deploy` on every push to `main`. GitHub holds no Cloudflare token.
-- `wrangler.jsonc` stays generic: no domain, admin login, account or resource ID. Deployment values are Workers Builds build variables (`RELEASEBAR_*`, see `docs/self-hosting.md`), which `npm run deploy` writes into the git-ignored `wrangler.deploy.json`.
+- `wrangler.jsonc` stays generic: no domain, admin login, account or resource ID. Deployment values are Workers Builds build variables (`RELEASEBAR_*`, see `docs/self-hosting.md`), which the Vite build writes into the config it emits for the deploy, `dist/releasebar/wrangler.json` (`vite.config.ts`, `shared/deploy-config.ts`). `npm run deploy` checks them, builds and runs `wrangler deploy`, which follows `.wrangler/deploy/config.json` to that file.
+- One build: `npm run build` is `vite build` with the Cloudflare Vite plugin. It builds the app to `dist/client` and the Worker, from `worker/index.ts`, to `dist/releasebar`. `npm run dev` is `vite dev`: app and Worker on one server, in the Workers runtime. Scripts under `scripts/` run as TypeScript on Node.js, without a compile step; imports name the `.ts` file.
 - `worker-configuration.d.ts` is generated: run `npm run types` after changing `wrangler.jsonc` or updating Wrangler. `npm run typecheck` fails when it is stale. Variables and secrets set outside the config are typed in `worker/env.d.ts`.
-- Gates on pull requests: the org ruleset workflow Test TypeScript (`typecheck`, `lint`, `format:check`, `build`, `test` scripts) and `.github/workflows/cloudflare.yml` (`wrangler deploy --dry-run`).
+- Gates on pull requests: the org ruleset workflow Test TypeScript (`typecheck`, `lint`, `format:check`, `build`, `test` scripts) and `.github/workflows/cloudflare.yml` (`wrangler deploy --dry-run` on a fresh checkout: it reads `wrangler.jsonc`, runs its `build.command` and bundles `worker/index.ts` with Wrangler's own bundler, not Vite's).
 - `npm run build` must stay offline. `npm run build:data` fetches real dashboard data from GitHub.
 - Wrangler is a locked devDependency. Never run it with `npm exec --yes` or `npx --yes`.
 - Prod data lives in the EU: queues and KV namespace created with `--jurisdiction eu`, `RELEASEBAR_DO_JURISDICTION=eu`.
-- Local real-data dev: `npm run dev:worker:real` uses Wrangler `--remote` on port 8787 with real secrets.
+- Local real-data dev: `npm run dev:worker:real` uses Wrangler `--remote` on port 8787 with real secrets. It reads `wrangler.jsonc`, not the Vite build's config.
 - Static proof: `npm run check:static`.
 - Tests: `npm test` runs Vitest with coverage; `vitest.config.ts` has a `workers` project (Workers runtime, bindings from `wrangler.jsonc`) and a `node` project for the files it lists. Tests import the TypeScript sources; no build first. One file or test: `npx vitest run <file> -t <name>`.
 - Dependency updates come from Renovate, not Dependabot.
@@ -30,7 +31,7 @@ Steps, one pull request each, in order; 7a to 7c may run in parallel. Tick a ste
 - [x] 1 Ground rules: this section.
 - [x] 2 Config and types: `wrangler.jsonc`, types from `wrangler types`, handlers `satisfies ExportedHandler<Env>`.
 - [x] 3 Test runner: Vitest in the Workers runtime; tests import TypeScript sources, no compile step.
-- [ ] 4 Single build: Cloudflare Vite plugin v1, one `vite build`, one `vite dev`; shared code moves from `scripts/lib` to `shared/`.
+- [x] 4 Single build: Cloudflare Vite plugin v1, one `vite build`, one `vite dev`; shared code moves from `scripts/lib` to `shared/`.
 - [ ] 5 Durable Objects: classes that extend `DurableObject`, typed RPC methods, SQLite tables.
 - [ ] 6 Store layer: `worker/store/` is the only code that touches a binding; D1 binding added.
 - [ ] 7a Refresh data to D1: targets, target index, jobs, deliveries, scheduler state.

@@ -1,55 +1,18 @@
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+// Fetches the dashboard data of releasebar.config.json from GitHub. `npm run build:data` writes
+// it next to the built app; `npm run check:data` only prints the totals.
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { buildDashboard, normalizeBuildOptions } from "./lib/dashboard.js";
-import type { ReleaseBarConfig } from "../src/types.js";
+import { buildDashboard, normalizeBuildOptions } from "../shared/dashboard.ts";
+import type { ReleaseBarConfig } from "../src/types.ts";
 
 const root = process.cwd();
-const distDir = path.join(root, "dist");
+const dataDir = path.join(root, "dist", "client", "data");
 const configPath = path.join(root, "releasebar.config.json");
-const publicDir = path.join(root, "src");
 const checkOnly = process.argv.includes("--check");
-const assetsOnly = process.argv.includes("--assets-only");
-
-async function finishStaticAssets(): Promise<void> {
-  await mkdir(path.join(distDir, "data"), { recursive: true });
-
-  for (const file of [
-    "favicon.ico",
-    "favicon.svg",
-    "apple-touch-icon.png",
-    "og-card.png",
-    "github-app-logo.svg",
-    "github-app-logo.png",
-  ]) {
-    await copyFile(path.join(publicDir, file), path.join(distDir, file));
-  }
-  for (const file of [
-    "jetbrains-mono-latin-400-normal.woff2",
-    "jetbrains-mono-latin-700-normal.woff2",
-  ]) {
-    await copyFile(
-      path.join(root, "node_modules", "@fontsource", "jetbrains-mono", "files", file),
-      path.join(distDir, file),
-    );
-  }
-  // The OFL asks that each copy of the font comes with its license. The font files only link to
-  // it, so the site serves the text next to them.
-  await copyFile(
-    path.join(root, "node_modules", "@fontsource", "jetbrains-mono", "LICENSE"),
-    path.join(distDir, "jetbrains-mono-LICENSE.txt"),
-  );
-
-  await copyFile(path.join(distDir, "index.html"), path.join(distDir, "404.html"));
-}
 
 async function main() {
   const config = JSON.parse(await readFile(configPath, "utf8")) as ReleaseBarConfig;
-  if (assetsOnly) {
-    await finishStaticAssets();
-    return;
-  }
-
   const payload = await buildDashboard(
     normalizeBuildOptions(config, {
       token: process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "",
@@ -65,11 +28,8 @@ async function main() {
     return;
   }
 
-  await finishStaticAssets();
-  await writeFile(
-    path.join(distDir, "data", "projects.json"),
-    `${JSON.stringify(payload, null, 2)}\n`,
-  );
+  await mkdir(dataDir, { recursive: true });
+  await writeFile(path.join(dataDir, "projects.json"), `${JSON.stringify(payload, null, 2)}\n`);
   console.log(`built ${payload.projects.length} projects at ${payload.generatedAt}`);
 }
 

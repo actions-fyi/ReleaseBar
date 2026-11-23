@@ -2,17 +2,17 @@ import {
   type AudienceRepoSignal,
   type AudienceScoreTier,
   calculateAudienceScore,
-} from "../scripts/lib/audience.js";
-import { slugOwner, validOwnerSlug, validRepoSlug } from "../scripts/lib/dashboard.js";
+} from "../shared/audience.ts";
+import { slugOwner, validOwnerSlug, validRepoSlug } from "../shared/dashboard.ts";
 import type {
   ApiQuota,
   AudienceRange,
   AudienceScoreFactor,
   RepoAudiencePayload,
   TrustProfilePayload,
-} from "../src/types.js";
-import { jsonResponse } from "./http.js";
-import { gitHubRepositorySchema, type GitHubUserProfile } from "./schemas.js";
+} from "../src/types.ts";
+import { jsonResponse } from "./http.ts";
+import { gitHubRepositorySchema, type GitHubUserProfile } from "./schemas.ts";
 import {
   audienceOrgSignals,
   audienceRangeFromUrl,
@@ -35,28 +35,28 @@ import {
   withRepoAudienceTrustProfiles,
   writeRepoAudience,
   writeTrustProfile,
-} from "./audience-data.js";
-import { appTokenConfigured } from "./auth-oauth.js";
-import { bestInstallationToken, requestInstallationToken } from "./auth-tokens.js";
-import { daysSince } from "./build-progress.js";
+} from "./audience-data.ts";
+import { appTokenConfigured } from "./auth-oauth.ts";
+import { bestInstallationToken, requestInstallationToken } from "./auth-tokens.ts";
+import { daysSince } from "./build-progress.ts";
 import {
   maxDisplayStaleMs,
   repoAudienceCacheTtlMs,
   repoAudienceDeepUserLimit,
   repoAudienceRanges,
   type RequestToken,
-} from "./config.js";
+} from "./config.ts";
 import {
   dashboardErrorMessage,
   errorStatus,
   isGitHubRateLimit,
   retryAfterHeaders,
-} from "./dashboard-cache.js";
-import { acquireBuildLock } from "./dashboard-rebuild.js";
-import { repositoryPublicCacheBarrier } from "./owner-metadata-read.js";
-import { allowRequestRefresh, crawlerCacheOnlyResponse } from "./owner-metadata-write.js";
-import { detailGitHubJson } from "./repo-github.js";
-import type { BackgroundContext } from "./runtime.js";
+} from "./dashboard-cache.ts";
+import { acquireBuildLock } from "./dashboard-rebuild.ts";
+import { repositoryPublicCacheBarrier } from "./owner-metadata-read.ts";
+import { allowRequestRefresh, crawlerCacheOnlyResponse } from "./owner-metadata-write.ts";
+import { detailGitHubJson } from "./repo-github.ts";
+import type { BackgroundContext } from "./runtime.ts";
 
 export function signalCounts(
   values: Array<string | null | undefined>,

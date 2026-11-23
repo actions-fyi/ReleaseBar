@@ -8,14 +8,14 @@
     relativeDate,
     trustDimensionEntries,
     trustProfileAge,
-  } from "../app-format.js";
-  import { ownerActivityPath, repoDetailPath } from "../routing.js";
+  } from "../app-format.ts";
+  import { ownerActivityPath, repoDetailPath } from "../routing.ts";
   import type {
     ActivityRange,
     Owner,
     OwnerActivityPayload,
     TrustProfilePayload,
-  } from "../types.js";
+  } from "../types.ts";
 
   export let showTrustProfile: boolean;
   export let ownerTab: "overview" | "trust";

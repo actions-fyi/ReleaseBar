@@ -1,4 +1,4 @@
-import type { AuthPayload } from "./types.js";
+import type { AuthPayload } from "./types.ts";
 
 export type PrimaryAuthAction = "login" | "install" | null;
 

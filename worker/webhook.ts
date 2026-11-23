@@ -1,15 +1,15 @@
-import type { RefreshTarget } from "../src/types.js";
-import { mapConcurrent } from "./concurrency.js";
-import { randomNonce } from "./crypto.js";
+import type { RefreshTarget } from "../src/types.ts";
+import { mapConcurrent } from "./concurrency.ts";
+import { randomNonce } from "./crypto.ts";
 import {
   githubGraphqlBackoffSeconds,
   sharedQuotaCooldown,
   sharedQuotaDeferUntil,
-} from "./github-audit.js";
-import { jsonResponse } from "./http.js";
-import type { BackgroundContext, GitHubWebhookFanoutJob, WebhookTargetAction } from "./runtime.js";
-import { tryJsonParse } from "./schemas.js";
-import { markHotCacheStale } from "./build-progress.js";
+} from "./github-audit.ts";
+import { jsonResponse } from "./http.ts";
+import type { BackgroundContext, GitHubWebhookFanoutJob, WebhookTargetAction } from "./runtime.ts";
+import { tryJsonParse } from "./schemas.ts";
+import { markHotCacheStale } from "./build-progress.ts";
 import {
   githubWebhookBodyLimitBytes,
   hotCacheKey,
@@ -17,16 +17,16 @@ import {
   webhookPriorityFanoutWaitMs,
   webhookPriorityTargetLimit,
   webhookRecentTargetMs,
-} from "./config.js";
-import { errorMessage, readCachedRaw } from "./dashboard-cache.js";
-import { readOwnerMetadata } from "./owner-metadata-read.js";
+} from "./config.ts";
+import { errorMessage, readCachedRaw } from "./dashboard-cache.ts";
+import { readOwnerMetadata } from "./owner-metadata-read.ts";
 import {
   mutateOwnerMetadataSnapshot,
   rememberOwnerMetadata,
   safeIso,
-} from "./owner-metadata-write.js";
-import { enqueueRefreshJob, refreshOwnerCounts } from "./refresh-queue.js";
-import { auditSyncEvent } from "./refresh-targets.js";
+} from "./owner-metadata-write.ts";
+import { enqueueRefreshJob, refreshOwnerCounts } from "./refresh-queue.ts";
+import { auditSyncEvent } from "./refresh-targets.ts";
 import {
   compactGitHubWebhookPayload,
   freshestWebhookTargets,
@@ -42,7 +42,7 @@ import {
   webhookTargetPage,
   type WebhookTargetPage,
   webhookTargetsForAction,
-} from "./webhook-targets.js";
+} from "./webhook-targets.ts";
 
 export async function prepareGitHubWebhookEvent(
   event: string,

@@ -1,6 +1,6 @@
-import { quotaLabel, relativeDate } from "./app-format.js";
-import { fallbackApiOrigin } from "./routing.js";
-import type { DashboardRoute, OwnerActivityRoute, RepoRoute } from "./routing.js";
+import { quotaLabel, relativeDate } from "./app-format.ts";
+import { fallbackApiOrigin } from "./routing.ts";
+import type { DashboardRoute, OwnerActivityRoute, RepoRoute } from "./routing.ts";
 import type {
   ActivityRange,
   AudienceRange,
@@ -10,7 +10,7 @@ import type {
   RepoActivityRange,
   RepoDetailActivityPayload,
   TrustProfilePayload,
-} from "./types.js";
+} from "./types.ts";
 
 export type ActivityControllerContext = {
   readonly initialRoute: DashboardRoute;

@@ -1,21 +1,21 @@
-import { slugOwner, validRepoSlug } from "../scripts/lib/dashboard.js";
-import type { ActivityRange, RefreshTarget } from "../src/types.js";
-import { mapConcurrent } from "./concurrency.js";
-import { randomNonce } from "./crypto.js";
+import { slugOwner, validRepoSlug } from "../shared/dashboard.ts";
+import type { ActivityRange, RefreshTarget } from "../src/types.ts";
+import { mapConcurrent } from "./concurrency.ts";
+import { randomNonce } from "./crypto.ts";
 import type {
   GitHubWebhookFanoutJob,
   GitHubWebhookJob,
   StoredWebhookPending,
   WebhookTargetAction,
-} from "./runtime.js";
-import { tryJsonParse } from "./schemas.js";
-import { repoActivityCacheKey } from "./activity-data.js";
+} from "./runtime.ts";
+import { tryJsonParse } from "./schemas.ts";
+import { repoActivityCacheKey } from "./activity-data.ts";
 import {
   repoAudienceCacheKey,
   repoAudienceUserReposKey,
   trustProfileCacheKey,
-} from "./audience-data.js";
-import { deleteProgress, markHotCacheStale } from "./build-progress.js";
+} from "./audience-data.ts";
+import { deleteProgress, markHotCacheStale } from "./build-progress.ts";
 import {
   activitySummaryPromptVersion,
   dashboardCachePrefix,
@@ -35,19 +35,19 @@ import {
   webhookTargetBatchSize,
   webhookTargetConcurrency,
   webhookTargetPageSize,
-} from "./config.js";
-import { safeIso } from "./owner-metadata-write.js";
+} from "./config.ts";
+import { safeIso } from "./owner-metadata-write.ts";
 import {
   currentDashboardCacheKey,
   isRefreshTarget,
   persistRefreshTargetWithIndexes,
   readRefreshTarget,
   refreshTargetIndexSource,
-} from "./refresh-targets.js";
-import { repoDetailCacheKey } from "./release-summary.js";
-import { ownerActivityCacheKey, repoDetailAuxCachePrefix } from "./repo-github.js";
-import { webhookHex } from "./request-lock.js";
-import { socialRepoCacheKey } from "./social-card.js";
+} from "./refresh-targets.ts";
+import { repoDetailCacheKey } from "./release-summary.ts";
+import { ownerActivityCacheKey, repoDetailAuxCachePrefix } from "./repo-github.ts";
+import { webhookHex } from "./request-lock.ts";
+import { socialRepoCacheKey } from "./social-card.ts";
 
 export async function validWebhookSignature(
   secret: string,

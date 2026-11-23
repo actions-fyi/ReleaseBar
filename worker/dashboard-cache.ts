@@ -3,11 +3,11 @@ import {
   type OwnerRepoCount,
   slugOwner,
   validRepoSlug,
-} from "../scripts/lib/dashboard.js";
-import type { ApiQuota, DashboardPayload, DashboardProfile, Project } from "../src/types.js";
-import { sha256Base64Url } from "./crypto.js";
-import { tryJsonParse } from "./schemas.js";
-import { dashboardTotals } from "./build-progress.js";
+} from "../shared/dashboard.ts";
+import type { ApiQuota, DashboardPayload, DashboardProfile, Project } from "../src/types.ts";
+import { sha256Base64Url } from "./crypto.ts";
+import { tryJsonParse } from "./schemas.ts";
+import { dashboardTotals } from "./build-progress.ts";
 import {
   type DashboardRequest,
   dashboardStorageTtlSeconds,
@@ -18,8 +18,8 @@ import {
   type OwnerMetadataSnapshot,
   refreshProfileSnapshotPrefix,
   repoLimit,
-} from "./config.js";
-import { safeIso } from "./owner-metadata-write.js";
+} from "./config.ts";
+import { safeIso } from "./owner-metadata-write.ts";
 
 export function withCacheState(
   payload: DashboardPayload,

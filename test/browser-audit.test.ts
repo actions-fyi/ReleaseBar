@@ -1,0 +1,173 @@
+import { assert, expect, test } from "vitest";
+import { isGitHubRateLimit } from "../src/rate-limit.ts";
+import {
+  githubAccessRouteRecords,
+  kvStore,
+  refreshAuditEvents,
+  worker,
+} from "./dashboard-test-harness.ts";
+
+test("browser rate-limit detection covers HTTP and cached GitHub quota failures", () => {
+  expect(isGitHubRateLimit(429)).toBe(true);
+  expect(isGitHubRateLimit(403, "API rate limit exceeded")).toBe(true);
+  expect(isGitHubRateLimit(200, "shared GitHub quota paused until reset")).toBe(true);
+  expect(
+    isGitHubRateLimit(200, "Repository detail is cache-only while shared GitHub quota recovers."),
+  ).toBe(true);
+  expect(isGitHubRateLimit(500, "dashboard fetch failed")).toBe(false);
+  expect(isGitHubRateLimit(200, "shared quota · 4,812 left")).toBe(false);
+});
+
+test("worker records client dashboard timing beacons in audit log", async () => {
+  const cache = kvStore();
+  const waits: Array<Promise<unknown>> = [];
+  const response = await worker.fetch(
+    new Request("https://release.bar/api/_client-timing", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        route: "dashboard",
+        source: "fetch",
+        path: "/steipete",
+        apiPath: "/api/steipete",
+        attempt: 0,
+        httpStatus: 200,
+        cacheState: "stale",
+        headerMs: 42.4,
+        bodyMs: 3.2,
+        renderMs: 17.8,
+        totalMs: 63.4,
+        navigationTtfbMs: 91.2,
+        projects: 58,
+        scanned: 12,
+        limit: 200,
+        done: false,
+      }),
+    }),
+    { DASHBOARD_CACHE: cache },
+    { waitUntil: (promise) => waits.push(promise) },
+  );
+
+  expect(response.status).toBe(202);
+  await Promise.all(waits);
+  const [event] = await refreshAuditEvents(cache);
+  expect(event?.event).toBe("client_dashboard_timing");
+  expect(event?.source).toBe("browser");
+  expect(event?.reason).toBe("fetch");
+  expect(event?.status).toBe("stale");
+  expect(event?.durationMs).toBe(63);
+  expect(event?.projects).toBe(58);
+  expect(event?.scanned).toBe(12);
+  expect(event?.limit).toBe(200);
+  expect(event?.done).toBe(false);
+  expect(event?.detail ?? "").toMatch(/path=\/steipete/);
+  expect(event?.detail ?? "").toMatch(/headerMs=42/);
+  expect(event?.detail ?? "").toMatch(/navTtfbMs=91/);
+});
+
+test("worker stores GitHub access counters and cached owner identity", async () => {
+  const backingCache = kvStore();
+  let releaseAuditWrites: () => void = () => undefined;
+  const auditWriteGate = new Promise<void>((resolve) => {
+    releaseAuditWrites = resolve;
+  });
+  const cache = {
+    ...backingCache,
+    async put(key: string, value: string) {
+      if (key.startsWith("github:access:")) await auditWriteGate;
+      await backingCache.put(key, value);
+    },
+  };
+  const originalFetch = globalThis.fetch;
+  const originalRandom = Math.random;
+  const waits: Array<Promise<unknown>> = [];
+  try {
+    Math.random = () => 0;
+    globalThis.fetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/users/owner") {
+        return Response.json(
+          {
+            login: "owner",
+            type: "User",
+            avatar_url: "https://github.com/owner.png",
+            html_url: "https://github.com/owner",
+          },
+          {
+            headers: {
+              "x-ratelimit-remaining": "4999",
+              "x-ratelimit-resource": "core",
+            },
+          },
+        );
+      }
+      if (url.pathname === "/graphql") {
+        return Response.json(
+          {
+            data: {
+              repositoryOwner: {
+                __typename: "User",
+                repositories: {
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                  nodes: [],
+                },
+              },
+            },
+          },
+          {
+            headers: {
+              "x-ratelimit-remaining": "4998",
+              "x-ratelimit-resource": "graphql",
+            },
+          },
+        );
+      }
+      throw new Error(`unexpected ${url.pathname}`);
+    };
+
+    let foregroundTimeout: ReturnType<typeof setTimeout> | undefined;
+    const response = await Promise.race([
+      worker.fetch(
+        new Request("https://release.bar/api/owner"),
+        { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "token" },
+        { waitUntil: (promise) => waits.push(promise) },
+      ),
+      new Promise<never>((_resolve, reject) => {
+        foregroundTimeout = setTimeout(
+          () => reject(new Error("foreground response waited for GitHub audit KV")),
+          1000,
+        );
+      }),
+    ]);
+    if (foregroundTimeout) clearTimeout(foregroundTimeout);
+
+    expect(response.status).toBe(200);
+    releaseAuditWrites();
+    await Promise.all(waits);
+    const owner = JSON.parse((await cache.get("owner:v1:owner")) ?? "{}") as {
+      login?: string;
+    };
+    expect(owner.login).toBe("owner");
+    const records = await githubAccessRouteRecords(cache);
+    assert.ok(
+      records.some(
+        (record) =>
+          record.area === "dashboard" &&
+          record.source === "shared" &&
+          record.route === "users/:owner",
+      ),
+    );
+    assert.ok(
+      records.some(
+        (record) =>
+          record.area === "dashboard" &&
+          record.source === "shared" &&
+          record.route === "graphql/ReleaseBarOwnerRepos.metadata",
+      ),
+    );
+  } finally {
+    releaseAuditWrites();
+    Math.random = originalRandom;
+    globalThis.fetch = originalFetch;
+  }
+});

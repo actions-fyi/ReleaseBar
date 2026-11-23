@@ -1,12 +1,12 @@
-import { slugOwner, validOwnerSlug, validRepoSlug } from "../scripts/lib/dashboard.js";
-import type { AuthUser, DashboardPayload, DashboardProfile } from "../src/types.js";
-import { authFunnelSummary } from "./auth-observability.js";
-import { githubAccessAdminHours, githubAccessSummary } from "./github-audit.js";
-import { jsonResponse } from "./http.js";
-import { type BackgroundContext, canonicalDomain } from "./runtime.js";
-import { currentSession, uniqueSorted } from "./app-shell.js";
-import { syncGithubAppInstallations } from "./auth-oauth.js";
-import { requireAdmin } from "./auth-tokens.js";
+import { slugOwner, validOwnerSlug, validRepoSlug } from "../shared/dashboard.ts";
+import type { AuthUser, DashboardPayload, DashboardProfile } from "../src/types.ts";
+import { authFunnelSummary } from "./auth-observability.ts";
+import { githubAccessAdminHours, githubAccessSummary } from "./github-audit.ts";
+import { jsonResponse } from "./http.ts";
+import { type BackgroundContext, canonicalDomain } from "./runtime.ts";
+import { currentSession, uniqueSorted } from "./app-shell.ts";
+import { syncGithubAppInstallations } from "./auth-oauth.ts";
+import { requireAdmin } from "./auth-tokens.ts";
 import {
   type DashboardRequest,
   hotCacheKey,
@@ -15,7 +15,7 @@ import {
   type RequestToken,
   repoLimit,
   schedulerBatchLimit,
-} from "./config.js";
+} from "./config.ts";
 import {
   deleteProfile,
   errorMessage,
@@ -23,10 +23,10 @@ import {
   quotaForDashboard,
   readProfile,
   writeProfile,
-} from "./dashboard-cache.js";
-import { schedulerTick } from "./refresh-queue.js";
-import { dashboardRequest } from "./request-lock.js";
-import { schedulerAdminPayload } from "./scheduler.js";
+} from "./dashboard-cache.ts";
+import { schedulerTick } from "./refresh-queue.ts";
+import { dashboardRequest } from "./request-lock.ts";
+import { schedulerAdminPayload } from "./scheduler.ts";
 
 export function unresolvedDashboardRequest(
   ownerSlugs: string[],

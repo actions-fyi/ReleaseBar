@@ -1,5 +1,5 @@
-import type { AudienceScoreTier } from "../scripts/lib/audience.js";
-import { buildDashboard, type OwnerRepoCount } from "../scripts/lib/dashboard.js";
+import type { AudienceScoreTier } from "../shared/audience.ts";
+import { buildDashboard, type OwnerRepoCount } from "../shared/dashboard.ts";
 import type {
   ApiQuota,
   AudienceRange,
@@ -10,7 +10,7 @@ import type {
   Project,
   RefreshTarget,
   RepoDetailPayload,
-} from "../src/types.js";
+} from "../src/types.ts";
 
 export type UserTrustSignal = {
   score: number;

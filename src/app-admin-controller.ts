@@ -1,11 +1,11 @@
-import { numberFormat } from "./app-format.js";
-import type { AdminDashboardPayload } from "./app-types.js";
+import { numberFormat } from "./app-format.ts";
+import type { AdminDashboardPayload } from "./app-types.ts";
 import type {
   AuthFunnelSummary,
   AuthPayload,
   GitHubAccessSummary,
   SchedulerAdminPayload,
-} from "./types.js";
+} from "./types.ts";
 
 export type AdminState = {
   auth: AuthPayload | null;

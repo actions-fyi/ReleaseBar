@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { DashboardPayload } from "../types.js";
-  import type { DiscoverPeriod } from "../routing.js";
+  import type { DashboardPayload } from "../types.ts";
+  import type { DiscoverPeriod } from "../routing.ts";
 
   export let repoRoute: unknown | null;
   export let activityPageRoute: unknown | null;

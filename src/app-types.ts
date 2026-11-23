@@ -1,4 +1,4 @@
-import type { AuthFunnelSummary, GitHubAccessSummary, SchedulerAdminPayload } from "./types.js";
+import type { AuthFunnelSummary, GitHubAccessSummary, SchedulerAdminPayload } from "./types.ts";
 
 export type AdminDashboardPayload = SchedulerAdminPayload & {
   githubAccess: GitHubAccessSummary;

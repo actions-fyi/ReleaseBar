@@ -1,5 +1,5 @@
-import { ciLabel, countLabel, numberFormat } from "./app-format.js";
-import { primaryAuthLabelFor } from "./auth-ui.js";
+import { ciLabel, countLabel, numberFormat } from "./app-format.ts";
+import { primaryAuthLabelFor } from "./auth-ui.ts";
 import {
   devSortOptions,
   filterLabel,
@@ -9,10 +9,10 @@ import {
   type DashboardFilter,
   type SortDirection,
   type SortKey,
-} from "./dashboard-view.js";
-import { repoDetailPath, validRepoSlug, type DiscoverPeriod } from "./routing.js";
-import type { AuthPayload, Project } from "./types.js";
-import { userDashboardDetail, userDashboards } from "./user-dashboards.js";
+} from "./dashboard-view.ts";
+import { repoDetailPath, validRepoSlug, type DiscoverPeriod } from "./routing.ts";
+import type { AuthPayload, Project } from "./types.ts";
+import { userDashboardDetail, userDashboards } from "./user-dashboards.ts";
 
 type CommandAction = {
   actionId?: number | string | null;

@@ -1,4 +1,4 @@
-import type { Freshness, Project, RepoDetailPayload } from "./types.js";
+import type { Freshness, Project, RepoDetailPayload } from "./types.ts";
 
 export type SortKey = "repo" | "stars" | "release" | "since" | "activity" | "issues" | "prs" | "ci";
 export type SortDirection = "asc" | "desc";

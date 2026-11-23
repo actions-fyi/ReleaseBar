@@ -3,18 +3,18 @@ import {
   type OwnerRepoCount,
   slugOwner,
   validOwnerSlug,
-} from "../scripts/lib/dashboard.js";
-import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.js";
-import { mapConcurrent } from "./concurrency.js";
+} from "../shared/dashboard.ts";
+import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.ts";
+import { mapConcurrent } from "./concurrency.ts";
 import {
   auditGitHubFetch,
   githubGraphqlOwnerReleaseOperation,
   graphqlBackoffActive,
   sharedQuotaCooldown,
-} from "./github-audit.js";
-import { tryJsonParse } from "./schemas.js";
-import { sourceInstallationRegistryCovers, sourceInstallationToken } from "./auth-tokens.js";
-import { markHotCacheStale } from "./build-progress.js";
+} from "./github-audit.ts";
+import { tryJsonParse } from "./schemas.ts";
+import { sourceInstallationRegistryCovers, sourceInstallationToken } from "./auth-tokens.ts";
+import { markHotCacheStale } from "./build-progress.ts";
 import {
   dashboardStorageTtlSeconds,
   githubGraphqlOwnerCountsOperation,
@@ -32,10 +32,10 @@ import {
   schedulerSharedDormantRefreshMs,
   schedulerTargetPageLimit,
   type StoredRefreshDirty,
-} from "./config.js";
-import { canDisplayCached, errorMessage, readCached } from "./dashboard-cache.js";
-import { readOwnerMetadata } from "./owner-metadata-read.js";
-import { mutateOwnerMetadataSnapshot, safeIso } from "./owner-metadata-write.js";
+} from "./config.ts";
+import { canDisplayCached, errorMessage, readCached } from "./dashboard-cache.ts";
+import { readOwnerMetadata } from "./owner-metadata-read.ts";
+import { mutateOwnerMetadataSnapshot, safeIso } from "./owner-metadata-write.ts";
 import {
   auditScheduler,
   auditSyncEvent,
@@ -51,10 +51,10 @@ import {
   refreshJobActive,
   takeLocalRefreshDirty,
   writeRefreshJob,
-} from "./refresh-targets.js";
-import { processRefreshJobFallback } from "./scheduler.js";
-import { invalidateDashboardTargets } from "./webhook-targets.js";
-import type { BackgroundContext } from "./runtime.js";
+} from "./refresh-targets.ts";
+import { processRefreshJobFallback } from "./scheduler.ts";
+import { invalidateDashboardTargets } from "./webhook-targets.ts";
+import type { BackgroundContext } from "./runtime.ts";
 
 export function refreshQueueMessage(job: RefreshJob): RefreshJob {
   const { target: _target, ...message } = job;

@@ -1,5 +1,5 @@
-import { GitHubRateLimitError, slugOwner } from "../scripts/lib/dashboard.js";
-import type { ActivityRange, ApiQuota, RepoDetailWorkTrend } from "../src/types.js";
+import { GitHubRateLimitError, slugOwner } from "../shared/dashboard.ts";
+import type { ActivityRange, ApiQuota, RepoDetailWorkTrend } from "../src/types.ts";
 import {
   type GitHubAuditArea,
   githubGraphqlAuditPath,
@@ -12,11 +12,11 @@ import {
   quotaFromGitHubResponse,
   recordAuditedGitHubAccess,
   responseRateLimitSignal,
-} from "./github-audit.js";
-import { workerFetch } from "./http.js";
-import { gitHubSearchCountSchema, parseGitHubResponse, tryJsonParse } from "./schemas.js";
+} from "./github-audit.ts";
+import { workerFetch } from "./http.ts";
+import { gitHubSearchCountSchema, parseGitHubResponse, tryJsonParse } from "./schemas.ts";
 import type { GenericSchema, InferOutput } from "valibot";
-import { lastPageFromLink } from "./audience-data.js";
+import { lastPageFromLink } from "./audience-data.ts";
 import {
   discoverCacheSchemaVersion,
   githubGraphqlRepoWorkTrendOperation,
@@ -26,7 +26,7 @@ import {
   repoDetailSearchCountCacheTtlMs,
   repoDetailStatsBackoffTtlSeconds,
   repoDetailStatsCacheTtlMs,
-} from "./config.js";
+} from "./config.ts";
 
 export type DiscoverPeriod = "day" | "week" | "month" | "year";
 

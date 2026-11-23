@@ -7,9 +7,9 @@
     numberFormat,
     percent,
     relativeDate,
-  } from "../app-format.js";
-  import { ownerActivityPath, repoDetailPath } from "../routing.js";
-  import type { ActivityRange, OwnerActivityPayload } from "../types.js";
+  } from "../app-format.ts";
+  import { ownerActivityPath, repoDetailPath } from "../routing.ts";
+  import type { ActivityRange, OwnerActivityPayload } from "../types.ts";
 
   export let activityPageRoute: { owner: string } = { owner: "" };
   export let activityRange: ActivityRange;

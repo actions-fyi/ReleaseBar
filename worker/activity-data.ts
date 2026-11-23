@@ -1,4 +1,4 @@
-import { slugOwner } from "../scripts/lib/dashboard.js";
+import { slugOwner } from "../shared/dashboard.ts";
 import type {
   ActivityRange,
   ApiQuota,
@@ -9,10 +9,10 @@ import type {
   OwnerActivityRepositorySummary,
   OwnerActivitySummary,
   RepoDetailActivityPayload,
-} from "../src/types.js";
-import { sha256Base64Url } from "./crypto.js";
-import { auditGitHubFetch, quotaFromGitHubResponse } from "./github-audit.js";
-import { type GitHubPublicEvent, gitHubPublicEventListSchema, tryJsonParse } from "./schemas.js";
+} from "../src/types.ts";
+import { sha256Base64Url } from "./crypto.ts";
+import { auditGitHubFetch, quotaFromGitHubResponse } from "./github-audit.ts";
+import { type GitHubPublicEvent, gitHubPublicEventListSchema, tryJsonParse } from "./schemas.ts";
 import {
   activityEventPageLimit,
   activityForkLookupBatchSize,
@@ -21,10 +21,10 @@ import {
   activitySummaryPromptVersion,
   activitySummaryRepositoryEventLimit,
   dashboardStorageTtlSeconds,
-} from "./config.js";
-import { privateRepositoryNames } from "./owner-metadata-read.js";
-import { commitTitle } from "./release-summary.js";
-import { activityRangeMs, detailGitHubJson } from "./repo-github.js";
+} from "./config.ts";
+import { privateRepositoryNames } from "./owner-metadata-read.ts";
+import { commitTitle } from "./release-summary.ts";
+import { activityRangeMs, detailGitHubJson } from "./repo-github.ts";
 
 export function ownerActivitySummaryCacheKey(
   owner: string,

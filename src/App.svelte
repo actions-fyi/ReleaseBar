@@ -19,19 +19,19 @@
     githubProjectOwnerAvatar,
     matchesDashboardProject,
     numberFormat,
-  } from "./app-format.js";
-  import { buildCommands } from "./app-commands.js";
+  } from "./app-format.ts";
+  import { buildCommands } from "./app-commands.ts";
   import {
     createActivityController,
     type ActivityControllerContext,
-  } from "./app-activity-controller.js";
-  import { createRouteController, type RouteState } from "./app-route-controller.js";
-  import { createAdminController, type AdminState } from "./app-admin-controller.js";
+  } from "./app-activity-controller.ts";
+  import { createRouteController, type RouteState } from "./app-route-controller.ts";
+  import { createAdminController, type AdminState } from "./app-admin-controller.ts";
   import {
     createSettingsController,
     type SettingsState,
-  } from "./app-settings-controller.js";
-  import type { AdminDashboardPayload } from "./app-types.js";
+  } from "./app-settings-controller.ts";
+  import type { AdminDashboardPayload } from "./app-types.ts";
 
   import {
     defaultSortDirection,
@@ -43,15 +43,15 @@
     type DashboardFilter,
     type SortDirection,
     type SortKey,
-  } from "./dashboard-view.js";
+  } from "./dashboard-view.ts";
   import {
     dashboardRoute,
     ownerActivityFromPath,
     repoFromPath,
     siteDomain,
     type DiscoverPeriod,
-  } from "./routing.js";
-  import { isGitHubRateLimit } from "./rate-limit.js";
+  } from "./routing.ts";
+  import { isGitHubRateLimit } from "./rate-limit.ts";
   import type {
     ActivityRange,
     AudienceRange,
@@ -64,7 +64,7 @@
     RepoDetailActivityPayload,
     RepoDetailPayload,
     TrustProfilePayload,
-  } from "./types.js";
+  } from "./types.ts";
 
   const adminRoute = location.pathname === "/_admin";
   const activityPageRoute = ownerActivityFromPath(location.pathname);

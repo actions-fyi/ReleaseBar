@@ -1,5 +1,5 @@
-import { slugOwner } from "../scripts/lib/dashboard.js";
-import type { ApiQuota, Project, RepoDetailPayload } from "../src/types.js";
+import { slugOwner } from "../shared/dashboard.ts";
+import type { ApiQuota, Project, RepoDetailPayload } from "../src/types.ts";
 import {
   githubGraphqlAuditPath,
   graphqlBackoffActive,
@@ -7,8 +7,8 @@ import {
   quotaFromGitHubResponse,
   recordAuditedGitHubAccess,
   sharedQuotaConservation,
-} from "./github-audit.js";
-import { workerFetch } from "./http.js";
+} from "./github-audit.ts";
+import { workerFetch } from "./http.ts";
 import {
   gitHubCheckRunsSchema,
   gitHubCodeFrequencySchema,
@@ -19,18 +19,18 @@ import {
   gitHubLanguageSchema,
   gitHubReleaseSchema,
   gitHubRepositorySchema,
-} from "./schemas.js";
+} from "./schemas.ts";
 import * as v from "valibot";
 import type { InferOutput } from "valibot";
-import { releaseProject } from "./audience-data.js";
-import { bestInstallationToken } from "./auth-tokens.js";
+import { releaseProject } from "./audience-data.ts";
+import { bestInstallationToken } from "./auth-tokens.ts";
 import {
   githubGraphqlRepoDetailCoreOperation,
   localRepoDetailBuilds,
   repoDetailLiveProbeCacheTtlMs,
   repoDetailReleaseCacheTtlMs,
-} from "./config.js";
-import { acquireBuildLock, sleep } from "./dashboard-rebuild.js";
+} from "./config.ts";
+import { acquireBuildLock, sleep } from "./dashboard-rebuild.ts";
 import {
   cachedContributorTrustSignals,
   optionalRepoDetail,
@@ -39,7 +39,7 @@ import {
   type RepoDetailCore,
   type RepoDetailCredential,
   writeRepoDetail,
-} from "./release-summary.js";
+} from "./release-summary.ts";
 import {
   buildWorkTrend,
   cachedDetailGitHubCount,
@@ -48,7 +48,7 @@ import {
   readRepoDetailAux,
   repoDetailAuxCacheKey,
   writeRepoDetailAux,
-} from "./repo-github.js";
+} from "./repo-github.ts";
 
 export type RepoDetailCoreGraphqlResponse = {
   data?: {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { showCodeChurn } from "../dashboard-view.js";
+  import { showCodeChurn } from "../dashboard-view.ts";
   import {
     audienceInsightText,
     audienceReasonText,
@@ -20,9 +20,9 @@
     releaseSummaryMeta,
     repoActivityMeta,
     shortDate,
-  } from "../app-format.js";
-  import { fitDetailValue } from "../fit-detail-value.js";
-  import { ownerDashboardPath, repoDetailPath } from "../routing.js";
+  } from "../app-format.ts";
+  import { fitDetailValue } from "../fit-detail-value.ts";
+  import { ownerDashboardPath, repoDetailPath } from "../routing.ts";
   import type {
     ActivityRange,
     AudienceRange,
@@ -31,7 +31,7 @@
     RepoActivityRange,
     RepoDetailActivityPayload,
     RepoDetailPayload,
-  } from "../types.js";
+  } from "../types.ts";
 
   export let errorMessage: string;
   export let rateLimitHit: boolean;

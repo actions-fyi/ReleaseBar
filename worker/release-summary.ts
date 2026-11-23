@@ -1,12 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { slugOwner } from "../scripts/lib/dashboard.js";
+import { slugOwner } from "../shared/dashboard.ts";
 import type {
   ApiQuota,
   Project,
   RepoDetailPayload,
   RepoDetailReleaseSummary,
-} from "../src/types.js";
-import { workerFetch } from "./http.js";
+} from "../src/types.ts";
+import { workerFetch } from "./http.ts";
 import {
   gitHubCheckRunsSchema,
   gitHubCommitSchema,
@@ -15,10 +15,10 @@ import {
   gitHubReleaseSchema,
   gitHubRepositorySchema,
   tryJsonParse,
-} from "./schemas.js";
+} from "./schemas.ts";
 import type { InferOutput } from "valibot";
-import { cachedUserTrustSignals } from "./audience-data.js";
-import { bestInstallationToken } from "./auth-tokens.js";
+import { cachedUserTrustSignals } from "./audience-data.ts";
+import { bestInstallationToken } from "./auth-tokens.ts";
 import {
   dashboardStorageTtlSeconds,
   releaseSummaryCommitLimit,
@@ -27,11 +27,11 @@ import {
   summaryRetryMaxMs,
   summaryRetryMultiplier,
   type UserTrustSignal,
-} from "./config.js";
-import { errorMessage, isGitHubRateLimit } from "./dashboard-cache.js";
-import { detailGitHubJson } from "./repo-github.js";
-import { releaseSummaryLimits } from "./summary-limits.js";
-import type { SummaryReservation } from "./summary-quota.js";
+} from "./config.ts";
+import { errorMessage, isGitHubRateLimit } from "./dashboard-cache.ts";
+import { detailGitHubJson } from "./repo-github.ts";
+import { releaseSummaryLimits } from "./summary-limits.ts";
+import type { SummaryReservation } from "./summary-quota.ts";
 
 export function repoDetailCacheKey(owner: string, repo: string): string {
   return `repo-detail:v4:${slugOwner(owner)}/${repo.toLowerCase()}`;

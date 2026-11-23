@@ -11,7 +11,7 @@
     type DashboardFilter,
     type SortDirection,
     type SortKey,
-  } from "../dashboard-view.js";
+  } from "../dashboard-view.ts";
   import {
     absoluteDate,
     attentionText,
@@ -20,9 +20,9 @@
     numberFormat,
     percent,
     relativeDate,
-  } from "../app-format.js";
-  import { ownerDashboardPath, repoDetailPath } from "../routing.js";
-  import type { AuthPayload, DashboardPayload, Project } from "../types.js";
+  } from "../app-format.ts";
+  import { ownerDashboardPath, repoDetailPath } from "../routing.ts";
+  import type { AuthPayload, DashboardPayload, Project } from "../types.ts";
 
   export let query: string;
   export let language = "";

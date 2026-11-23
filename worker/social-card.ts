@@ -1,13 +1,13 @@
-import { slugOwner, validOwnerSlug, validRepoSlug } from "../scripts/lib/dashboard.js";
-import type { ApiQuota, Project } from "../src/types.js";
-import { workerFetch } from "./http.js";
-import { type BackgroundContext, canonicalDomain } from "./runtime.js";
+import { slugOwner, validOwnerSlug, validRepoSlug } from "../shared/dashboard.ts";
+import type { ApiQuota, Project } from "../src/types.ts";
+import { workerFetch } from "./http.ts";
+import { type BackgroundContext, canonicalDomain } from "./runtime.ts";
 import {
   gitHubCompareSchema,
   gitHubReleaseSchema,
   gitHubRepositorySchema,
   tryJsonParse,
-} from "./schemas.js";
+} from "./schemas.ts";
 import { initWasm, Resvg } from "@resvg/resvg-wasm";
 import * as v from "valibot";
 import {
@@ -16,26 +16,26 @@ import {
   ownerListFromUrl,
   repoFullNameFromPath,
   repoListFromUrl,
-} from "./app-shell.js";
-import { releaseProject } from "./audience-data.js";
-import { bestInstallationToken } from "./auth-tokens.js";
+} from "./app-shell.ts";
+import { releaseProject } from "./audience-data.ts";
+import { bestInstallationToken } from "./auth-tokens.ts";
 import {
   dashboardStorageTtlSeconds,
   maxDisplayStaleMs,
   repoDetailCacheTtlMs,
   socialRepoCachePrefix,
   type StoredSocialRepo,
-} from "./config.js";
-import { repositoryPublicCacheBarrier } from "./owner-metadata-read.js";
-import { allowRequestRefresh } from "./owner-metadata-write.js";
+} from "./config.ts";
+import { repositoryPublicCacheBarrier } from "./owner-metadata-read.ts";
+import { allowRequestRefresh } from "./owner-metadata-write.ts";
 import {
   optionalRepoDetail,
   readRepoDetail,
   repoDetailAgeMs,
   repoDetailCacheKey,
-} from "./release-summary.js";
-import { freshnessForDetail, refreshRepoDetail } from "./repo-detail.js";
-import { detailGitHubJson } from "./repo-github.js";
+} from "./release-summary.ts";
+import { freshnessForDetail, refreshRepoDetail } from "./repo-detail.ts";
+import { detailGitHubJson } from "./repo-github.ts";
 
 export function socialLabel(url: URL): string {
   if (url.pathname === "/_admin") return "ReleaseBar Admin";
@@ -75,7 +75,6 @@ export type SocialCard = {
 export const socialNumberFormat = new Intl.NumberFormat("en", { notation: "compact" });
 export const socialAvatarMaxBytes = 256 * 1024;
 export const socialAvatarTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-export const socialRendererWasmAsset = "/resvg.wasm";
 export const socialRendererFontAssets = [
   "/jetbrains-mono-latin-400-normal.woff2",
   "/jetbrains-mono-latin-700-normal.woff2",
@@ -368,10 +367,7 @@ export async function socialRendererBytes(request: Request, env: Env): Promise<U
       if (!response.ok) throw new Error(`missing social renderer asset ${pathname}`);
       return new Uint8Array(await response.arrayBuffer());
     };
-    const isNode = typeof process !== "undefined" && Boolean(process.versions?.node);
-    const wasm = isNode
-      ? await fetchAsset(socialRendererWasmAsset)
-      : (await import("@resvg/resvg-wasm/index_bg.wasm")).default;
+    const wasm = (await import("@resvg/resvg-wasm/index_bg.wasm")).default;
     const fontBuffers = await Promise.all(socialRendererFontAssets.map(fetchAsset));
     await initWasm(wasm);
     return fontBuffers;
