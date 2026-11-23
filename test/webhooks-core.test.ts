@@ -18,6 +18,10 @@ import {
   WebhookProcessor,
   webhookSignature,
   worker,
+  seedOwnerMetadata,
+  storedOwnerMetadataJson,
+  deleteStoredOwnerMetadata,
+  ownerMetadataMutator,
 } from "./dashboard-test-harness.ts";
 
 test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes", async () => {
@@ -153,6 +157,28 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       } satisfies RefreshTarget,
     };
   });
+  await seedOwnerMetadata(
+    "owner",
+    JSON.stringify({
+      owner: "owner",
+      generatedAt: now,
+      metadataUpdatedAt: now,
+      countsUpdatedAt: now,
+      releaseDataComplete: true,
+      projects: [oldProject],
+    }),
+  );
+  await seedOwnerMetadata(
+    "other",
+    JSON.stringify({
+      owner: "other",
+      generatedAt: now,
+      metadataUpdatedAt: now,
+      countsUpdatedAt: null,
+      releaseDataComplete: true,
+      projects: [testProject({ owner: "other", name: "repo" })],
+    }),
+  );
   const cache = kvStore({
     ...legacyTargets,
     ...Object.fromEntries(
@@ -190,22 +216,6 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     [`refresh:target:v1:${key}`]: JSON.stringify(target),
     [`refresh:target:v1:${combinedKey}`]: JSON.stringify(combinedTarget),
     [`refresh:target:v1:${secondaryKey}`]: JSON.stringify(secondaryTarget),
-    "owner-metadata:v1:owner": JSON.stringify({
-      owner: "owner",
-      generatedAt: now,
-      metadataUpdatedAt: now,
-      countsUpdatedAt: now,
-      releaseDataComplete: true,
-      projects: [oldProject],
-    }),
-    "owner-metadata:v1:other": JSON.stringify({
-      owner: "other",
-      generatedAt: now,
-      metadataUpdatedAt: now,
-      countsUpdatedAt: null,
-      releaseDataComplete: true,
-      projects: [testProject({ owner: "other", name: "repo" })],
-    }),
   });
   const queued: unknown[] = [];
   const queuedDashboardTargets: string[] = [];
@@ -430,7 +440,7 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     const combinedCounted = await readDashboard("https://release.bar/api/owner?owners=other");
     expect(combinedCounted.projects[0]?.openIssues).toBe(3);
     expect(combinedCounted.cache?.countsUpdatedAt).toBe(combinedCountsUpdatedAt);
-    const countedSnapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+    const countedSnapshot = JSON.parse((await storedOwnerMetadataJson("owner")) ?? "{}") as {
       countsUpdatedAt?: string;
       projects?: Project[];
     };
@@ -492,7 +502,7 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       repository: observedRepository({ archived: true }),
     });
     failCounts = false;
-    const fallbackSnapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+    const fallbackSnapshot = JSON.parse((await storedOwnerMetadataJson("owner")) ?? "{}") as {
       projects?: Project[];
     };
     expect(
@@ -648,7 +658,7 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       "audience-user-repos:v2:owner",
     ];
     await Promise.all(privateCacheKeys.map((cacheKey) => cache.put(cacheKey, "cached")));
-    await cache.delete("owner-metadata:v1:owner");
+    await deleteStoredOwnerMetadata("owner");
     await send("repository", "delivery-10", {
       action: "privatized",
       repository: observedRepository(),
@@ -656,7 +666,7 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     expect(await cache.get(key)).toBe(null);
     await cache.put(key, JSON.stringify(dashboard));
     expect((await readDashboard()).projects.length).toBe(0);
-    const privateSnapshot = JSON.parse((await cache.get("owner-metadata:v1:owner")) ?? "{}") as {
+    const privateSnapshot = JSON.parse((await storedOwnerMetadataJson("owner")) ?? "{}") as {
       privateRepos?: Record<string, string>;
       removedRepos?: Record<string, string>;
       projects?: Project[];
@@ -749,23 +759,22 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
 
     await Promise.all([
       cache.put(key, JSON.stringify(dashboard)),
-      cache.put(
-        "owner-metadata:v1:owner",
-        JSON.stringify({
-          owner: "owner",
-          generatedAt: now,
-          metadataUpdatedAt: now,
-          countsUpdatedAt: now,
-          releaseDataComplete: true,
-          knownRepos: ["owner/repo"],
-          privateRepos: {},
-          removedRepos: {},
-          projectMetadataUpdatedAt: { "owner/repo": now },
-          projectCountsUpdatedAt: { "owner/repo": now },
-          countOverlays: {},
-          projects: [project],
-        }),
-      ),
+      // A build that saw the repository while it was public stores what it has: it must not
+      // undo the privatization.
+      ownerMetadataMutator(
+        env,
+        "owner",
+      )({
+        kind: "merge",
+        generatedAt: now,
+        observedAt: now,
+        countsUpdatedAt: now,
+        countsComplete: true,
+        releaseDataComplete: true,
+        mode: "hydrated",
+        projects: [project],
+        removedRepos: [],
+      }),
       cache.put(
         "repo-detail:v4:owner/repo",
         JSON.stringify({

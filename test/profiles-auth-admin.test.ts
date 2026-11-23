@@ -8,7 +8,15 @@ import type {
   RefreshTarget,
   SchedulerAdminPayload,
 } from "../src/types.ts";
-import { kvStore, signedJson, testDashboard, worker } from "./dashboard-test-harness.ts";
+import {
+  kvStore,
+  signedJson,
+  testDashboard,
+  worker,
+  storedInstallationJson,
+  seedInstallation,
+  recordingDatabase,
+} from "./dashboard-test-harness.ts";
 
 test("worker discovers and stores source-owned app installs for anonymous dashboards", async () => {
   const { privateKey } = generateKeyPairSync("rsa", {
@@ -80,7 +88,7 @@ test("worker discovers and stores source-owned app installs for anonymous dashbo
     await Promise.all(waits);
     expect(body.cache?.quota?.source).toBe("app");
     expect(body.cache?.quota?.account).toBe("openclaw");
-    const stored = JSON.parse((await cache.get("auth:installation:v1:openclaw")) ?? "{}");
+    const stored = JSON.parse((await storedInstallationJson("openclaw")) ?? "{}");
     expect(stored.id).toBe(7);
     expect(stored.repositorySelection).toBe("all");
   } finally {
@@ -490,7 +498,7 @@ test("worker admin installation summary bounds record and counter reads", async 
   };
   for (let index = 0; index < 121; index += 1) {
     const account = `account-${String(index).padStart(3, "0")}`;
-    entries[`auth:installation:v1:${account}`] = JSON.stringify({
+    await seedInstallation({
       id: index + 1,
       accountLogin: account,
       accountType: "user",
@@ -504,12 +512,11 @@ test("worker admin installation summary bounds record and counter reads", async 
       String(index + 1);
   }
   const baseCache = kvStore(entries);
-  let installationReads = 0;
+  const database = recordingDatabase();
   let counterReads = 0;
   const cache = {
     ...baseCache,
     async get(key: string) {
-      if (key.startsWith("auth:installation:v1:")) installationReads += 1;
       if (key.startsWith("auth:funnel-counter:v1:")) counterReads += 1;
       return baseCache.get(key);
     },
@@ -523,6 +530,7 @@ test("worker admin installation summary bounds record and counter reads", async 
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
+      DB: database.DB,
     },
     { waitUntil: () => undefined },
   );
@@ -533,7 +541,10 @@ test("worker admin installation summary bounds record and counter reads", async 
   expect(body.installations.length).toBe(80);
   expect(body.counterCount).toBe(121);
   expect(body.counts.length).toBe(80);
-  expect(installationReads).toBe(80);
+  // The newest 80 of the 121, read with one count and one bounded query.
+  expect(body.installations[0]?.accountLogin).toBe("account-120");
+  expect(body.installations.at(-1)?.accountLogin).toBe("account-041");
+  expect(database.statements.filter((sql) => sql.includes("FROM installations")).length).toBe(2);
   expect(counterReads).toBe(80);
 });
 

@@ -51,7 +51,6 @@ export const summaryQuotaObjectName = "summary-quota";
 export const webhookAdmissionObjectName = "github-webhook-admission";
 export const webhookProcessorObjectName = (owner: string): string =>
   `github-webhook-process:${owner}`;
-export const ownerMetadataObjectName = (owner: string): string => `owner-metadata:${owner}`;
 export const refreshTargetIndexName = (kind: "owner" | "repo", value: string): string =>
   `refresh-target-index:${kind}:${value}`;
 

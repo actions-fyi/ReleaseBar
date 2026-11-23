@@ -120,7 +120,6 @@ export const legacyRefreshJobIndexKey = "refresh:jobs:index:v1";
 export const refreshAuditPrefix = "refresh:audit:v2:";
 export const refreshStateKey = "refresh:state:v1";
 export const refreshOwnerCountCursorKey = "refresh:owner-count-cursor:v1";
-export const ownerMetadataPrefix = "owner-metadata:v1:";
 export const ownerMetadataTtlSeconds = 90 * 24 * 60 * 60;
 export const githubWebhookDeliveryTtlMs = 24 * 60 * 60 * 1000;
 export const githubWebhookDeliveryLimit = 2000;

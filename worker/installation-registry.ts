@@ -12,7 +12,6 @@ import type {
 } from "../src/types.ts";
 import {
   installationMissKey,
-  installationRegistryKey,
   readStoredInstallation,
   type StoredInstallationRecord,
   writeStoredInstallation,
@@ -41,7 +40,7 @@ export function isPublicInstallationRepository(repo: GitHubInstallationRepositor
   return repo.private === false || repo.visibility === "public";
 }
 
-export { installationMissKey, installationRegistryKey };
+export { installationMissKey };
 
 export function normalizedInstallation(installation: AuthInstallation): StoredInstallationRecord {
   return {
@@ -103,7 +102,7 @@ export async function installationRefreshTargetInput(
 
 // Skip rewrites of registry entries that already hold the same content and were
 // refreshed recently, so bursts of /api/me calls (multiple tabs, browser restart)
-// stay under Workers KV's one-write-per-key-per-second limit.
+// do not each write the same row again.
 const installationRegistryRewriteMinAgeMs = 5 * 60 * 1000;
 
 async function installationRegistryEntryFresh(

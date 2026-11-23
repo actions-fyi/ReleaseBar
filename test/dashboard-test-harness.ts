@@ -4,10 +4,9 @@ import font700 from "@fontsource/jetbrains-mono/files/jetbrains-mono-latin-700-n
 import { runInDurableObject } from "cloudflare:test";
 import { env as runtimeEnv } from "cloudflare:workers";
 import { vi } from "vitest";
-import type { SchedulerAuditEvent } from "../src/types.ts";
+import type { DashboardProfile, SchedulerAuditEvent } from "../src/types.ts";
 import handler, {
   BuildCoordinator,
-  OwnerMetadata,
   RefreshTargetIndex,
   SummaryQuota,
   WebhookAdmission,
@@ -19,11 +18,14 @@ import {
   refreshTargetSourceLimit,
 } from "../worker/config.ts";
 import { durableObjectBindings } from "../worker/store/bindings.ts";
+import { mutateOwnerMetadataSnapshot } from "../worker/owner-metadata-write.ts";
+import { refreshTargetIndexName, type WorkerQueueMessage } from "../worker/runtime.ts";
 import {
-  ownerMetadataObjectName,
-  refreshTargetIndexName,
-  type WorkerQueueMessage,
-} from "../worker/runtime.ts";
+  readStoredInstallation,
+  type StoredInstallationRecord,
+  writeStoredInstallation,
+} from "../worker/store/installations.ts";
+import { writeStoredProfile } from "../worker/store/profiles.ts";
 
 export { testDashboard, testProject } from "./dashboard-fixtures.ts";
 
@@ -67,7 +69,6 @@ type ObjectBinding = (typeof durableObjectBindings)[number];
 
 const objectClasses = [
   BuildCoordinator,
-  OwnerMetadata,
   RefreshTargetIndex,
   SummaryQuota,
   WebhookAdmission,
@@ -144,14 +145,7 @@ export function testEnv(env: TestEnv): Env {
   return env as unknown as Env;
 }
 
-export {
-  BuildCoordinator,
-  OwnerMetadata,
-  RefreshTargetIndex,
-  SummaryQuota,
-  WebhookAdmission,
-  WebhookProcessor,
-};
+export { BuildCoordinator, RefreshTargetIndex, SummaryQuota, WebhookAdmission, WebhookProcessor };
 
 // Makes every dashboard's build lock answer as held by someone else, until the test ends.
 export function buildLocksHeld(): void {
@@ -216,13 +210,90 @@ export async function fillTargetIndex(
   }
 }
 
-// Applies mutations to an owner's metadata in its Durable Object, as the Worker does.
+// Applies mutations to an owner's metadata, as the Worker does.
 export function ownerMetadataMutator(
   env: TestEnv,
   owner: string,
 ): (mutation: OwnerMetadataMutation) => Promise<OwnerMetadataSnapshot | null> {
-  const metadata = testEnv(env).OWNER_METADATA.getByName(ownerMetadataObjectName(owner));
-  return (mutation) => metadata.mutate(owner, mutation);
+  return (mutation) => mutateOwnerMetadataSnapshot(testEnv(env), owner, mutation);
+}
+
+// The helpers below put rows into, and read them from, the registry tables of the local D1
+// database (migrations/0003_registry.sql), which every test's env gets from `testEnv`. A value
+// may be given as JSON text.
+function seedValue<Value>(value: Value | string): Value {
+  return typeof value === "string" ? (JSON.parse(value) as Value) : value;
+}
+
+// Stores `snapshot` as the owner's metadata, as it is: a test may store one the Worker would not
+// write, to see that it is not trusted. `expiresAt` is when the row's time runs out.
+export async function seedOwnerMetadata(
+  owner: string,
+  snapshot: unknown,
+  expiresAt = Date.now() + 24 * 60 * 60 * 1000,
+): Promise<void> {
+  await runtimeEnv.DB.prepare(
+    `INSERT INTO owner_metadata (owner, revision, snapshot, expires_at) VALUES (?1, ?2, ?3, ?4)
+     ON CONFLICT (owner) DO UPDATE SET
+       revision = excluded.revision, snapshot = excluded.snapshot, expires_at = excluded.expires_at`,
+  )
+    .bind(
+      owner,
+      crypto.randomUUID(),
+      typeof snapshot === "string" ? snapshot : JSON.stringify(snapshot),
+      expiresAt,
+    )
+    .run();
+}
+
+// The owner's stored metadata snapshot as JSON text, or null when there is no row.
+export async function storedOwnerMetadataJson(owner: string): Promise<string | null> {
+  const row = await runtimeEnv.DB.prepare("SELECT snapshot FROM owner_metadata WHERE owner = ?1")
+    .bind(owner)
+    .first<{ snapshot: string }>();
+  return row?.snapshot ?? null;
+}
+
+export async function deleteStoredOwnerMetadata(owner: string): Promise<void> {
+  await runtimeEnv.DB.prepare("DELETE FROM owner_metadata WHERE owner = ?1").bind(owner).run();
+}
+
+// Stores the installation in the registry, through the store function the Worker uses.
+export async function seedInstallation(
+  installation: StoredInstallationRecord | string,
+): Promise<void> {
+  await writeStoredInstallation(testEnv({}), seedValue(installation));
+}
+
+// The account's installation in the registry as JSON text, or null when there is none.
+export async function storedInstallationJson(account: string): Promise<string | null> {
+  const installation = await readStoredInstallation(testEnv({}), account);
+  return installation ? JSON.stringify(installation) : null;
+}
+
+// The local database for a test's env (`DB`), with the SQL text of every statement prepared
+// through it: for a test that asserts on how often the Worker reads or writes a table.
+export function recordingDatabase(): { DB: D1Database; statements: string[] } {
+  const statements: string[] = [];
+  const database = runtimeEnv.DB;
+  const DB = new Proxy(database, {
+    get(target, property) {
+      if (property === "prepare") {
+        return (sql: string) => {
+          statements.push(sql);
+          return target.prepare(sql);
+        };
+      }
+      const member: unknown = Reflect.get(target, property);
+      return typeof member === "function" ? member.bind(target) : member;
+    },
+  });
+  return { DB, statements };
+}
+
+// Stores the dashboard profile, through the store function the Worker uses.
+export async function seedProfile(profile: DashboardProfile | string): Promise<void> {
+  await writeStoredProfile(testEnv({}), seedValue(profile));
 }
 
 export const worker = {

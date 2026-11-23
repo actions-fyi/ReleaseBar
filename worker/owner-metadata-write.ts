@@ -1,8 +1,8 @@
-import { slugOwner } from "../shared/dashboard.ts";
+import { slugOwner, validOwnerSlug } from "../shared/dashboard.ts";
 import type { DashboardPayload } from "../src/types.ts";
 import { jsonResponse } from "./http.ts";
 import { dashboardTotals } from "./build-progress.ts";
-import { mutateCoordinatedOwnerMetadata } from "./store/owner-metadata.ts";
+import { changeOwnerMetadata } from "./store/owner-metadata.ts";
 import { safeIso } from "./time.ts";
 import {
   crawlerUserAgentPattern,
@@ -16,6 +16,7 @@ import {
   canDisplayOwnerProjectMetadata,
   dashboardWithVisibleProjects,
   newestOwnerTimestamp,
+  normalizeOwnerMetadataSnapshot,
   readCachedRaw,
 } from "./dashboard-cache.ts";
 import {
@@ -24,8 +25,6 @@ import {
   mergeProjectMetadata,
   ownerSnapshotWithCounts,
   readDurableOwnerMetadata,
-  readOwnerMetadataKv,
-  writeOwnerMetadata,
 } from "./owner-metadata-read.ts";
 
 export function applyOwnerMetadataMutation(
@@ -363,23 +362,26 @@ export function isOwnerMetadataMutation(value: unknown): value is OwnerMetadataM
   );
 }
 
+// Applies `mutation` to the owner's snapshot and stores the result. Null when the mutation leaves
+// no snapshot to store. The mutation is applied to the snapshot as it is stored at that moment:
+// the store writes only if nothing else changed it meanwhile, and applies the mutation again if
+// something did. So a `remove` or `restore` can't be lost to a concurrent write. Rejects when the
+// mutation could not be stored.
 export async function mutateOwnerMetadataSnapshot(
   env: Env,
   owner: string,
   mutation: OwnerMetadataMutation,
 ): Promise<OwnerMetadataSnapshot | null> {
   const normalizedOwner = slugOwner(owner);
-  const requireDurablePrivacy = mutation.kind === "remove" || mutation.kind === "restore";
-  try {
-    return await mutateCoordinatedOwnerMetadata(env, normalizedOwner, mutation);
-  } catch (error) {
-    if (requireDurablePrivacy) throw error;
-    // The object can't be reached: the cache alone keeps what is not about privacy.
-  }
-  const existing = await readOwnerMetadataKv(env, normalizedOwner);
-  const updated = applyOwnerMetadataMutation(normalizedOwner, existing, mutation);
-  if (updated) await writeOwnerMetadata(env, updated);
-  return updated;
+  if (!validOwnerSlug(normalizedOwner)) throw new TypeError("invalid owner");
+  if (!isOwnerMetadataMutation(mutation)) throw new TypeError("invalid owner metadata mutation");
+  return changeOwnerMetadata(env, normalizedOwner, (stored) =>
+    applyOwnerMetadataMutation(
+      normalizedOwner,
+      normalizeOwnerMetadataSnapshot(normalizedOwner, stored),
+      mutation,
+    ),
+  );
 }
 
 export async function mergeOwnerMetadata(

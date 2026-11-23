@@ -2,197 +2,26 @@ import { type OwnerRepoCount, slugOwner, validOwnerSlug } from "../shared/dashbo
 import type { Project } from "../src/types.ts";
 import { mapConcurrent } from "./concurrency.ts";
 import { type OwnerMetadataSnapshot } from "./config.ts";
-import {
-  newestOwnerTimestamp,
-  normalizeOwnerMetadataSnapshot,
-  ownerSnapshotIsNewer,
-} from "./dashboard-cache.ts";
+import { normalizeOwnerMetadataSnapshot } from "./dashboard-cache.ts";
 import { safeIso } from "./owner-metadata-write.ts";
-import {
-  readCoordinatedOwnerMetadata,
-  readOwnerMetadataCopy,
-  writeOwnerMetadata,
-} from "./store/owner-metadata.ts";
+import { readStoredOwnerMetadata } from "./store/owner-metadata.ts";
 
-export function reconcileOwnerMetadataSnapshots(
-  owner: string,
-  storedValue: unknown,
-  cachedValue: unknown,
-  durablePrivacy = false,
-): OwnerMetadataSnapshot | null {
-  const stored = normalizeOwnerMetadataSnapshot(owner, storedValue);
-  const cached = normalizeOwnerMetadataSnapshot(owner, cachedValue);
-  const snapshots = [stored, cached].filter(
-    (snapshot): snapshot is OwnerMetadataSnapshot => snapshot !== null,
-  );
-  if (snapshots.length === 0) return null;
-  if (snapshots.length === 1) return snapshots[0];
-
-  const authority = snapshots.reduce((current, candidate) =>
-    ownerSnapshotIsNewer(candidate, current) ? candidate : current,
-  );
-  const names = new Set<string>();
-  for (const snapshot of [authority, ...snapshots]) {
-    for (const project of snapshot.projects) names.add(project.fullName.toLowerCase());
-    for (const name of snapshot.knownRepos ?? []) names.add(name);
-    for (const name of Object.keys(snapshot.privateRepos)) names.add(name);
-    for (const name of Object.keys(snapshot.removedRepos)) names.add(name);
-    for (const name of Object.keys(snapshot.projectMetadataUpdatedAt)) names.add(name);
-    for (const name of Object.keys(snapshot.projectCountsUpdatedAt)) names.add(name);
-    for (const name of Object.keys(snapshot.countOverlays)) names.add(name);
-  }
-
-  const privateRepos =
-    durablePrivacy && stored
-      ? { ...stored.privateRepos }
-      : Object.fromEntries(
-          [...names].flatMap((fullName) => {
-            const privatizedAt = newestOwnerTimestamp(
-              ...snapshots.map((snapshot) => snapshot.privateRepos[fullName]),
-            );
-            return privatizedAt ? [[fullName, privatizedAt]] : [];
-          }),
-        );
-  const removedRepos: Record<string, string> = {};
-  const projectMetadataUpdatedAt: Record<string, string> = {};
-  const projectCountsUpdatedAt: Record<string, string> = {};
-  const countOverlays: Record<string, OwnerRepoCount> = {};
-  const projects: Project[] = [];
-  const authoritativeRepos = authority.knownRepos === null ? null : new Set(authority.knownRepos);
-
-  for (const fullName of names) {
-    const privatizedAt = privateRepos[fullName];
-    const removedAt = newestOwnerTimestamp(
-      ...snapshots.map((snapshot) => snapshot.removedRepos[fullName]),
-    );
-    const metadataAt = newestOwnerTimestamp(
-      ...snapshots.map((snapshot) => snapshot.projectMetadataUpdatedAt[fullName]),
-    );
-    const countsAt = newestOwnerTimestamp(
-      ...snapshots.map((snapshot) => snapshot.projectCountsUpdatedAt[fullName]),
-    );
-    if (metadataAt) projectMetadataUpdatedAt[fullName] = metadataAt;
-    if (countsAt) projectCountsUpdatedAt[fullName] = countsAt;
-    const countOverlay = snapshots
-      .map((snapshot) => ({
-        count: snapshot.countOverlays[fullName],
-        observedAt: snapshot.projectCountsUpdatedAt[fullName],
-      }))
-      .filter((candidate): candidate is { count: OwnerRepoCount; observedAt: string } =>
-        Boolean(candidate.count && candidate.observedAt),
-      )
-      .sort((left, right) => safeIso(right.observedAt) - safeIso(left.observedAt))[0];
-    if (countOverlay) countOverlays[fullName] = countOverlay.count;
-    if (privatizedAt) {
-      removedRepos[fullName] = newestOwnerTimestamp(privatizedAt, removedAt) ?? privatizedAt;
-      continue;
-    }
-
-    let metadataSource: { project: Project; observedAt: string | null } | null = null;
-    let countSource: { project: Project; observedAt: string | null } | null = null;
-    for (const snapshot of snapshots) {
-      const project = snapshot.projects.find(
-        (candidate) => candidate.fullName.toLowerCase() === fullName,
-      );
-      if (!project) continue;
-      const projectMetadataAt =
-        snapshot.projectMetadataUpdatedAt[fullName] ?? snapshot.metadataUpdatedAt;
-      if (!metadataSource || safeIso(projectMetadataAt) >= safeIso(metadataSource.observedAt)) {
-        metadataSource = { project, observedAt: projectMetadataAt };
-      }
-      const projectCountsAt = snapshot.projectCountsUpdatedAt[fullName] ?? snapshot.countsUpdatedAt;
-      if (!countSource || safeIso(projectCountsAt) >= safeIso(countSource.observedAt)) {
-        countSource = { project, observedAt: projectCountsAt };
-      }
-    }
-
-    const publicMetadataAt = metadataSource?.observedAt ?? null;
-    if (removedAt && safeIso(removedAt) >= safeIso(publicMetadataAt)) {
-      removedRepos[fullName] = removedAt;
-      continue;
-    }
-    if (!metadataSource) continue;
-    if (
-      authoritativeRepos &&
-      !authoritativeRepos.has(fullName) &&
-      safeIso(publicMetadataAt) <= safeIso(authority.countsUpdatedAt)
-    ) {
-      continue;
-    }
-
-    let project = metadataSource.project;
-    if (countSource) {
-      project =
-        safeIso(countSource.observedAt) > safeIso(publicMetadataAt)
-          ? mergeProjectCountFields(project, countSource.project)
-          : mergeProjectIssuePullCounts(project, countSource.project);
-    }
-    projects.push(project);
-  }
-
-  const knownRepos =
-    authority.knownRepos === null
-      ? null
-      : [
-          ...new Set([
-            ...authority.knownRepos,
-            ...projects
-              .filter(
-                (project) =>
-                  safeIso(projectMetadataUpdatedAt[project.fullName.toLowerCase()]) >
-                  safeIso(authority.countsUpdatedAt),
-              )
-              .map((project) => project.fullName.toLowerCase()),
-          ]),
-        ].filter((fullName) => !removedRepos[fullName]);
-
-  return {
-    owner,
-    generatedAt:
-      newestOwnerTimestamp(...snapshots.map((snapshot) => snapshot.generatedAt)) ??
-      authority.generatedAt,
-    metadataUpdatedAt:
-      newestOwnerTimestamp(...snapshots.map((snapshot) => snapshot.metadataUpdatedAt)) ??
-      authority.metadataUpdatedAt,
-    countsUpdatedAt: newestOwnerTimestamp(...snapshots.map((snapshot) => snapshot.countsUpdatedAt)),
-    countsAttemptedAt: newestOwnerTimestamp(
-      ...snapshots.map((snapshot) => snapshot.countsAttemptedAt),
-    ),
-    releaseDataComplete: snapshots.some((snapshot) => snapshot.releaseDataComplete),
-    knownRepos,
-    privateRepos,
-    removedRepos,
-    projectMetadataUpdatedAt,
-    projectCountsUpdatedAt,
-    countOverlays,
-    projects,
-  };
-}
-
-export async function readOwnerMetadataKv(
-  env: Env,
-  owner: string,
-): Promise<OwnerMetadataSnapshot | null> {
-  return normalizeOwnerMetadataSnapshot(owner, await readOwnerMetadataCopy(env, owner));
-}
-
-export async function readDurableOwnerMetadata(
+// The owner's snapshot, validated. Null when there is none. Rejects when the database can't be
+// reached, so that a caller hiding private repositories does not take "unknown" for "public".
+export async function readOwnerMetadata(
   env: Env,
   owner: string,
 ): Promise<OwnerMetadataSnapshot | null> {
   const normalizedOwner = slugOwner(owner);
   return normalizeOwnerMetadataSnapshot(
     normalizedOwner,
-    await readCoordinatedOwnerMetadata(env, normalizedOwner),
+    await readStoredOwnerMetadata(env, normalizedOwner),
   );
 }
 
-export async function readOwnerMetadata(
-  env: Env,
-  owner: string,
-): Promise<OwnerMetadataSnapshot | null> {
-  return readOwnerMetadataKv(env, owner);
-}
+// The same read under the name it had while the snapshot of record was in a Durable Object and
+// `readOwnerMetadata` read a copy. Step 8 of the stack migration merges the two names.
+export const readDurableOwnerMetadata = readOwnerMetadata;
 
 export type PublicCacheBarrier = "clear" | "blocked" | "unknown";
 
@@ -242,8 +71,6 @@ export async function privateRepositoryNames(
     return null;
   }
 }
-
-export { writeOwnerMetadata };
 
 export function mergeProjectMetadata(project: Project, metadata: Project): Project {
   return {

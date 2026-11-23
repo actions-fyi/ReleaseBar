@@ -19,14 +19,13 @@ import {
 import { safeIso } from "./owner-metadata-write.ts";
 
 import { readCacheEntry, readCacheText, writeCacheEntry, writeCacheText } from "./store/cache.ts";
-import { ownerMetadataKey } from "./store/owner-metadata.ts";
 import {
   ensureProfileSnapshot,
   profileSnapshotStorageKey,
   readProfileSnapshot,
   writeProfileSnapshot,
 } from "./store/profile-snapshots.ts";
-import { deleteProfile, profileKey, readProfile, writeStoredProfile } from "./store/profiles.ts";
+import { deleteProfile, readProfile, writeStoredProfile } from "./store/profiles.ts";
 
 export function withCacheState(
   payload: DashboardPayload,
@@ -128,8 +127,7 @@ export function errorStatus(error: unknown): number {
   return isGitHubRateLimit(error) ? 429 : 502;
 }
 
-export { ownerMetadataKey };
-export { deleteProfile, profileKey, readProfile };
+export { deleteProfile, readProfile };
 export { ensureProfileSnapshot, profileSnapshotStorageKey, readProfileSnapshot };
 
 export function dashboardWithVisibleProjects(payload: DashboardPayload): DashboardPayload {
@@ -338,16 +336,4 @@ export function newestOwnerTimestamp(...values: Array<string | null | undefined>
     if (value && safeIso(value) >= safeIso(newest)) newest = value;
   }
   return newest;
-}
-
-export function ownerSnapshotIsNewer(
-  candidate: OwnerMetadataSnapshot,
-  current: OwnerMetadataSnapshot,
-): boolean {
-  for (const field of ["countsUpdatedAt", "metadataUpdatedAt", "generatedAt"] as const) {
-    const candidateTime = safeIso(candidate[field]);
-    const currentTime = safeIso(current[field]);
-    if (candidateTime !== currentTime) return candidateTime > currentTime;
-  }
-  return true;
 }

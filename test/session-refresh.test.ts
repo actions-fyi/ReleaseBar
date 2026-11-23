@@ -1,5 +1,11 @@
 import { expect, test } from "vitest";
-import { kvStore, signedJson, worker } from "./dashboard-test-harness.ts";
+import {
+  kvStore,
+  signedJson,
+  worker,
+  storedInstallationJson,
+  recordingDatabase,
+} from "./dashboard-test-harness.ts";
 
 const context = { waitUntil: () => undefined };
 
@@ -143,17 +149,16 @@ test("worker keeps sessions logged in across redundant or failing KV writes", as
       installationsUpdatedAt: new Date((now - 3600) * 1000).toISOString(),
     }),
   });
-  const env = sessionEnv(cache);
+  const database = recordingDatabase();
+  const env = { ...sessionEnv(cache), DB: database.DB };
   const authCookie = await signedJson("test-secret", { id: sessionId, exp: now + 86400 });
   const sessionPuts: string[] = [];
-  const registryPuts: string[] = [];
   const basePut = cache.put.bind(cache);
   cache.put = async (key: string, value: string) => {
     if (key.startsWith("auth:session:")) {
       sessionPuts.push(key);
       throw new Error("simulated KV write rate limit");
     }
-    if (key.startsWith("auth:installation:v1:")) registryPuts.push(key);
     return basePut(key, value);
   };
 
@@ -198,10 +203,12 @@ test("worker keeps sessions logged in across redundant or failing KV writes", as
     expect(degradedBody.installations.length).toBe(2);
     expect(sessionPuts.length).toBe(1);
     // Fresh, unchanged registry entries are not rewritten on the second /api/me call.
-    expect(registryPuts.sort()).toStrictEqual([
-      "auth:installation:v1:clawtopia",
-      "auth:installation:v1:octocat",
-    ]);
+    // One write each: octocat's on the first call, clawtopia's on the second.
+    expect(
+      database.statements.filter((sql) => sql.includes("INSERT INTO installations")).length,
+    ).toBe(2);
+    expect(await storedInstallationJson("octocat")).not.toBe(null);
+    expect(await storedInstallationJson("clawtopia")).not.toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -18,6 +18,7 @@ import {
   testDashboard,
   testProject,
   worker,
+  seedOwnerMetadata,
 } from "./dashboard-test-harness.ts";
 
 test("worker Queue messages stay bounded when profile filters are large", async () => {
@@ -133,24 +134,24 @@ test("owner count scheduling rotates beyond a deferred owner cap", async () => {
       return [
         [`refresh:target:v1:${key}`, JSON.stringify(target)],
         [key, JSON.stringify(testDashboard(owner, [project]))],
-        [
-          `owner-metadata:v1:${owner}`,
-          JSON.stringify({
-            owner,
-            generatedAt: now,
-            metadataUpdatedAt: now,
-            countsUpdatedAt: staleAt,
-            releaseDataComplete: true,
-            knownRepos: [project.fullName.toLowerCase()],
-            removedRepos: {},
-            projectMetadataUpdatedAt: { [project.fullName.toLowerCase()]: now },
-            projectCountsUpdatedAt: { [project.fullName.toLowerCase()]: staleAt },
-            projects: [project],
-          }),
-        ],
       ];
     }),
   );
+  for (const owner of owners) {
+    const project = testProject({ owner, name: "repo" });
+    await seedOwnerMetadata(owner, {
+      owner,
+      generatedAt: now,
+      metadataUpdatedAt: now,
+      countsUpdatedAt: staleAt,
+      releaseDataComplete: true,
+      knownRepos: [project.fullName.toLowerCase()],
+      removedRepos: {},
+      projectMetadataUpdatedAt: { [project.fullName.toLowerCase()]: now },
+      projectCountsUpdatedAt: { [project.fullName.toLowerCase()]: staleAt },
+      projects: [project],
+    });
+  }
   const cache = kvStore(entries);
   const run = async () => {
     const waits: Promise<unknown>[] = [];
@@ -201,10 +202,9 @@ test("owner count scheduling throttles recent incomplete scans", async () => {
     nextDueAt: "2999-01-01T00:00:00Z",
     failureCount: 0,
   };
-  const cache = kvStore({
-    [`refresh:target:v1:${key}`]: JSON.stringify(target),
-    [key]: JSON.stringify(testDashboard("large-owner", [project])),
-    "owner-metadata:v1:large-owner": JSON.stringify({
+  await seedOwnerMetadata(
+    "large-owner",
+    JSON.stringify({
       owner: "large-owner",
       generatedAt: now,
       metadataUpdatedAt: now,
@@ -217,6 +217,10 @@ test("owner count scheduling throttles recent incomplete scans", async () => {
       projectCountsUpdatedAt: { [project.fullName.toLowerCase()]: staleAt },
       projects: [project],
     }),
+  );
+  const cache = kvStore({
+    [`refresh:target:v1:${key}`]: JSON.stringify(target),
+    [key]: JSON.stringify(testDashboard("large-owner", [project])),
   });
   const originalFetch = globalThis.fetch;
   let graphqlRequests = 0;
