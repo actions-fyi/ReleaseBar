@@ -12,6 +12,7 @@ import {
 } from "./dashboard-view.js";
 import { repoDetailPath, validRepoSlug, type DiscoverPeriod } from "./routing.js";
 import type { AuthPayload, Project } from "./types.js";
+import { userDashboardDetail, userDashboards } from "./user-dashboards.js";
 
 type CommandAction = {
   actionId?: number | string | null;
@@ -204,7 +205,6 @@ export function buildCommands(state: CommandState, actions: CommandActions): Com
     keywords: ["owner", "dashboard", owner],
     onRun: () => actions.openOwner(owner),
   }));
-  const authLogin = state.auth?.user?.login ?? null;
 
   return [
     ...typedCommands,
@@ -292,18 +292,14 @@ export function buildCommands(state: CommandState, actions: CommandActions): Com
       : []),
     ...(state.auth?.user
       ? [
-          ...(authLogin
-            ? [
-                {
-                  actionId: "account:dashboard",
-                  title: "Open my dashboard",
-                  subTitle: `@${authLogin}`,
-                  group: "Account",
-                  keywords: ["me", "account", "dashboard", authLogin],
-                  onRun: () => actions.openOwner(authLogin),
-                },
-              ]
-            : []),
+          ...userDashboards(state.auth).map((dashboard, index) => ({
+            actionId: index === 0 ? "account:dashboard" : `account:dashboard:${dashboard.login}`,
+            title: index === 0 ? "Open my dashboard" : `Open @${dashboard.login} dashboard`,
+            subTitle: index === 0 ? `@${dashboard.login}` : userDashboardDetail(dashboard),
+            group: "Account",
+            keywords: ["me", "account", "dashboard", dashboard.kind, dashboard.login],
+            onRun: () => actions.openOwner(dashboard.login),
+          })),
           ...(state.auth.installNeeded
             ? [
                 {

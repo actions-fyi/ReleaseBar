@@ -2,6 +2,7 @@
   import { DropdownMenu } from "bits-ui";
   import { ownerDashboardPath, siteDomain } from "../routing.js";
   import type { AuthPayload, Owner, Project, RepoDetailPayload } from "../types.js";
+  import { userDashboardDetail, userDashboards } from "../user-dashboards.js";
 
   type RepoRoute = { owner: string; repo: string; fullName: string };
 
@@ -27,7 +28,7 @@
   export let adminRoute: boolean;
   export let ownerAvatarUrl: (owner: Owner) => string;
   export let projectOwnerAvatarUrl: (project: Project) => string;
-  export let openSignedInUserDashboard: () => void;
+  export let openOwner: (owner: string) => void;
   export let installApp: () => void;
   export let logout: () => void;
   export let primaryAuthAction: () => void;
@@ -175,9 +176,15 @@
           <span class="account-caret" aria-hidden="true"></span>
         </DropdownMenu.Trigger>
         <DropdownMenu.Content class="account-dropdown" align="end" sideOffset={8} loop>
-          <DropdownMenu.Item class="menu-action" onSelect={openSignedInUserDashboard}>
-            My Dashboard
-          </DropdownMenu.Item>
+          {#each userDashboards(auth) as dashboard, index (dashboard.login)}
+            <DropdownMenu.Item
+              class="menu-action"
+              title={userDashboardDetail(dashboard)}
+              onSelect={() => openOwner(dashboard.login)}
+            >
+              {index === 0 ? "My Dashboard" : `@${dashboard.login}`}
+            </DropdownMenu.Item>
+          {/each}
           {#if !repoRoute && !activityPageRoute}
             <DropdownMenu.Item class="menu-action" onSelect={() => (settingsOpen = !settingsOpen)}>
               Settings

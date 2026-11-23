@@ -233,6 +233,11 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
     return payload("fresh");
   }
 
+  // An owner listing only contributes that owner's repositories; other accounts' repositories
+  // reach a dashboard through its explicit owner and repo sources.
+  const ownRepos = (owner: { login: string }, repos: GitHubRepo[]): GitHubRepo[] =>
+    repos.filter((repo) => slugOwner(repo.owner.login) === slugOwner(owner.login));
+
   async function addRepo(
     repo: GitHubRepo,
     countLabel: string,
@@ -345,7 +350,7 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
             page,
             ownerPageSize,
           );
-          const repos = ownerPage.repos;
+          const repos = ownRepos(owner, ownerPage.repos);
           observeCounts(repos);
           const pageSignature =
             repos.length > 0
@@ -564,7 +569,7 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
           page,
           ownerPageSize,
         );
-        const repos = ownerPage.repos;
+        const repos = ownRepos(owner, ownerPage.repos);
         observeCounts(repos);
         const pageSignature =
           repos.length > 0
@@ -697,7 +702,7 @@ export async function buildDashboard(options: DashboardBuildOptions): Promise<Da
     for (const owner of options.owners) {
       const client = clientForOwner(owner.login);
       beginCountQuery();
-      const ownerResult = await ownerRepos(client, owner, includeReleaseData);
+      const ownerResult = ownRepos(owner, await ownerRepos(client, owner, includeReleaseData));
       observeCounts(ownerResult);
       repos.push(...ownerResult);
     }
