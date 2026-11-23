@@ -5,6 +5,7 @@
 import { env, exports } from "cloudflare:workers";
 import { expect, test, vi } from "vitest";
 import type { RefreshJob } from "../src/types.ts";
+import { readStoredRefreshJob } from "../worker/store/refresh-jobs.ts";
 
 test("the Worker's fetch handler answers a request", async () => {
   const response = await exports.default.fetch(new Request("https://releasebar.test/api/me"));
@@ -62,9 +63,9 @@ test("a message sent to the refresh queue reaches the Worker's queue handler", a
   await env.REFRESH_QUEUE.send(job);
 
   const stored = await vi.waitFor(async () => {
-    const value = await env.DASHBOARD_CACHE.get(`refresh:job:v1:${job.id}`);
+    const value = await readStoredRefreshJob(env, job.id);
     if (value === null) throw new Error("the queue handler has not recorded the job yet");
-    return JSON.parse(value) as RefreshJob;
+    return value;
   });
   expect(stored.id).toBe(job.id);
   expect(stored.status).toBe("skipped");

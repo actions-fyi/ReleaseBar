@@ -4,8 +4,9 @@ import type { DashboardPayload, RefreshTarget } from "../src/types.ts";
 import {
   kvStore,
   ownerMetadataMutator,
-  type TestEnv,
+  storedRefreshTarget,
   testDashboard,
+  type TestEnv,
   testProject,
   worker,
 } from "./dashboard-test-harness.ts";
@@ -82,12 +83,10 @@ test("worker serves fresh dashboard cache before GitHub App token discovery", as
     expect(body.projects[0]?.openIssues).toBe(9);
     expect(body.projects[0]?.description).toBe(project.description);
     await Promise.all(waits);
-    const metadataTarget = JSON.parse(
-      (await cache.get(`refresh:target:v1:${metadataKey}`)) ?? "{}",
-    ) as RefreshTarget;
+    const metadataTarget = ((await storedRefreshTarget(metadataKey)) ?? {}) as RefreshTarget;
     expect(metadataTarget.key).toBe(metadataKey);
     expect(metadataTarget.includeReleaseData).toBe(false);
-    expect(await cache.get(`refresh:target:v1:${releaseKey}`)).toBe(null);
+    expect(await storedRefreshTarget(releaseKey)).toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }
