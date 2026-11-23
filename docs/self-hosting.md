@@ -35,19 +35,13 @@ The public Worker service accepts arbitrary public owners through route and quer
 
 ## Local development
 
-For frontend hot reload:
+For the app and the Worker on one server, with hot reload:
 
 ```sh
 npm run dev
 ```
 
-For a fully local Worker on port 8787:
-
-```sh
-npm run dev:worker
-```
-
-The Vite app falls back to `http://127.0.0.1:8787` for API calls. Local Worker development does not receive production secrets unless they are provided through local Wrangler configuration.
+This is `vite dev` with the Cloudflare Vite plugin: the Worker runs in the Workers runtime with local bindings, on `http://127.0.0.1:5173`. It does not receive production secrets unless they are provided through local Wrangler configuration, such as a `.dev.vars` file.
 
 For local code running on Cloudflare with real secrets and preview KV:
 
@@ -61,14 +55,14 @@ Open `http://localhost:8787/steipete` or another owner route.
 
 `wrangler.jsonc` binds:
 
-- `dist` as Worker static assets
+- `dist/client` as Worker static assets
 - `DASHBOARD_CACHE` as KV storage for dashboard, repository, settings, installation, session, and scheduler records
 - `DASHBOARD_LOCKS` as a Durable Object for single-flight builds, checkpoints, job reservations, and failure state
 - `REFRESH_QUEUE` for bounded background hydration and webhook work
 
 The Worker runs before static assets so `/api/*` stays dynamic and owner routes return the application shell. The Worker is named `releasebar`.
 
-`wrangler.jsonc` is generic: it names no account, custom domain, admin login or resource ID. A deployment supplies its own through environment variables, and `npm run deploy` writes them into `wrangler.deploy.json` (git-ignored) before deploying from it. With Workers Builds, set these as **build variables** (Settings → Build → Variables and secrets) and set the deploy command to `npm run deploy`. For non-production branch builds, use `npm run deploy:preview`.
+`wrangler.jsonc` is generic: it names no account, custom domain, admin login or resource ID. A deployment supplies its own through environment variables, and `npm run deploy` checks them, builds with Vite, which writes them into the Wrangler config of the build (`dist/releasebar/wrangler.json`), and runs `wrangler deploy`, which deploys from that config. With Workers Builds, set these as **build variables** (Settings → Build → Variables and secrets) and set the deploy command to `npm run deploy`. For non-production branch builds, use `npm run deploy:preview`.
 
 | Variable                                | Effect                                                                                                                                                                                    |
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -139,13 +133,14 @@ To send summaries to another endpoint that speaks the Messages API, such as Clou
 The production deployment is a Cloudflare Worker with Worker Assets, not GitHub Pages. A local deployment runs:
 
 ```sh
-npm run build
-wrangler deploy
+RELEASEBAR_DOMAIN=releasebar.example.com npm run deploy
 ```
 
-Pushes to `main` are built and deployed by Cloudflare's GitHub app (Workers Builds), which runs the `build.command` of `wrangler.jsonc` and `wrangler deploy`. No workflow deploys, and GitHub holds no Cloudflare token.
+`npm run build` is one `vite build`: it writes the app to `dist/client`, the Worker to `dist/releasebar`, and next to the Worker the Wrangler config that `wrangler deploy` uses. Run `wrangler deploy` only after a build, through `npm run deploy`: on its own in a fresh checkout it deploys the generic `wrangler.jsonc`, without the deployment's settings.
 
-Pull requests are gated by the org's Test TypeScript check, which runs the `typecheck`, `lint`, `format:check`, `build` and `test` scripts, and by `.github/workflows/cloudflare.yml`, which dry-runs the Wrangler deployment without credentials. `npm run build` is the offline build; `npm run build:data` also fetches dashboard data from GitHub.
+Pushes to `main` are built and deployed by Cloudflare's GitHub app (Workers Builds), which runs `npm run deploy` as its deploy command and needs no separate build command. No workflow deploys, and GitHub holds no Cloudflare token.
+
+Pull requests are gated by the org's Test TypeScript check, which runs the `typecheck`, `lint`, `format:check`, `build` and `test` scripts, and by `.github/workflows/cloudflare.yml`, which dry-runs the Wrangler deployment of the generic `wrangler.jsonc` without credentials. `npm run build` is the offline build; `npm run build:data` also fetches dashboard data from GitHub.
 
 `npm test` runs the tests with [Vitest](https://vitest.dev/) and needs no build first. Most test files run inside the Workers runtime through Cloudflare's Vitest integration, with the local bindings of `wrangler.jsonc`; the files listed in `vitest.config.ts` run on Node.js. The run writes a coverage report to `coverage/`, which the org's coverage workflow picks up. `npm run test:watch` re-runs the tests of changed files.
 

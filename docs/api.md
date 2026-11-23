@@ -12,7 +12,7 @@ The trust and org signal APIs only use public GitHub profile, organization, repo
 https://<your-domain>
 ```
 
-Local development may serve the app from Vite and the Worker API from Wrangler. Browser fallback routes use port `8787` for local Worker API calls.
+Local development serves the app and the Worker API from one Vite server (`npm run dev`). Browser fallback routes use port `8787`, where `npm run dev:worker:real` serves the Worker.
 
 ## OpenAPI
 

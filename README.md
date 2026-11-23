@@ -21,10 +21,10 @@ ReleaseBar requires Node.js 22.12 or newer. Node.js 24 is the version used by CI
 
 ## Quick start
 
-With the Worker running locally (`npm run dev:worker`), open a dashboard for any public GitHub owner, such as `http://localhost:8787/steipete`, or read the same cached data from the API. On a deployment, use its domain instead.
+With the development server running (`npm run dev`), open a dashboard for any public GitHub owner, such as `http://127.0.0.1:5173/steipete`, or read the same cached data from the API. On a deployment, use its domain instead.
 
 ```sh
-curl -fsSL http://localhost:8787/api/steipete \
+curl -fsSL http://127.0.0.1:5173/api/steipete \
   | jq '{owners: [.owners[].login], repositories: (.projects | length), cache: .cache.state}'
 ```
 
@@ -67,7 +67,7 @@ npm run check:static
 npm run dev
 ```
 
-The Vite development server runs on `http://127.0.0.1:5173`. Run `npm run dev:worker` alongside it when testing Worker API routes locally.
+The Vite development server runs on `http://127.0.0.1:5173` and serves the app and the Worker, API routes included, in the Workers runtime.
 
 Product direction and boundaries live in [VISION.md](VISION.md).
 
