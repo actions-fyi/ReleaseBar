@@ -1,10 +1,10 @@
 import { expect, test } from "vitest";
 import type { RepoDetailPayload } from "../src/types.ts";
-import { kvStore, worker } from "./dashboard-test-harness.ts";
+import { worker, cacheWith, testCache } from "./dashboard-test-harness.ts";
 
 test("worker rejects private repository detail payloads", async () => {
   const originalFetch = globalThis.fetch;
-  const cache = kvStore();
+  const cache = await cacheWith();
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
     if (url.pathname === "/repos/acme/private") {
@@ -30,7 +30,7 @@ test("worker rejects private repository detail payloads", async () => {
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/private"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
     const body = (await response.json()) as { error?: string };
@@ -112,7 +112,6 @@ test("worker does not cache repository detail when pull request count fails", as
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
   const env = {
-    DASHBOARD_CACHE: kvStore(),
     GITHUB_TOKEN: "shared-token",
   };
   try {
@@ -125,8 +124,8 @@ test("worker does not cache repository detail when pull request count fails", as
 
     failPulls = false;
     await Promise.all([
-      env.DASHBOARD_CACHE.delete("github:budget:v1:shared:_"),
-      env.DASHBOARD_CACHE.delete("github:budget:v1:shared:core"),
+      testCache.delete("github:budget:v1:shared:_"),
+      testCache.delete("github:budget:v1:shared:core"),
     ]);
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/retrybar"),
@@ -154,7 +153,7 @@ test("worker returns 404 for missing repository detail pages", async () => {
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/missing"),
-      { DASHBOARD_CACHE: kvStore(), GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
     expect(response.status).toBe(404);
@@ -224,7 +223,7 @@ test("worker ignores optional repository detail permission gaps", async () => {
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/limitedbar"),
-      { DASHBOARD_CACHE: kvStore(), GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
     expect(response.status).toBe(200);
@@ -292,7 +291,7 @@ test("worker backs off repository stats per repo after one warming response", as
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/warmstats"),
-      { DASHBOARD_CACHE: kvStore(), GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
     expect(response.status).toBe(202);
@@ -357,7 +356,7 @@ test("worker does not cache repository detail when optional calls are rate limit
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/slowbar"),
-      { DASHBOARD_CACHE: kvStore(), GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
     expect(response.status).toBe(429);
@@ -414,11 +413,11 @@ test("worker keeps repository detail when work trend GraphQL is rate limited", a
     }
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
-  const cache = kvStore();
+  const cache = await cacheWith();
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/trendbar"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
     expect(response.status).toBe(200);
@@ -525,12 +524,12 @@ test("worker reuses repository detail auxiliary caches across rebuilds", async (
     }
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
-  const cache = kvStore();
+  const cache = await cacheWith();
   try {
     const request = new Request("https://release.bar/api/repos/acme/cachebar");
     const first = await worker.fetch(
       request,
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
     expect(first.status).toBe(202);
@@ -549,7 +548,7 @@ test("worker reuses repository detail auxiliary caches across rebuilds", async (
 
     const second = await worker.fetch(
       request,
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
     expect(second.status).toBe(202);

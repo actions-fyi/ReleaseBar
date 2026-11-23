@@ -1,11 +1,11 @@
-import { env as runtimeEnv } from "cloudflare:workers";
 import { assert, expect, test } from "vitest";
 import { isGitHubRateLimit } from "../src/rate-limit.ts";
 import {
   githubAccessRouteRecords,
-  kvStore,
   refreshAuditEvents,
   worker,
+  cacheWith,
+  testDatabase,
 } from "./dashboard-test-harness.ts";
 
 test("browser rate-limit detection covers HTTP and cached GitHub quota failures", () => {
@@ -20,7 +20,7 @@ test("browser rate-limit detection covers HTTP and cached GitHub quota failures"
 });
 
 test("worker records client dashboard timing beacons in audit log", async () => {
-  const cache = kvStore();
+  await cacheWith();
   const waits: Array<Promise<unknown>> = [];
   const response = await worker.fetch(
     new Request("https://release.bar/api/_client-timing", {
@@ -45,7 +45,7 @@ test("worker records client dashboard timing beacons in audit log", async () => 
         done: false,
       }),
     }),
-    { DASHBOARD_CACHE: cache },
+    {},
     { waitUntil: (promise) => waits.push(promise) },
   );
 
@@ -67,14 +67,14 @@ test("worker records client dashboard timing beacons in audit log", async () => 
 });
 
 test("worker stores GitHub access counters and cached owner identity", async () => {
-  const cache = kvStore();
+  const cache = await cacheWith();
   let releaseAuditWrites: () => void = () => undefined;
   const auditWriteGate = new Promise<void>((resolve) => {
     releaseAuditWrites = resolve;
   });
   // The local database, with the batches that count GitHub calls held back. Other writes of the
   // request, such as its refresh target, go through.
-  const real = runtimeEnv.DB;
+  const real = testDatabase;
   const auditStatements = new WeakSet<object>();
   const database = {
     prepare(sql: string): D1PreparedStatement {
@@ -148,7 +148,7 @@ test("worker stores GitHub access counters and cached owner identity", async () 
     const response = await Promise.race([
       worker.fetch(
         new Request("https://release.bar/api/owner"),
-        { DASHBOARD_CACHE: cache, DB: database, GITHUB_TOKEN: "token" },
+        { DB: database, GITHUB_TOKEN: "token" },
         { waitUntil: (promise) => waits.push(promise) },
       ),
       new Promise<never>((_resolve, reject) => {

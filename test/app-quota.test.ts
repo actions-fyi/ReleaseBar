@@ -3,7 +3,6 @@ import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, RefreshJob } from "../src/types.ts";
 import {
-  kvStore,
   testQueue,
   signedJson,
   testDashboard,
@@ -11,28 +10,31 @@ import {
   worker,
   seedInstallation,
   storedInstallationJson,
+  cacheWith,
+  holdQueue,
+  testCache,
 } from "./dashboard-test-harness.ts";
 
 test("worker only exposes public selected installation repositories", async () => {
   const sessionId = "session-public-repos";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
+  await cacheWith({
+    [`auth:session:${sessionId}`]: JSON.stringify({
+      user: {
+        id: 1,
+        login: "octocat",
+        name: null,
+        avatarUrl: "https://avatars.githubusercontent.com/u/1",
+        url: "https://github.com/octocat",
+      },
+      accessToken: "user-token",
+      iat: exp - 600,
+      exp,
+    }),
+  });
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: kvStore({
-      [`auth:session:${sessionId}`]: JSON.stringify({
-        user: {
-          id: 1,
-          login: "octocat",
-          name: null,
-          avatarUrl: "https://avatars.githubusercontent.com/u/1",
-          url: "https://github.com/octocat",
-        },
-        accessToken: "user-token",
-        iat: exp - 600,
-        exp,
-      }),
-    }),
     GITHUB_APP_CLIENT_ID: "Iv123",
     GITHUB_APP_CLIENT_SECRET: "client-secret",
     GITHUB_APP_ID: "123",
@@ -135,22 +137,22 @@ test("worker allows mixed-account dashboards to use partitioned App quota", asyn
   const sessionId = "session-2";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
+  await cacheWith({
+    [`auth:session:${sessionId}`]: JSON.stringify({
+      user: {
+        id: 1,
+        login: "octocat",
+        name: null,
+        avatarUrl: "https://avatars.githubusercontent.com/u/1",
+        url: "https://github.com/octocat",
+      },
+      accessToken: "user-token",
+      iat: exp - 600,
+      exp,
+    }),
+  });
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: kvStore({
-      [`auth:session:${sessionId}`]: JSON.stringify({
-        user: {
-          id: 1,
-          login: "octocat",
-          name: null,
-          avatarUrl: "https://avatars.githubusercontent.com/u/1",
-          url: "https://github.com/octocat",
-        },
-        accessToken: "user-token",
-        iat: exp - 600,
-        exp,
-      }),
-    }),
     GITHUB_APP_CLIENT_ID: "Iv123",
     GITHUB_APP_CLIENT_SECRET: "client-secret",
     GITHUB_APP_ID: "123",
@@ -201,30 +203,28 @@ test("worker keeps signed-in mixed-account dashboards on shared release scans", 
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
   const sentJobs: RefreshJob[] = [];
   const waits: Promise<unknown>[] = [];
+  await cacheWith({
+    [`auth:session:${sessionId}`]: JSON.stringify({
+      user: {
+        id: 1,
+        login: "octocat",
+        name: null,
+        avatarUrl: "https://avatars.githubusercontent.com/u/1",
+        url: "https://github.com/octocat",
+      },
+      accessToken: "user-token",
+      iat: exp - 600,
+      exp,
+    }),
+  });
+  holdQueue(async (job: RefreshJob) => {
+    sentJobs.push(job);
+  });
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: kvStore({
-      [`auth:session:${sessionId}`]: JSON.stringify({
-        user: {
-          id: 1,
-          login: "octocat",
-          name: null,
-          avatarUrl: "https://avatars.githubusercontent.com/u/1",
-          url: "https://github.com/octocat",
-        },
-        accessToken: "user-token",
-        iat: exp - 600,
-        exp,
-      }),
-    }),
     GITHUB_APP_ID: "123",
     GITHUB_APP_PRIVATE_KEY: "private-key",
     GITHUB_TOKEN: "shared-token",
-    REFRESH_QUEUE: {
-      async send(job: RefreshJob) {
-        sentJobs.push(job);
-      },
-    },
   };
   const graphqlIncludeReleases: boolean[] = [];
   const originalFetch = globalThis.fetch;
@@ -310,10 +310,10 @@ test("worker keeps unsynced app-configured owner dashboards metadata-only", asyn
       releaseName: "hydrated release cache",
     }),
   ]);
+  await cacheWith({
+    [releaseKey]: JSON.stringify(releasePayload),
+  });
   const env = {
-    DASHBOARD_CACHE: kvStore({
-      [releaseKey]: JSON.stringify(releasePayload),
-    }),
     GITHUB_APP_ID: "123",
     GITHUB_APP_PRIVATE_KEY: "private-key",
   };
@@ -370,7 +370,7 @@ test("worker keeps unsynced app-configured owner dashboards metadata-only", asyn
     expect(body.cache?.countsUpdatedAt).toBe(null);
     expect(body.cache?.message ?? "").toMatch(/release scan skipped/);
     expect(body.projects[0]?.releaseName).not.toBe("hydrated release cache");
-    expect(await env.DASHBOARD_CACHE.get("hot:index:v3")).toBe(null);
+    expect(await testCache.get("hot:index:v3")).toBe(null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -386,28 +386,27 @@ test("worker uses GitHub App installation token for cold owner dashboards", asyn
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
   const queue = testQueue();
+  await cacheWith({
+    [`auth:session:${sessionId}`]: JSON.stringify({
+      user: {
+        id: 1,
+        login: "octocat",
+        name: null,
+        avatarUrl: "https://avatars.githubusercontent.com/u/1",
+        url: "https://github.com/octocat",
+      },
+      accessToken: "user-token",
+      iat: exp - 600,
+      exp,
+    }),
+  });
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: kvStore({
-      [`auth:session:${sessionId}`]: JSON.stringify({
-        user: {
-          id: 1,
-          login: "octocat",
-          name: null,
-          avatarUrl: "https://avatars.githubusercontent.com/u/1",
-          url: "https://github.com/octocat",
-        },
-        accessToken: "user-token",
-        iat: exp - 600,
-        exp,
-      }),
-    }),
     GITHUB_APP_CLIENT_ID: "Iv123",
     GITHUB_APP_CLIENT_SECRET: "client-secret",
     GITHUB_APP_ID: "123",
     GITHUB_APP_PRIVATE_KEY: privateKey,
     GITHUB_APP_SLUG: "releasebar-app",
-    REFRESH_QUEUE: queue,
   };
   const originalFetch = globalThis.fetch;
   const waits: Promise<unknown>[] = [];
@@ -506,9 +505,7 @@ test("worker uses GitHub App installation token for cold owner dashboards", asyn
     expect(appRestFallbacks).toBe(1);
     expect(appReleasePageSizes).toStrictEqual([50]);
     assert.ok(
-      await env.DASHBOARD_CACHE.get(
-        "github:backoff:v2:graphql:app:openclaw:ReleaseBarOwnerRepos.metadata",
-      ),
+      await testCache.get("github:backoff:v2:graphql:app:openclaw:ReleaseBarOwnerRepos.metadata"),
     );
   } finally {
     globalThis.fetch = originalFetch;
@@ -533,9 +530,8 @@ test("worker uses registered source-owned app tokens for anonymous owner dashboa
       updatedAt: new Date().toISOString(),
     }),
   );
-  const cache = kvStore({});
+  await cacheWith({});
   const env = {
-    DASHBOARD_CACHE: cache,
     GITHUB_APP_ID: "123",
     GITHUB_APP_PRIVATE_KEY: privateKey,
     GITHUB_TOKEN: "shared-token",
@@ -633,11 +629,10 @@ test("worker keeps stale source installation coverage when discovery fails", asy
       updatedAt: "2026-05-15T12:00:00Z",
     }),
   );
-  const cache = kvStore({
+  const cache = await cacheWith({
     "auth:installation-token:1": "installation-token",
   });
   const env = {
-    DASHBOARD_CACHE: cache,
     GITHUB_APP_ID: "123",
     GITHUB_APP_PRIVATE_KEY: privateKey,
     GITHUB_TOKEN: "shared-token",

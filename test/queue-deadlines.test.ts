@@ -8,7 +8,6 @@ import {
   crawlerRequest,
   forgetRefreshTargetState,
   jobStateWrites,
-  kvStore,
   observedDatabase,
   refreshAuditEvents,
   signedJson,
@@ -21,6 +20,8 @@ import {
   testQueue,
   worker,
   seedInstallation,
+  cacheWith,
+  holdQueue,
 } from "./dashboard-test-harness.ts";
 
 test("worker terminalizes exhausted refresh retries before dead-lettering", async () => {
@@ -59,7 +60,7 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
     attempts: 0,
     durationMs: null,
   };
-  const cache = kvStore({
+  const cache = await cacheWith({
     [key]: JSON.stringify(
       testDashboard("openclaw", [testProject({ owner: "openclaw", name: "repo" })]),
     ),
@@ -71,22 +72,7 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
   let retryDelaySeconds: number | undefined;
 
   const deliver = async (attempts: number) =>
-    (
-      worker as unknown as {
-        queue(
-          batch: {
-            messages: Array<{
-              body: RefreshJob;
-              attempts?: number;
-              ack(): void;
-              retry(options?: { delaySeconds?: number }): void;
-            }>;
-          },
-          env: unknown,
-          context: unknown,
-        ): Promise<void>;
-      }
-    ).queue(
+    worker.queue(
       {
         messages: [
           {
@@ -101,7 +87,7 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
           },
         ],
       },
-      { DASHBOARD_CACHE: cache, DB: database },
+      { DB: database },
       { waitUntil: () => undefined },
     );
 
@@ -141,16 +127,12 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
     throw new Error(`backed-off dashboard should not fetch ${String(input)}`);
   };
   try {
+    holdQueue(async (sent: RefreshJob) => {
+      sentJobs.push(sent);
+    });
     const staleResponse = await worker.fetch(
       new Request("https://release.bar/api/openclaw"),
-      {
-        DASHBOARD_CACHE: cache,
-        REFRESH_QUEUE: {
-          async send(sent: RefreshJob) {
-            sentJobs.push(sent);
-          },
-        },
-      },
+      {},
       { waitUntil: (promise) => waits.push(promise) },
     );
     expect(staleResponse.status).toBe(200);
@@ -158,16 +140,12 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
     expect(sentJobs.length).toBe(0);
 
     await cache.delete(key);
+    holdQueue(async (sent: RefreshJob) => {
+      sentJobs.push(sent);
+    });
     const coldResponse = await worker.fetch(
       new Request("https://release.bar/api/openclaw"),
-      {
-        DASHBOARD_CACHE: cache,
-        REFRESH_QUEUE: {
-          async send(sent: RefreshJob) {
-            sentJobs.push(sent);
-          },
-        },
-      },
+      {},
       { waitUntil: (promise) => waits.push(promise) },
     );
     expect(coldResponse.status).toBe(202);
@@ -183,16 +161,12 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
       key,
       JSON.stringify(testDashboard("openclaw", [testProject({ owner: "openclaw", name: "repo" })])),
     );
+    holdQueue(async (sent: RefreshJob) => {
+      sentJobs.push(sent);
+    });
     const transientFailureResponse = await worker.fetch(
       new Request("https://release.bar/api/openclaw"),
-      {
-        DASHBOARD_CACHE: cache,
-        REFRESH_QUEUE: {
-          async send(sent: RefreshJob) {
-            sentJobs.push(sent);
-          },
-        },
-      },
+      {},
       { waitUntil: (promise) => waits.push(promise) },
     );
     expect(transientFailureResponse.status).toBe(200);
@@ -239,7 +213,7 @@ test("worker terminalizes final-delivery queue handler failures", async () => {
     attempts: 0,
     durationMs: null,
   };
-  const cache = kvStore();
+  await cacheWith();
   let failJobRead = true;
   const { database } = observedDatabase((sql) => {
     if (sql.startsWith("SELECT value FROM refresh_jobs WHERE id = ?") && failJobRead) {
@@ -251,22 +225,7 @@ test("worker terminalizes final-delivery queue handler failures", async () => {
   const releases = vi.spyOn(BuildCoordinator.prototype, "releaseJob");
   let retryDelaySeconds: number | undefined;
 
-  await (
-    worker as unknown as {
-      queue(
-        batch: {
-          messages: Array<{
-            body: RefreshJob;
-            attempts?: number;
-            ack(): void;
-            retry(options?: { delaySeconds?: number }): void;
-          }>;
-        },
-        env: unknown,
-        context: unknown,
-      ): Promise<void>;
-    }
-  ).queue(
+  await worker.queue(
     {
       messages: [
         {
@@ -281,7 +240,7 @@ test("worker terminalizes final-delivery queue handler failures", async () => {
         },
       ],
     },
-    { DASHBOARD_CACHE: cache, DB: database },
+    { DB: database },
     { waitUntil: () => undefined },
   );
 
@@ -329,7 +288,7 @@ test("worker refresh jobs defer shared work while shared quota is paused", async
     attempts: 0,
     durationMs: null,
   };
-  const cache = kvStore({
+  await cacheWith({
     "github:budget:v1:shared:_": JSON.stringify({
       active: true,
       resource: "core",
@@ -347,21 +306,7 @@ test("worker refresh jobs defer shared work while shared quota is paused", async
   };
   let acked = false;
   try {
-    await (
-      worker as unknown as {
-        queue(
-          batch: {
-            messages: Array<{
-              body: RefreshJob;
-              ack(): void;
-              retry(options?: { delaySeconds?: number }): void;
-            }>;
-          },
-          env: unknown,
-          context: unknown,
-        ): Promise<void>;
-      }
-    ).queue(
+    await worker.queue(
       {
         messages: [
           {
@@ -375,7 +320,7 @@ test("worker refresh jobs defer shared work while shared quota is paused", async
           },
         ],
       },
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
   } finally {
@@ -425,7 +370,7 @@ test("worker refresh jobs defer shared work while GraphQL is backed off", async 
     attempts: 0,
     durationMs: null,
   };
-  const cache = kvStore({
+  await cacheWith({
     "github:backoff:v2:graphql:shared:_:ReleaseBarRepoDetails": JSON.stringify({
       active: true,
       status: 502,
@@ -442,21 +387,7 @@ test("worker refresh jobs defer shared work while GraphQL is backed off", async 
   };
   let acked = false;
   try {
-    await (
-      worker as unknown as {
-        queue(
-          batch: {
-            messages: Array<{
-              body: RefreshJob;
-              ack(): void;
-              retry(options?: { delaySeconds?: number }): void;
-            }>;
-          },
-          env: unknown,
-          context: unknown,
-        ): Promise<void>;
-      }
-    ).queue(
+    await worker.queue(
       {
         messages: [
           {
@@ -470,7 +401,7 @@ test("worker refresh jobs defer shared work while GraphQL is backed off", async 
           },
         ],
       },
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
   } finally {
@@ -493,7 +424,7 @@ test("worker skips request-triggered progressive rebuilds while shared quota is 
     schemaVersion: 6,
   });
   const dashboard = testDashboard("owner", [testProject({ owner: "owner", name: "repo" })]);
-  const cache = kvStore({
+  await cacheWith({
     [key]: JSON.stringify(dashboard),
     "github:budget:v1:shared:_": JSON.stringify({
       active: true,
@@ -510,7 +441,7 @@ test("worker skips request-triggered progressive rebuilds while shared quota is 
     throw new Error("shared quota pause should skip progressive GitHub fetches");
   };
   const queue = testQueue();
-  const env = { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", REFRESH_QUEUE: queue };
+  const env = { GITHUB_TOKEN: "shared-token" };
   const context = { waitUntil: (promise: Promise<unknown>) => void waits.push(promise) };
   try {
     const response = await worker.fetch(new Request("https://release.bar/api/owner"), env, context);
@@ -563,7 +494,7 @@ test("worker serves cached dashboards to crawlers without scheduling refreshes",
       },
     },
   };
-  const cache = kvStore({
+  await cacheWith({
     [key]: JSON.stringify(dashboard),
   });
   const waits: Array<Promise<unknown>> = [];
@@ -597,7 +528,6 @@ test("worker serves cached dashboards to crawlers without scheduling refreshes",
     const response = await worker.fetch(
       crawlerRequest("https://release.bar/api/owner", "AhrefsBot/7.0", null),
       {
-        DASHBOARD_CACHE: cache,
         GITHUB_APP_ID: "123",
         GITHUB_APP_PRIVATE_KEY: privateKey,
         GITHUB_TOKEN: "shared-token",
@@ -636,7 +566,7 @@ test("worker serves cache-only cold dashboard status to crawlers", async () => {
       updatedAt: "2026-05-15T12:00:00Z",
     }),
   );
-  const baseCache = kvStore({});
+  const baseCache = await cacheWith({});
   let installationTokenReads = 0;
   const cache = {
     ...baseCache,
@@ -653,7 +583,7 @@ test("worker serves cache-only cold dashboard status to crawlers", async () => {
     const waits: Promise<unknown>[] = [];
     const response = await worker.fetch(
       crawlerRequest("https://release.bar/api/coldbot", "Googlebot/2.1", null),
-      { DASHBOARD_CACHE: cache, GITHUB_APP_ID: "123", GITHUB_APP_PRIVATE_KEY: "invalid" },
+      { GITHUB_APP_ID: "123", GITHUB_APP_PRIVATE_KEY: "invalid" },
       {
         waitUntil: (promise) => waits.push(promise),
       },
@@ -673,7 +603,7 @@ test("worker serves cache-only cold dashboard status to crawlers", async () => {
 });
 
 test("worker does not pause shared quota for ordinary forbidden responses", async () => {
-  const cache = kvStore();
+  const cache = await cacheWith();
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>
     Response.json(
@@ -690,7 +620,7 @@ test("worker does not pause shared quota for ordinary forbidden responses", asyn
   try {
     await worker.fetch(
       new Request("https://release.bar/api/owner"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -704,7 +634,6 @@ test("worker does not pause shared quota for ordinary forbidden responses", asyn
 test("safeReturnTo accepts the current request origin, including workers.dev", async () => {
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: kvStore(),
     GITHUB_APP_CLIENT_ID: "Iv123",
     GITHUB_APP_CLIENT_SECRET: "client-secret",
     GITHUB_APP_SLUG: "releasebar-app",
@@ -736,7 +665,6 @@ test("safeReturnTo accepts the current request origin, including workers.dev", a
 test("safeReturnTo rejects a normalized protocol-relative path", async () => {
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: kvStore(),
     GITHUB_APP_CLIENT_ID: "Iv123",
     GITHUB_APP_CLIENT_SECRET: "client-secret",
     GITHUB_APP_SLUG: "releasebar-app",
@@ -777,29 +705,29 @@ test("worker refreshes stale installation coverage before using its cached token
       updatedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     }),
   );
+  await cacheWith({
+    [`auth:session:${sessionId}`]: JSON.stringify({
+      user: {
+        id: 1,
+        login: "octocat",
+        name: null,
+        avatarUrl: "https://avatars.githubusercontent.com/u/1",
+        url: "https://github.com/octocat",
+      },
+      accessToken: "user-token",
+      iat: exp - 600,
+      exp,
+    }),
+    "auth:installation-token:1": "installation-token",
+  });
+  holdQueue(async () => undefined);
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: kvStore({
-      [`auth:session:${sessionId}`]: JSON.stringify({
-        user: {
-          id: 1,
-          login: "octocat",
-          name: null,
-          avatarUrl: "https://avatars.githubusercontent.com/u/1",
-          url: "https://github.com/octocat",
-        },
-        accessToken: "user-token",
-        iat: exp - 600,
-        exp,
-      }),
-      "auth:installation-token:1": "installation-token",
-    }),
     GITHUB_APP_CLIENT_ID: "Iv123",
     GITHUB_APP_CLIENT_SECRET: "client-secret",
     GITHUB_APP_ID: "123",
     GITHUB_APP_PRIVATE_KEY: "unused",
     GITHUB_APP_SLUG: "releasebar-app",
-    REFRESH_QUEUE: { send: async () => undefined },
   };
   const originalFetch = globalThis.fetch;
   let tokenMintCalled = false;

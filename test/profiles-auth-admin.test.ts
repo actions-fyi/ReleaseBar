@@ -1,5 +1,4 @@
 import { generateKeyPairSync } from "node:crypto";
-import { env as runtimeEnv } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import type {
   AuthFunnelSummary,
@@ -10,7 +9,6 @@ import type {
   SchedulerAdminPayload,
 } from "../src/types.ts";
 import {
-  kvStore,
   signedJson,
   storedSchedulerState,
   storeRefreshJob,
@@ -21,6 +19,9 @@ import {
   storedInstallationJson,
   seedInstallation,
   observedDatabase,
+  cacheWith,
+  testDatabase,
+  holdQueue,
 } from "./dashboard-test-harness.ts";
 
 test("worker discovers and stores source-owned app installs for anonymous dashboards", async () => {
@@ -29,9 +30,8 @@ test("worker discovers and stores source-owned app installs for anonymous dashbo
     privateKeyEncoding: { type: "pkcs1", format: "pem" },
     publicKeyEncoding: { type: "spki", format: "pem" },
   });
-  const cache = kvStore();
+  await cacheWith();
   const env = {
-    DASHBOARD_CACHE: cache,
     GITHUB_APP_ID: "123",
     GITHUB_APP_PRIVATE_KEY: privateKey,
     GITHUB_TOKEN: "shared-token",
@@ -106,7 +106,7 @@ test("worker saves owner public defaults and applies them to clean owner URLs", 
   const sessionId = "session-profile";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -123,7 +123,6 @@ test("worker saves owner public defaults and applies them to clean owner URLs", 
   const env = {
     ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: cache,
     GITHUB_TOKEN: "shared-token",
   };
   const originalFetch = globalThis.fetch;
@@ -237,23 +236,23 @@ test("worker only lets the dashboard owner save public defaults", async () => {
   const sessionId = "session-profile-forbidden";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
+  await cacheWith({
+    [`auth:session:${sessionId}`]: JSON.stringify({
+      user: {
+        id: 1,
+        login: "octocat",
+        name: null,
+        avatarUrl: "https://avatars.githubusercontent.com/u/1",
+        url: "https://github.com/octocat",
+      },
+      accessToken: "user-token",
+      iat: exp - 600,
+      exp,
+    }),
+  });
   const env = {
     ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: kvStore({
-      [`auth:session:${sessionId}`]: JSON.stringify({
-        user: {
-          id: 1,
-          login: "octocat",
-          name: null,
-          avatarUrl: "https://avatars.githubusercontent.com/u/1",
-          url: "https://github.com/octocat",
-        },
-        accessToken: "user-token",
-        iat: exp - 600,
-        exp,
-      }),
-    }),
   };
   const response = await worker.fetch(
     new Request("https://release.bar/api/profile/steipete", {
@@ -274,7 +273,7 @@ test("worker logout deletes the stored session and clears the cookie", async () 
   const sessionId = "session-logout";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
-  const cache = kvStore({
+  const cache = await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -291,7 +290,6 @@ test("worker logout deletes the stored session and clears the cookie", async () 
   const env = {
     ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: cache,
     GITHUB_APP_CLIENT_ID: "Iv123",
     GITHUB_APP_CLIENT_SECRET: "client-secret",
     GITHUB_APP_SLUG: "releasebar-app",
@@ -314,7 +312,7 @@ test("worker logout deletes the stored session and clears the cookie", async () 
 test("worker login returns 503 when GitHub App is not configured", async () => {
   const response = await worker.fetch(
     new Request("https://release.bar/api/auth/login"),
-    { DASHBOARD_CACHE: kvStore() },
+    {},
     { waitUntil: () => undefined },
   );
   expect(response.status).toBe(503);
@@ -357,7 +355,7 @@ test("worker admin scheduler requires an admin session and reports refresh targe
     durationMs: null,
   };
   const accessHour = new Date().toISOString().slice(0, 13);
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -383,27 +381,25 @@ test("worker admin scheduler requires an admin session and reports refresh targe
       exp,
     }),
   });
-  await runtimeEnv.DB.prepare(
-    `INSERT INTO github_access_counts
+  await testDatabase
+    .prepare(
+      `INSERT INTO github_access_counts
        (hour, route_key, area, route, status, source, account, resource, count, last_at, last_path)
      VALUES (?, 'dashboard:200:shared:_:graphql:graphql', 'dashboard', 'graphql', 200, 'shared',
        NULL, 'graphql', 3, ?, '/graphql')`,
-  )
+    )
     .bind(accessHour, `${accessHour}:00:00.000Z`)
     .run();
   await storeRefreshTarget(target);
   await storeRefreshTarget(legacyTarget);
   await storeRefreshJob(activeJob);
   const sentJobs: RefreshJob[] = [];
+  holdQueue(async (job: RefreshJob) => {
+    sentJobs.push(job);
+  });
   const env = {
     ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: cache,
-    REFRESH_QUEUE: {
-      async send(job: RefreshJob) {
-        sentJobs.push(job);
-      },
-    },
   };
 
   const anonymous = await worker.fetch(
@@ -510,15 +506,15 @@ test("worker admin installation summary bounds record and counter reads", async 
       updatedAt: new Date(index * 1000).toISOString(),
     });
   }
-  const insertCount = runtimeEnv.DB.prepare(
+  const insertCount = testDatabase.prepare(
     "INSERT INTO auth_funnel_counts (day, event, account, status, count) VALUES (?, ?, '_', 'ok', ?)",
   );
-  await runtimeEnv.DB.batch(
+  await testDatabase.batch(
     Array.from({ length: 121 }, (_, index) =>
       insertCount.bind("2026-06-13", `event-${String(index).padStart(3, "0")}`, index + 1),
     ),
   );
-  const cache = kvStore(entries);
+  await cacheWith(entries);
   const observed = observedDatabase();
 
   const response = await worker.fetch(
@@ -528,7 +524,6 @@ test("worker admin installation summary bounds record and counter reads", async 
     {
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
-      DASHBOARD_CACHE: cache,
       DB: observed.database,
     },
     { waitUntil: () => undefined },
@@ -606,7 +601,7 @@ test("worker scheduler rotates bounded current-schema target pages", async () =>
     failureCount: 0,
   });
   await storeRefreshTargets(targets);
-  const cache = kvStore(entries);
+  await cacheWith(entries);
   const run = async () => {
     const response = await worker.fetch(
       new Request("https://release.bar/api/admin/scheduler/run", {
@@ -616,7 +611,6 @@ test("worker scheduler rotates bounded current-schema target pages", async () =>
       {
         ADMIN_LOGINS: "steipete",
         AUTH_COOKIE_SECRET: "test-secret",
-        DASHBOARD_CACHE: cache,
       },
       { waitUntil: () => undefined },
     );
@@ -638,7 +632,6 @@ test("worker scheduler rotates bounded current-schema target pages", async () =>
     {
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
-      DASHBOARD_CACHE: cache,
     },
     { waitUntil: () => undefined },
   );

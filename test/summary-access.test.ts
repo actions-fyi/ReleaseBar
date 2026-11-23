@@ -17,10 +17,10 @@ import {
 import {
   claudeJson,
   crawlerRequest,
-  kvStore,
   signedIn,
   testProject,
   worker,
+  cacheWith,
 } from "./dashboard-test-harness.ts";
 import { deployConfig } from "../shared/deploy-config.ts";
 
@@ -143,7 +143,7 @@ async function withModel(run: (modelCalls: () => number) => Promise<void>): Prom
   }
 }
 
-type Cache = ReturnType<typeof kvStore>;
+type Cache = KVNamespace;
 // Worker vars, such as the summary limits.
 type Vars = Record<string, string>;
 
@@ -160,7 +160,6 @@ async function summaryFor(
   const response = await worker.fetch(
     new Request(url, { headers: user.headers }),
     {
-      DASHBOARD_CACHE: cache,
       GITHUB_TOKEN: "shared-token",
       ANTHROPIC_API_KEY: "claude-key",
       ...user.env,
@@ -176,8 +175,8 @@ async function summaryFor(
   return { status: response.status, summary: body.summary ?? body.releaseSummary };
 }
 
-const twoOwners = (): Cache =>
-  kvStore({
+const twoOwners = (): Promise<Cache> =>
+  cacheWith({
     [ownerActivityKey("acme")]: JSON.stringify(ownerActivity("acme")),
     [ownerActivityKey("beta")]: JSON.stringify(ownerActivity("beta")),
   });
@@ -188,8 +187,8 @@ test("anonymous and crawler requests never start a summary and are told to sign 
     [repoActivityKey]: JSON.stringify(repoActivity()),
     [repoDetailKey]: JSON.stringify(repoDetail()),
   };
-  const cache = kvStore(stored);
-  const env = { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "key" };
+  const cache = await cacheWith(stored);
+  const env = { GITHUB_TOKEN: "shared-token", ANTHROPIC_API_KEY: "key" };
   const urls = [
     ownerActivityUrl("acme"),
     `${origin}/api/repos/acme/releasebar/activity?range=week`,
@@ -229,13 +228,13 @@ test("anonymous requests get a cached summary", async () => {
     generatedAt: new Date().toISOString(),
     message: undefined,
   };
-  const cache = kvStore({
+  await cacheWith({
     [ownerActivityKey("acme")]: JSON.stringify(ownerActivity("acme", ready)),
   });
   await withModel(async (modelCalls) => {
     const response = await worker.fetch(
       new Request(ownerActivityUrl("acme")),
-      { DASHBOARD_CACHE: cache, ANTHROPIC_API_KEY: "key" },
+      { ANTHROPIC_API_KEY: "key" },
       { waitUntil: () => undefined },
     );
     const body = (await response.json()) as OwnerActivityPayload;
@@ -247,7 +246,7 @@ test("anonymous requests get a cached summary", async () => {
 });
 
 test("a signed-in user generates summaries up to the hourly limit", async () => {
-  const cache = twoOwners();
+  const cache = await twoOwners();
   const limits = { SUMMARY_USER_HOURLY_LIMIT: "1" };
   await withModel(async (modelCalls) => {
     const first = await summaryFor(cache, limits, 1, ownerActivityUrl("acme"));
@@ -272,7 +271,7 @@ test("a signed-in user generates summaries up to the hourly limit", async () => 
 });
 
 test("the daily limit for all users stops further summaries", async () => {
-  const cache = twoOwners();
+  const cache = await twoOwners();
   const limits = { SUMMARY_GLOBAL_DAILY_LIMIT: "1" };
   await withModel(async (modelCalls) => {
     await summaryFor(cache, limits, 1, ownerActivityUrl("acme"));
@@ -284,7 +283,7 @@ test("the daily limit for all users stops further summaries", async () => {
 });
 
 test("a summary that never calls the model is not counted", async () => {
-  const cache = twoOwners();
+  const cache = await twoOwners();
   await cache.put(repoDetailKey, JSON.stringify(repoDetail()));
   const limits = { SUMMARY_USER_HOURLY_LIMIT: "1" };
   await withModel(async (modelCalls) => {

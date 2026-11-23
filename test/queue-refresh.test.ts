@@ -6,7 +6,6 @@ import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.t
 import {
   buildLocksHeld,
   jobStateWrites,
-  kvStore,
   observedDatabase,
   refreshAuditEvents,
   storedRefreshJob,
@@ -19,6 +18,7 @@ import {
   testDashboard,
   testProject,
   worker,
+  cacheWith,
 } from "./dashboard-test-harness.ts";
 
 test("worker refresh jobs can use shared quota when no source app token exists", async () => {
@@ -57,7 +57,7 @@ test("worker refresh jobs can use shared quota when no source app token exists",
     attempts: 0,
     durationMs: null,
   };
-  const cache = kvStore({});
+  await cacheWith({});
   await storeRefreshJob(job);
   const originalFetch = globalThis.fetch;
   const paths: string[] = [];
@@ -88,21 +88,7 @@ test("worker refresh jobs can use shared quota when no source app token exists",
   };
   let acked = false;
   try {
-    await (
-      worker as unknown as {
-        queue(
-          batch: {
-            messages: Array<{
-              body: RefreshJob;
-              ack(): void;
-              retry(options?: { delaySeconds?: number }): void;
-            }>;
-          },
-          env: unknown,
-          context: unknown,
-        ): Promise<void>;
-      }
-    ).queue(
+    await worker.queue(
       {
         messages: [
           {
@@ -116,7 +102,7 @@ test("worker refresh jobs can use shared quota when no source app token exists",
           },
         ],
       },
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
   } finally {
@@ -185,7 +171,7 @@ test("worker refresh jobs preserve profile filters from the queued target snapsh
   };
   const latestLastSeenAt = "2026-06-11T07:30:00Z";
   const latestPath = "/profiled?sort=prs&dir=desc";
-  const cache = kvStore();
+  const cache = await cacheWith();
   await storeRefreshJobSnapshot(job);
   await storeRefreshTarget(target);
   const { database, counts } = observedDatabase();
@@ -235,22 +221,7 @@ test("worker refresh jobs preserve profile filters from the queued target snapsh
       throw new Error(`unexpected fetch ${url.pathname}`);
     };
 
-    const processing = (
-      worker as unknown as {
-        queue(
-          batch: {
-            messages: Array<{
-              body: RefreshJob;
-              attempts?: number;
-              ack(): void;
-              retry(options?: { delaySeconds?: number }): void;
-            }>;
-          },
-          env: unknown,
-          context: unknown,
-        ): Promise<void>;
-      }
-    ).queue(
+    const processing = worker.queue(
       {
         messages: [
           {
@@ -265,7 +236,7 @@ test("worker refresh jobs preserve profile filters from the queued target snapsh
           },
         ],
       },
-      { DASHBOARD_CACHE: cache, DB: database },
+      { DB: database },
       { waitUntil: () => undefined },
     );
     await ownerFetchStarted;
@@ -326,7 +297,7 @@ test("worker retries refresh jobs when the dashboard build lock is busy", async 
     attempts: 0,
     durationMs: null,
   };
-  const cache = kvStore({
+  await cacheWith({
     [key]: JSON.stringify(
       testDashboard("openclaw", [testProject({ owner: "openclaw", name: "repo" })]),
     ),
@@ -337,21 +308,7 @@ test("worker retries refresh jobs when the dashboard build lock is busy", async 
   let acked = false;
   let retryDelaySeconds: number | undefined;
 
-  await (
-    worker as unknown as {
-      queue(
-        batch: {
-          messages: Array<{
-            body: RefreshJob;
-            ack(): void;
-            retry(options?: { delaySeconds?: number }): void;
-          }>;
-        },
-        env: unknown,
-        context: unknown,
-      ): Promise<void>;
-    }
-  ).queue(
+  await worker.queue(
     {
       messages: [
         {
@@ -365,7 +322,7 @@ test("worker retries refresh jobs when the dashboard build lock is busy", async 
         },
       ],
     },
-    { DASHBOARD_CACHE: cache },
+    {},
     { waitUntil: () => undefined },
   );
 
@@ -430,7 +387,7 @@ test("worker stops and retries stalled progressive dashboard scans", async () =>
       progress: { scanned: 100, limit: 200, done: false },
     },
   };
-  const cache = kvStore({
+  await cacheWith({
     [key]: JSON.stringify(dashboard),
   });
   await storeRefreshTarget(target);
@@ -469,22 +426,7 @@ test("worker stops and retries stalled progressive dashboard scans", async () =>
       }
       throw new Error(`unexpected fetch ${path}`);
     };
-    await (
-      worker as unknown as {
-        queue(
-          batch: {
-            messages: Array<{
-              body: RefreshJob;
-              attempts?: number;
-              ack(): void;
-              retry(options?: { delaySeconds?: number }): void;
-            }>;
-          },
-          env: unknown,
-          context: unknown,
-        ): Promise<void>;
-      }
-    ).queue(
+    await worker.queue(
       {
         messages: [
           {
@@ -499,7 +441,7 @@ test("worker stops and retries stalled progressive dashboard scans", async () =>
           },
         ],
       },
-      { DASHBOARD_CACHE: cache },
+      {},
       { waitUntil: () => undefined },
     );
   } finally {
@@ -558,7 +500,7 @@ test("worker aborts Queue hydration at the delivery deadline", async () => {
       progress: { scanned: 0, limit: 200, done: false },
     },
   };
-  const cache = kvStore({
+  await cacheWith({
     [key]: JSON.stringify(cached),
   });
   await storeRefreshTarget(target);
@@ -592,22 +534,7 @@ test("worker aborts Queue hydration at the delivery deadline", async () => {
   };
 
   try {
-    await (
-      worker as unknown as {
-        queue(
-          batch: {
-            messages: Array<{
-              body: RefreshJob;
-              attempts?: number;
-              ack(): void;
-              retry(options?: { delaySeconds?: number }): void;
-            }>;
-          },
-          env: unknown,
-          context: unknown,
-        ): Promise<void>;
-      }
-    ).queue(
+    await worker.queue(
       {
         messages: [
           {
@@ -622,7 +549,7 @@ test("worker aborts Queue hydration at the delivery deadline", async () => {
           },
         ],
       },
-      { DASHBOARD_CACHE: cache },
+      {},
       { waitUntil: () => undefined },
     );
   } finally {
@@ -679,7 +606,7 @@ test("worker aborts Queue GitHub App token lookup at the delivery deadline", asy
     attempts: 0,
     durationMs: null,
   };
-  const cache = kvStore({});
+  await cacheWith({});
   await storeRefreshTarget(target);
   await storeRefreshJob(job);
   const originalFetch = globalThis.fetch;
@@ -711,22 +638,7 @@ test("worker aborts Queue GitHub App token lookup at the delivery deadline", asy
   };
 
   try {
-    await (
-      worker as unknown as {
-        queue(
-          batch: {
-            messages: Array<{
-              body: RefreshJob;
-              attempts?: number;
-              ack(): void;
-              retry(options?: { delaySeconds?: number }): void;
-            }>;
-          },
-          env: unknown,
-          context: unknown,
-        ): Promise<void>;
-      }
-    ).queue(
+    await worker.queue(
       {
         messages: [
           {
@@ -742,7 +654,6 @@ test("worker aborts Queue GitHub App token lookup at the delivery deadline", asy
         ],
       },
       {
-        DASHBOARD_CACHE: cache,
         GITHUB_APP_ID: "123",
         GITHUB_APP_PRIVATE_KEY: privateKey,
       },

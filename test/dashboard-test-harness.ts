@@ -22,7 +22,6 @@ import {
   type OwnerMetadataSnapshot,
   refreshTargetSourceLimit,
 } from "../worker/config.ts";
-import { durableObjectBindings } from "../worker/store/bindings.ts";
 import { refreshTargetSources } from "../worker/refresh-targets.ts";
 import { mutateOwnerMetadataSnapshot } from "../worker/owner-metadata-write.ts";
 import type { WorkerQueueMessage } from "../worker/runtime.ts";
@@ -54,32 +53,12 @@ import {
   type StoredSchedulerState,
 } from "../worker/store/scheduler-state.ts";
 
+import { realEnv, testCache, testDatabase, type TestEnv, testEnv } from "./runtime-env.ts";
+
 export { testDashboard, testProject } from "./dashboard-fixtures.ts";
+export { testCache, testDatabase, type TestEnv, testEnv };
 
 const textEncoder = new TextEncoder();
-
-// The tests hand the Worker hand-written fakes with only what a case needs of the KV, queue and
-// assets bindings, not the generated binding types. These types describe the fakes; `worker` and
-// `testEnv` pass them on as the real ones. The Durable Objects are not faked: `testEnv` adds the
-// bindings the Workers runtime provides from wrangler.jsonc.
-type FakeKv = {
-  get(key: string): Promise<string | null>;
-  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
-  delete?(key: string): Promise<void>;
-  list?(options?: { prefix?: string; limit?: number; cursor?: string }): Promise<{
-    keys: Array<{ name: string }>;
-    list_complete: boolean;
-    cursor?: string;
-  }>;
-};
-
-type FakeBindings = {
-  ASSETS: { fetch(request: Request): Promise<Response> };
-  DASHBOARD_CACHE: FakeKv;
-  REFRESH_QUEUE: { send(message: never, options?: { delaySeconds?: number }): Promise<void> };
-};
-
-export type TestEnv = Partial<Omit<Env, keyof FakeBindings> & FakeBindings>;
 
 type TestContext = { waitUntil(promise: Promise<unknown>): void };
 
@@ -92,8 +71,6 @@ type TestBatch = {
   }>;
 };
 
-type ObjectBinding = (typeof durableObjectBindings)[number];
-
 const objectClasses = [
   BuildCoordinator,
   RateLimiter,
@@ -101,76 +78,6 @@ const objectClasses = [
   WebhookAdmission,
   WebhookProcessor,
 ];
-
-// The env each Durable Object is to run its next call with, by the object's ID.
-const objectEnvs = new Map<string, object>();
-
-// The objects are the real local ones, with their SQLite storage, and are called over RPC as in
-// production. But the runtime constructs them with its own env, whose KV namespace and queue are
-// not the fakes a test asserts on. So each method of each class first takes the env of the test
-// that called it. The objects run in the tests' isolate, which is what lets them see `objectEnvs`.
-for (const objectClass of objectClasses) {
-  const prototype = objectClass.prototype as unknown as Record<
-    string,
-    (this: { ctx: DurableObjectState; env: object }, ...parameters: unknown[]) => unknown
-  >;
-  for (const method of Object.getOwnPropertyNames(prototype)) {
-    const original = prototype[method];
-    if (method === "constructor" || typeof original !== "function") continue;
-    prototype[method] = function (...parameters) {
-      this.env = objectEnvs.get(this.ctx.id.toString()) ?? this.env;
-      return Reflect.apply(original, this, parameters);
-    };
-  }
-}
-
-// Stub members that are not methods of the object's class.
-const stubMembers = new Set(["then", "fetch", "connect", "id", "name", "dup"]);
-
-// A Durable Object binding of the Workers runtime for one test's env: calls through it reach the
-// object with that env.
-function objectBinding<Binding extends ObjectBinding>(binding: Binding, env: object): Env[Binding] {
-  const namespace: DurableObjectNamespace = runtimeEnv[binding];
-  const withTestEnv = (stub: DurableObjectStub): DurableObjectStub =>
-    new Proxy(stub, {
-      get(target, property) {
-        const member: unknown = Reflect.get(target, property);
-        if (
-          typeof property !== "string" ||
-          typeof member !== "function" ||
-          stubMembers.has(property)
-        ) {
-          return member;
-        }
-        return (...parameters: unknown[]): unknown => {
-          objectEnvs.set(target.id.toString(), env);
-          return Reflect.apply(member, target, parameters);
-        };
-      },
-    });
-  const fake = {
-    idFromName: (name: string) => namespace.idFromName(name),
-    get: (id: DurableObjectId) => withTestEnv(namespace.get(id)),
-    getByName: (name: string) => withTestEnv(namespace.getByName(name)),
-  };
-  return fake as unknown as Env[Binding];
-}
-
-// Completes a test's env with the Durable Object bindings, in place: a test may keep changing the
-// object it passed.
-export function testEnv(env: TestEnv): Env {
-  const bindings = env as Record<string, unknown>;
-  // The queue binding is required. A test that gives none gets the local queue of the Workers
-  // runtime; its messages reach the Worker's queue handler with the runtime's own env.
-  bindings.REFRESH_QUEUE ??= runtimeEnv.REFRESH_QUEUE;
-  // The D1 database is the local one of the Workers runtime, with the SQL files of migrations/
-  // applied (test/reset-storage.ts).
-  bindings.DB ??= runtimeEnv.DB;
-  for (const binding of durableObjectBindings) {
-    bindings[binding] ??= objectBinding(binding, env);
-  }
-  return env as unknown as Env;
-}
 
 export { BuildCoordinator, RateLimiter, SummaryQuota, WebhookAdmission, WebhookProcessor };
 
@@ -194,17 +101,16 @@ export function objectsUnavailable(...classes: Array<(typeof objectClasses)[numb
 }
 
 // Makes a dashboard's coordinator object forget the refresh target's state, so that it takes the
-// state from the cache again: for a test that writes a target to the cache directly.
+// stored target again: for a test that stores a target directly.
 export async function forgetRefreshTargetState(key: string): Promise<void> {
   await runInDurableObject(runtimeEnv.BUILD_COORDINATOR.getByName(key), (_instance, state) => {
     state.storage.sql.exec("DELETE FROM refresh_target");
   });
 }
 
-// The refresh data is in the local D1 database of the Workers runtime, which every env of a test
-// shares (`testEnv`). These helpers write and read it through the store functions, as the Worker
-// does.
-const databaseEnv = runtimeEnv;
+// The refresh data is in the local D1 database of the Workers runtime. These helpers write and
+// read it through the store functions, as the Worker does.
+const databaseEnv = realEnv;
 
 // Stores a refresh target with the index of its sources.
 export function storeRefreshTarget(target: RefreshTarget): Promise<RefreshTargetWrite> {
@@ -341,7 +247,7 @@ export function observedDatabase(fail: (sql: string) => boolean = () => false) {
     return proxy;
   };
   const rawStatements = new WeakMap<object, D1PreparedStatement>();
-  const real = runtimeEnv.DB;
+  const real = testDatabase;
   const database = {
     prepare: (sql: string) => observe(real.prepare(sql), sql),
     batch: async (statements: D1PreparedStatement[]) => {
@@ -356,15 +262,13 @@ export function observedDatabase(fail: (sql: string) => boolean = () => false) {
 
 // Applies mutations to an owner's metadata, as the Worker does.
 export function ownerMetadataMutator(
-  env: TestEnv,
   owner: string,
 ): (mutation: OwnerMetadataMutation) => Promise<OwnerMetadataSnapshot | null> {
-  return (mutation) => mutateOwnerMetadataSnapshot(testEnv(env), owner, mutation);
+  return (mutation) => mutateOwnerMetadataSnapshot(realEnv, owner, mutation);
 }
 
 // The helpers below put rows into, and read them from, the registry tables of the local D1
-// database (migrations/0003_registry.sql), which every test's env gets from `testEnv`. A value
-// may be given as JSON text.
+// database (migrations/0003_registry.sql). A value may be given as JSON text.
 function seedValue<Value>(value: Value | string): Value {
   return typeof value === "string" ? (JSON.parse(value) as Value) : value;
 }
@@ -376,11 +280,12 @@ export async function seedOwnerMetadata(
   snapshot: unknown,
   expiresAt = Date.now() + 24 * 60 * 60 * 1000,
 ): Promise<void> {
-  await runtimeEnv.DB.prepare(
-    `INSERT INTO owner_metadata (owner, revision, snapshot, expires_at) VALUES (?1, ?2, ?3, ?4)
+  await testDatabase
+    .prepare(
+      `INSERT INTO owner_metadata (owner, revision, snapshot, expires_at) VALUES (?1, ?2, ?3, ?4)
      ON CONFLICT (owner) DO UPDATE SET
        revision = excluded.revision, snapshot = excluded.snapshot, expires_at = excluded.expires_at`,
-  )
+    )
     .bind(
       owner,
       crypto.randomUUID(),
@@ -392,43 +297,48 @@ export async function seedOwnerMetadata(
 
 // The owner's stored metadata snapshot as JSON text, or null when there is no row.
 export async function storedOwnerMetadataJson(owner: string): Promise<string | null> {
-  const row = await runtimeEnv.DB.prepare("SELECT snapshot FROM owner_metadata WHERE owner = ?1")
+  const row = await testDatabase
+    .prepare("SELECT snapshot FROM owner_metadata WHERE owner = ?1")
     .bind(owner)
     .first<{ snapshot: string }>();
   return row?.snapshot ?? null;
 }
 
 export async function deleteStoredOwnerMetadata(owner: string): Promise<void> {
-  await runtimeEnv.DB.prepare("DELETE FROM owner_metadata WHERE owner = ?1").bind(owner).run();
+  await testDatabase.prepare("DELETE FROM owner_metadata WHERE owner = ?1").bind(owner).run();
 }
 
 // Stores the installation in the registry, through the store function the Worker uses.
 export async function seedInstallation(
   installation: StoredInstallationRecord | string,
 ): Promise<void> {
-  await writeStoredInstallation(testEnv({}), seedValue(installation));
+  await writeStoredInstallation(realEnv, seedValue(installation));
 }
 
 // The account's installation in the registry as JSON text, or null when there is none.
 export async function storedInstallationJson(account: string): Promise<string | null> {
-  const installation = await readStoredInstallation(testEnv({}), account);
+  const installation = await readStoredInstallation(realEnv, account);
   return installation ? JSON.stringify(installation) : null;
 }
 
 // Stores the dashboard profile, through the store function the Worker uses.
 export async function seedProfile(profile: DashboardProfile | string): Promise<void> {
-  await writeStoredProfile(testEnv({}), seedValue(profile));
+  await writeStoredProfile(realEnv, seedValue(profile));
 }
 
 export const worker = {
   fetch: (request: Request, env: TestEnv, context: TestContext): Promise<Response> =>
     handler.fetch(request, testEnv(env), context as ExecutionContext),
   scheduled: (
-    event: { cron: string; scheduledTime: number },
+    event: { cron: string; scheduledTime?: number },
     env: TestEnv,
     context: TestContext,
   ): Promise<void> =>
-    handler.scheduled(event as ScheduledController, testEnv(env), context as ExecutionContext),
+    handler.scheduled(
+      { scheduledTime: Date.now(), ...event } as ScheduledController,
+      testEnv(env),
+      context as ExecutionContext,
+    ),
   queue: (batch: TestBatch, env: TestEnv, context: TestContext): Promise<void> =>
     handler.queue(
       batch as unknown as MessageBatch<WorkerQueueMessage>,
@@ -437,20 +347,34 @@ export const worker = {
     ),
 };
 
-// A queue for a test that needs the Worker's queue handler to run with the test's own env. The
-// local queue of the Workers runtime can't do that: it delivers with the runtime's env, whose KV
-// namespace is not the one the test reads. `deliver` hands the handler every message sent so
-// far and the ones it sends meanwhile, one batch each, until none is left or `limit` is reached.
-// A message the handler asks to retry is delivered again.
+// Holds what the Worker sends to the queue, here and inside a Durable Object, instead of letting
+// the runtime's local queue deliver it: `onSend` gets each message. Until the test ends.
+//
+// Without it a message goes to the local queue, which hands it to the Worker's queue handler in
+// the background, whenever it gets to it. A test that asserts on what was sent, or on what a
+// queued job did, holds the queue and delivers the messages itself (`testQueue`).
+export function holdQueue(
+  // Typed for any handler: a test names the kind of message it expects.
+  onSend: (message: never, options?: { delaySeconds?: number }) => unknown = () => undefined,
+): void {
+  vi.spyOn(runtimeEnv.REFRESH_QUEUE, "send").mockImplementation(async (message, options) => {
+    await onSend(message as never, options);
+    return { metadata: { metrics: { backlogCount: 0, backlogBytes: 0 } } };
+  });
+}
+
+// Holds the queue and keeps what was sent. `deliver` hands the Worker's queue handler every
+// message sent so far and the ones it sends meanwhile, one batch each, until none is left or
+// `limit` is reached. A message the handler asks to retry is delivered again.
 export function testQueue() {
   const pending: WorkerQueueMessage[] = [];
   const sent: Array<{ body: WorkerQueueMessage; delaySeconds?: number }> = [];
+  holdQueue((body: WorkerQueueMessage, options) => {
+    sent.push({ body, delaySeconds: options?.delaySeconds });
+    pending.push(body);
+  });
   return {
     sent,
-    async send(body: WorkerQueueMessage, options?: { delaySeconds?: number }): Promise<void> {
-      sent.push({ body, delaySeconds: options?.delaySeconds });
-      pending.push(body);
-    },
     async deliver(env: TestEnv, context: TestContext, limit = 20): Promise<number> {
       let delivered = 0;
       for (; delivered < limit; delivered += 1) {
@@ -465,6 +389,14 @@ export function testQueue() {
       return delivered;
     },
   };
+}
+
+// Answers the Worker's requests for static assets with `respond`, until the test ends. The
+// tests run without a build, so the assets binding has no file to serve.
+export function serveAssets(respond: (request: Request) => Response | Promise<Response>): void {
+  vi.spyOn(runtimeEnv.ASSETS, "fetch").mockImplementation(async (input, init) =>
+    respond(input instanceof Request ? input : new Request(input, init)),
+  );
 }
 
 const systemDate = Date;
@@ -503,40 +435,17 @@ export async function socialRenderAsset(request: Request, paths?: string[]): Pro
       });
 }
 
-export function kvStore(initial: Record<string, string> = {}) {
-  const values = new Map(Object.entries(initial));
-  return {
-    async get(key: string) {
-      return values.get(key) ?? null;
-    },
-    async put(key: string, value: string) {
-      values.set(key, value);
-    },
-    async delete(key: string) {
-      values.delete(key);
-    },
-    async list(options: { prefix?: string; limit?: number; cursor?: string } = {}) {
-      const names = [...values.keys()]
-        .filter((key) => !options.prefix || key.startsWith(options.prefix))
-        .sort();
-      const start = Number.parseInt(options.cursor ?? "0", 10) || 0;
-      const limit = options.limit ?? names.length;
-      const page = names.slice(start, start + limit);
-      const next = start + page.length;
-      return {
-        keys: page.map((name) => ({ name })),
-        list_complete: next >= names.length,
-        ...(next < names.length ? { cursor: String(next) } : {}),
-      };
-    },
-  };
+// Puts the entries into the KV namespace of the Workers runtime and returns the namespace.
+export async function cacheWith(initial: Record<string, string> = {}): Promise<KVNamespace> {
+  await Promise.all(Object.entries(initial).map(([key, value]) => testCache.put(key, value)));
+  return testCache;
 }
 
 // The refresh audit log as the database holds it, newest first.
 export async function refreshAuditEvents(): Promise<SchedulerAuditEvent[]> {
-  const { results } = await runtimeEnv.DB.prepare(
-    "SELECT data FROM refresh_audit_events ORDER BY at DESC",
-  ).all<{ data: string }>();
+  const { results } = await testDatabase
+    .prepare("SELECT data FROM refresh_audit_events ORDER BY at DESC")
+    .all<{ data: string }>();
   return results.map((row) => JSON.parse(row.data) as SchedulerAuditEvent);
 }
 
@@ -551,24 +460,24 @@ export async function githubAccessRouteRecords(): Promise<
     count: number;
   }>
 > {
-  const { results } = await runtimeEnv.DB.prepare(
-    "SELECT area, route, source, resource, status, count FROM github_access_counts",
-  ).all<{
-    area: string;
-    route: string;
-    source: string;
-    resource: string | null;
-    status: number;
-    count: number;
-  }>();
+  const { results } = await testDatabase
+    .prepare("SELECT area, route, source, resource, status, count FROM github_access_counts")
+    .all<{
+      area: string;
+      route: string;
+      source: string;
+      resource: string | null;
+      status: number;
+      count: number;
+    }>();
   return results;
 }
 
 // How many sign-in funnel events the database holds.
 export async function authFunnelEventCount(): Promise<number> {
-  const row = await runtimeEnv.DB.prepare(
-    "SELECT COUNT(*) AS count FROM auth_funnel_events",
-  ).first<{ count: number }>();
+  const row = await testDatabase
+    .prepare("SELECT COUNT(*) AS count FROM auth_funnel_events")
+    .first<{ count: number }>();
   return row?.count ?? 0;
 }
 
@@ -596,11 +505,7 @@ export async function signedJson(secret: string, value: unknown): Promise<string
 // A signed-in user, as AI summaries need one to start: stores the session in the cache and
 // returns the env entries and request headers that carry it. `vars` are more env entries, such
 // as the summary limits.
-export async function signedIn(
-  cache: ReturnType<typeof kvStore>,
-  userId = 1,
-  vars: Record<string, string> = {},
-) {
+export async function signedIn(cache: KVNamespace, userId = 1, vars: Record<string, string> = {}) {
   const secret = "test-secret";
   const sessionId = `session-${userId}`;
   const now = Math.floor(Date.now() / 1000);

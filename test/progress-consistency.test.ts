@@ -3,10 +3,10 @@ import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
   BuildCoordinator,
-  kvStore,
   storeRefreshJob,
   testProject,
   worker,
+  cacheWith,
 } from "./dashboard-test-harness.ts";
 
 test("worker does not persist delayed progress older than its tombstone", async () => {
@@ -65,7 +65,7 @@ test("worker does not persist delayed progress older than its tombstone", async 
       private: false,
     };
   });
-  const cache = kvStore({
+  const cache = await cacheWith({
     [`progress:tombstone:v1:${key}`]: JSON.stringify({
       clearedAt: "2999-01-01T00:00:00Z",
     }),
@@ -86,22 +86,7 @@ test("worker does not persist delayed progress older than its tombstone", async 
   };
 
   try {
-    await (
-      worker as unknown as {
-        queue(
-          batch: {
-            messages: Array<{
-              body: RefreshJob;
-              attempts?: number;
-              ack(): void;
-              retry(options?: { delaySeconds?: number }): void;
-            }>;
-          },
-          env: unknown,
-          context: unknown,
-        ): Promise<void>;
-      }
-    ).queue(
+    await worker.queue(
       {
         messages: [
           {
@@ -116,7 +101,7 @@ test("worker does not persist delayed progress older than its tombstone", async 
           },
         ],
       },
-      { DASHBOARD_CACHE: cache },
+      {},
       { waitUntil: () => undefined },
     );
   } finally {
@@ -145,7 +130,7 @@ test("worker tombstones failed Durable Object progress deletion before publishin
     projects: [],
     updatedAt: new Date().toISOString(),
   });
-  const cache = kvStore({ [progressStorageKey]: storedProgress });
+  const cache = await cacheWith({ [progressStorageKey]: storedProgress });
   const staleProject = testProject({
     owner: "delete-failure",
     name: "repo",
@@ -233,9 +218,7 @@ test("worker tombstones failed Durable Object progress deletion before publishin
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/delete-failure?unreleased=false"),
-      {
-        DASHBOARD_CACHE: cache,
-      },
+      {},
       { waitUntil: () => undefined },
     );
     expect(response.status).toBe(200);
@@ -283,22 +266,7 @@ test("worker tombstones failed Durable Object progress deletion before publishin
     };
     await storeRefreshJob(job);
     let acked = false;
-    await (
-      worker as unknown as {
-        queue(
-          batch: {
-            messages: Array<{
-              body: RefreshJob;
-              attempts?: number;
-              ack(): void;
-              retry(options?: { delaySeconds?: number }): void;
-            }>;
-          },
-          env: unknown,
-          context: unknown,
-        ): Promise<void>;
-      }
-    ).queue(
+    await worker.queue(
       {
         messages: [
           {
@@ -313,9 +281,7 @@ test("worker tombstones failed Durable Object progress deletion before publishin
           },
         ],
       },
-      {
-        DASHBOARD_CACHE: cache,
-      },
+      {},
       { waitUntil: () => undefined },
     );
 

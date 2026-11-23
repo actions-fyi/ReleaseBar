@@ -7,10 +7,10 @@ import type {
 import {
   claudeJson,
   claudeText,
-  kvStore,
   signedIn,
   testProject,
   worker,
+  cacheWith,
 } from "./dashboard-test-harness.ts";
 
 test("worker includes lower-ranked repositories in the overall activity summary batch", async () => {
@@ -73,7 +73,7 @@ test("worker includes lower-ranked repositories in the overall activity summary 
       promptVersion: 3,
     },
   } satisfies OwnerActivityPayload;
-  const cache = kvStore({
+  const cache = await cacheWith({
     "owner-activity:v2:acme:week": JSON.stringify(payload),
   });
   const queued: Promise<unknown>[] = [];
@@ -110,7 +110,7 @@ test("worker includes lower-ranked repositories in the overall activity summary 
     const user = await signedIn(cache);
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week", { headers: user.headers }),
-      { DASHBOARD_CACHE: cache, ANTHROPIC_API_KEY: "claude-key", ...user.env },
+      { ANTHROPIC_API_KEY: "claude-key", ...user.env },
       { waitUntil: (promise) => queued.push(promise) },
     );
     expect(response.status).toBe(202);
@@ -187,7 +187,7 @@ test("worker trims expired events from cached owner activity", async () => {
       promptVersion: 4,
     },
   };
-  const cache = kvStore({
+  await cacheWith({
     "owner-activity:v2:acme:week": JSON.stringify(payload),
   });
 
@@ -195,7 +195,7 @@ test("worker trims expired events from cached owner activity", async () => {
     new Request("https://release.bar/api/acme/activity?range=week", {
       headers: { "user-agent": "Googlebot" },
     }),
-    { DASHBOARD_CACHE: cache },
+    {},
     { waitUntil: () => undefined },
   );
   expect(response.status).toBe(200);
@@ -263,7 +263,7 @@ test("worker trims expired events from cached repository activity", async () => 
       promptVersion: 4,
     },
   };
-  const cache = kvStore({
+  await cacheWith({
     "repo-activity:v1:acme/releasebar:day": JSON.stringify(payload),
   });
 
@@ -271,7 +271,7 @@ test("worker trims expired events from cached repository activity", async () => 
     new Request("https://release.bar/api/repos/acme/releasebar/activity?range=day", {
       headers: { "user-agent": "Googlebot" },
     }),
-    { DASHBOARD_CACHE: cache },
+    {},
     { waitUntil: () => undefined },
   );
   expect(response.status).toBe(200);
@@ -365,7 +365,7 @@ test("worker skips stale public owner activity summaries when events changed", a
       eventsUsed: 1,
     },
   };
-  const cache = kvStore({
+  const cache = await cacheWith({
     "owner-activity:v2:acme:week": JSON.stringify(oldPayload),
   });
   const queued: Promise<unknown>[] = [];
@@ -385,7 +385,6 @@ test("worker skips stale public owner activity summaries when events changed", a
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week", { headers: user.headers }),
       {
-        DASHBOARD_CACHE: cache,
         GITHUB_TOKEN: "shared-token",
         ANTHROPIC_API_KEY: "claude-key",
         ...user.env,
@@ -464,7 +463,7 @@ test("worker refreshes cached owner activity summaries from older prompt version
       eventsUsed: 1,
     },
   };
-  const cache = kvStore({
+  const cache = await cacheWith({
     "owner-activity:v2:acme:week": JSON.stringify(payload),
   });
   const queued: Promise<unknown>[] = [];
@@ -491,7 +490,6 @@ test("worker refreshes cached owner activity summaries from older prompt version
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week", { headers: user.headers }),
       {
-        DASHBOARD_CACHE: cache,
         GITHUB_TOKEN: "shared-token",
         ANTHROPIC_API_KEY: "claude-key",
         ...user.env,
@@ -552,7 +550,7 @@ test("worker does not summarize empty owner activity", async () => {
       eventsUsed: 0,
     },
   };
-  const cache = kvStore({
+  const cache = await cacheWith({
     "owner-activity:v2:acme:week": JSON.stringify(payload),
   });
   const queued: Promise<unknown>[] = [];
@@ -565,7 +563,6 @@ test("worker does not summarize empty owner activity", async () => {
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week", { headers: user.headers }),
       {
-        DASHBOARD_CACHE: cache,
         GITHUB_TOKEN: "shared-token",
         ANTHROPIC_API_KEY: "claude-key",
         ...user.env,
@@ -642,7 +639,7 @@ test("worker rejects incomplete structured owner activity summaries", async () =
       eventsUsed: 1,
     },
   };
-  const cache = kvStore({
+  const cache = await cacheWith({
     "owner-activity:v2:acme:week": JSON.stringify(payload),
   });
   const queued: Promise<unknown>[] = [];
@@ -664,7 +661,6 @@ test("worker rejects incomplete structured owner activity summaries", async () =
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week", { headers: user.headers }),
       {
-        DASHBOARD_CACHE: cache,
         GITHUB_TOKEN: "shared-token",
         ANTHROPIC_API_KEY: "claude-key",
         ...user.env,
@@ -708,7 +704,7 @@ test("worker keeps repository detail routes for repositories named activity", as
     languages: [],
     workTrend: null,
   };
-  const cache = kvStore({
+  await cacheWith({
     "repo-detail:v4:acme/activity": JSON.stringify(payload),
   });
   const originalFetch = globalThis.fetch;
@@ -718,7 +714,7 @@ test("worker keeps repository detail routes for repositories named activity", as
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/activity"),
-      { DASHBOARD_CACHE: cache },
+      {},
       { waitUntil: () => undefined },
     );
     expect(response.status).toBe(200);
@@ -779,7 +775,7 @@ test("worker skips stale release summaries when repository detail changed", asyn
       commitsUsed: 0,
     },
   };
-  const cache = kvStore({
+  const cache = await cacheWith({
     "repo-detail:v4:acme/releasebar": JSON.stringify(payload),
   });
   const queued: Promise<unknown>[] = [];
@@ -808,7 +804,6 @@ test("worker skips stale release summaries when repository detail changed", asyn
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/releasebar", { headers: user.headers }),
       {
-        DASHBOARD_CACHE: cache,
         GITHUB_TOKEN: "shared-token",
         ANTHROPIC_API_KEY: "claude-key",
         ...user.env,

@@ -1,6 +1,6 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { ownerActivityFromPath, ownerFromPath, repoFromPath } from "../src/routing.ts";
-import { kvStore, worker } from "./dashboard-test-harness.ts";
+import { worker, serveAssets, testCache } from "./dashboard-test-harness.ts";
 
 test("page route parsers reject malformed percent encoding", () => {
   for (const invalid of ["%", "%GG", "%C0%AF", "%E0%A4%A"]) {
@@ -16,14 +16,11 @@ test("page route parsers reject malformed percent encoding", () => {
 });
 
 test("worker rejects malformed path encoding before storage or background work", async () => {
-  const cache = kvStore();
-  const env = {
-    DASHBOARD_CACHE: {
-      ...cache,
-      get: async () => expect.unreachable("invalid paths must not read storage"),
-    },
-    ASSETS: { fetch: async () => expect.unreachable("invalid paths must not fetch assets") },
-  };
+  serveAssets(async () => expect.unreachable("invalid paths must not fetch assets"));
+  vi.spyOn(testCache, "get").mockImplementation(async () =>
+    expect.unreachable("invalid paths must not read storage"),
+  );
+  const env = {};
   const context = { waitUntil: () => expect.unreachable("invalid paths must not schedule work") };
   const paths = [
     "/%",

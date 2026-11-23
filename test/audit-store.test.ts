@@ -1,6 +1,5 @@
 // The audit data in the local D1 database and the rate limiter Durable Object, through
 // the store functions the Worker calls.
-import { env as runtimeEnv } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import type { AuthFunnelEvent, SchedulerAuditEvent } from "../src/types.ts";
 import { deleteExpiredAuditRows } from "../worker/audit-retention.ts";
@@ -14,11 +13,11 @@ import { countGitHubAccess, listGitHubAccessCounts } from "../worker/store/githu
 import { rateLimitReached } from "../worker/store/rate-limits.ts";
 import { appendRefreshAuditEvent, listRefreshAuditEvents } from "../worker/store/refresh-audit.ts";
 import {
-  kvStore,
   objectsUnavailable,
   RateLimiter,
   testEnv,
   worker,
+  testDatabase,
 } from "./dashboard-test-harness.ts";
 
 const dayMs = 24 * 60 * 60 * 1000;
@@ -37,7 +36,7 @@ function funnelEvent(id: string, at: string, account: string | null = null): Aut
 }
 
 async function rowCount(table: string): Promise<number> {
-  const row = await runtimeEnv.DB.prepare(`SELECT COUNT(*) AS count FROM ${table}`).first<{
+  const row = await testDatabase.prepare(`SELECT COUNT(*) AS count FROM ${table}`).first<{
     count: number;
   }>();
   return row?.count ?? 0;
@@ -72,7 +71,7 @@ test("the client timing endpoint drops the timing and answers as usual when the 
       headers: { "cf-connecting-ip": "203.0.113.7" },
       body: JSON.stringify({ source: "fetch", path: "/owner", totalMs: 12 }),
     }),
-    { DASHBOARD_CACHE: kvStore() },
+    {},
     { waitUntil: (promise) => waits.push(promise) },
   );
   await Promise.all(waits);
@@ -100,7 +99,6 @@ test("an install callback without fresh state answers 503 and asks GitHub nothin
         AUTH_COOKIE_SECRET: "test-secret",
         GITHUB_APP_ID: "1",
         GITHUB_APP_PRIVATE_KEY: "unused",
-        DASHBOARD_CACHE: kvStore(),
       },
       { waitUntil: () => undefined },
     );
@@ -117,7 +115,7 @@ test("an install callback without fresh state answers 503 and asks GitHub nothin
 });
 
 test("the client timing endpoint stores 30 timings a minute for a client sending 40 at once", async () => {
-  const env = { DASHBOARD_CACHE: kvStore() };
+  const env = {};
   const waits: Array<Promise<unknown>> = [];
   const responses = await Promise.all(
     Array.from({ length: 40 }, () =>
@@ -204,7 +202,7 @@ test("GitHub call counts add up across concurrent writers and hours", async () =
 });
 
 test("GitHub calls of one request are counted in batches, and the summary adds the hours up", async () => {
-  const env = testEnv({ DASHBOARD_CACHE: kvStore() });
+  const env = testEnv({});
   let batches = 0;
   const database = new Proxy(env.DB, {
     get(target, property) {
@@ -286,8 +284,8 @@ test("sign-in funnel events are stored with a count per day, event, account and 
 });
 
 test("the scheduled handler deletes audit rows past their retention and keeps the rest", async () => {
-  const fakes = { DASHBOARD_CACHE: kvStore() };
-  const env = testEnv(fakes);
+  const vars = {};
+  const env = testEnv(vars);
   const now = Date.now();
   const iso = (daysAgo: number): string => new Date(now - daysAgo * dayMs).toISOString();
   for (const [id, daysAgo] of [
@@ -315,9 +313,10 @@ test("the scheduled handler deletes audit rows past their retention and keeps th
     ["kept", 89],
   ] as const) {
     await appendAuthFunnelEvent(env, funnelEvent(id, iso(daysAgo)));
-    await runtimeEnv.DB.prepare(
-      "INSERT INTO auth_funnel_counts (day, event, account, status, count) VALUES (?, 'x', '_', '_', 1)",
-    )
+    await testDatabase
+      .prepare(
+        "INSERT INTO auth_funnel_counts (day, event, account, status, count) VALUES (?, 'x', '_', '_', 1)",
+      )
       .bind(iso(daysAgo).slice(0, 10))
       .run();
   }
@@ -335,7 +334,7 @@ test("the scheduled handler deletes audit rows past their retention and keeps th
   // The scheduled handler runs the same deletion.
   await appendRefreshAuditEvent(env, { id: "old-again", event: "job_start", at: iso(20) });
   const waits: Array<Promise<unknown>> = [];
-  await worker.scheduled({ cron: "*/15 * * * *", scheduledTime: now }, fakes, {
+  await worker.scheduled({ cron: "*/15 * * * *", scheduledTime: now }, vars, {
     waitUntil: (promise) => waits.push(promise),
   });
   await Promise.all(waits);
@@ -347,16 +346,16 @@ test("the scheduled handler deletes audit rows past their retention and keeps th
 test("deleting expired audit rows is bounded per run", async () => {
   const env = testEnv({});
   const now = Date.now();
-  const insert = runtimeEnv.DB.prepare(
+  const insert = testDatabase.prepare(
     "INSERT INTO refresh_audit_events (id, at, event, data) VALUES (?, ?, 'job_start', '{}')",
   );
   const old = new Date(now - 20 * dayMs).toISOString();
   for (let page = 0; page < 6; page += 1) {
-    await runtimeEnv.DB.batch(
+    await testDatabase.batch(
       Array.from({ length: 1000 }, (_, index) => insert.bind(`old-${page}-${index}`, old)),
     );
   }
-  await runtimeEnv.DB.batch(
+  await testDatabase.batch(
     Array.from({ length: 100 }, (_, index) => insert.bind(`old-rest-${index}`, old)),
   );
 

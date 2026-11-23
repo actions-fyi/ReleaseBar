@@ -5,7 +5,6 @@ import type { DashboardPayload, Project, RefreshJob } from "../src/types.ts";
 import {
   BuildCoordinator,
   buildLocksHeld,
-  kvStore,
   observedDatabase,
   storedRefreshJob,
   storedRefreshJobs,
@@ -16,6 +15,8 @@ import {
   worker,
   seedOwnerMetadata,
   ownerMetadataMutator,
+  cacheWith,
+  holdQueue,
 } from "./dashboard-test-harness.ts";
 
 test("worker filters shared owner snapshots for cold combined dashboards", async () => {
@@ -92,7 +93,6 @@ test("worker filters shared owner snapshots for cold combined dashboards", async
     const response = await worker.fetch(
       new Request("https://release.bar/api/alpha?owners=beta,stale&unreleased=false"),
       {
-        DASHBOARD_CACHE: kvStore({}),
         GITHUB_TOKEN: "shared-token",
       },
       { waitUntil: () => undefined },
@@ -127,9 +127,7 @@ test("worker uses explicit repository owner snapshots for cold dashboards", asyn
   );
   const response = await worker.fetch(
     new Request("https://release.bar/api/dashboard?repos=other/repo"),
-    {
-      DASHBOARD_CACHE: kvStore({}),
-    },
+    {},
     { waitUntil: () => undefined },
   );
   expect(response.status).toBe(200);
@@ -158,10 +156,7 @@ test("cold partial dashboards honor privatization tombstones over a later stale 
   });
   // The privatization is stored; a build that saw the repository while it was public then
   // stores what it has.
-  await ownerMetadataMutator(
-    { DASHBOARD_CACHE: kvStore({}) },
-    "owner",
-  )({
+  await ownerMetadataMutator("owner")({
     kind: "merge",
     generatedAt: earlier,
     observedAt: earlier,
@@ -175,9 +170,7 @@ test("cold partial dashboards honor privatization tombstones over a later stale 
   buildLocksHeld();
   const response = await worker.fetch(
     new Request("https://release.bar/api/dashboard?repos=owner/repo"),
-    {
-      DASHBOARD_CACHE: kvStore({}),
-    },
+    {},
     { waitUntil: () => undefined },
   );
   expect(response.status).toBe(200);
@@ -214,7 +207,6 @@ test("metadata-only partial dashboards strip hydrated release and CI fields", as
     const response = await worker.fetch(
       new Request("https://release.bar/api/alpha?owners=beta"),
       {
-        DASHBOARD_CACHE: kvStore({}),
         GITHUB_APP_ID: "1",
         GITHUB_APP_PRIVATE_KEY: "unused",
       },
@@ -266,7 +258,7 @@ test("worker progressively resumes large owner dashboard builds from partial cac
     },
   };
   const queue = testQueue();
-  const env = { DASHBOARD_CACHE: kvStore(), REFRESH_QUEUE: queue };
+  const env = {};
 
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
@@ -353,7 +345,7 @@ test("worker bounds cold owner resolution by the response deadline", async () =>
     releaseOwner = resolve;
   });
   let ownerStarted = false;
-  const cache = kvStore();
+  await cacheWith();
 
   // The owner deadline is the cold-build wait minus the time the request has already taken, so
   // it is 15 seconds or a few milliseconds less.
@@ -388,17 +380,13 @@ test("worker bounds cold owner resolution by the response deadline", async () =>
   };
 
   try {
+    holdQueue(async (job: RefreshJob, options?: { delaySeconds?: number }) => {
+      sentJobs.push(job);
+      deliveryDelaySeconds = options?.delaySeconds;
+    });
     const response = await worker.fetch(
       new Request("https://release.bar/api/slowmeta"),
-      {
-        DASHBOARD_CACHE: cache,
-        REFRESH_QUEUE: {
-          async send(job: RefreshJob, options?: { delaySeconds?: number }) {
-            sentJobs.push(job);
-            deliveryDelaySeconds = options?.delaySeconds;
-          },
-        },
-      },
+      {},
       { waitUntil: (promise) => waits.push(promise) },
     );
     expect(ownerStarted).toBe(true);
@@ -429,7 +417,7 @@ test("worker bounds cold GitHub App token lookup by the response deadline", asyn
   const waits: Promise<unknown>[] = [];
   const sentJobs: RefreshJob[] = [];
   let credentialAborted = false;
-  const cache = kvStore();
+  await cacheWith();
 
   globalThis.setTimeout = ((callback: () => void, delay?: number) =>
     originalSetTimeout(callback, delay === 15_000 ? 0 : delay)) as typeof setTimeout;
@@ -459,17 +447,14 @@ test("worker bounds cold GitHub App token lookup by the response deadline", asyn
   };
 
   try {
+    holdQueue(async (job: RefreshJob) => {
+      sentJobs.push(job);
+    });
     const response = await worker.fetch(
       new Request("https://release.bar/api/slowtoken"),
       {
-        DASHBOARD_CACHE: cache,
         GITHUB_APP_ID: "123",
         GITHUB_APP_PRIVATE_KEY: privateKey,
-        REFRESH_QUEUE: {
-          async send(job: RefreshJob) {
-            sentJobs.push(job);
-          },
-        },
       },
       { waitUntil: (promise) => waits.push(promise) },
     );
@@ -486,7 +471,7 @@ test("worker bounds cold GitHub App token lookup by the response deadline", asyn
 
 test("worker resumes durable progress on cold metadata cache misses", async () => {
   const originalFetch = globalThis.fetch;
-  const cache = kvStore();
+  await cacheWith();
   const waits: Promise<unknown>[] = [];
   const sentJobs: RefreshJob[] = [];
   const project = testProject({ owner: "checkpoint", name: "repo" });
@@ -510,16 +495,12 @@ test("worker resumes durable progress on cold metadata cache misses", async () =
   };
 
   try {
+    holdQueue(async (job: RefreshJob) => {
+      sentJobs.push(job);
+    });
     const response = await worker.fetch(
       new Request("https://release.bar/api/checkpoint"),
-      {
-        DASHBOARD_CACHE: cache,
-        REFRESH_QUEUE: {
-          async send(job: RefreshJob) {
-            sentJobs.push(job);
-          },
-        },
-      },
+      {},
       { waitUntil: (promise) => waits.push(promise) },
     );
     expect(response.status).toBe(200);
@@ -571,7 +552,7 @@ test("worker continues a cold build through the queue after a cold build timeout
     firstRepoStarted = resolve;
   });
   let gated = false;
-  const cache = kvStore();
+  const cache = await cacheWith();
   const key = dashboardCacheKey({
     owner: "slow",
     includeUnreleased: false,
@@ -628,7 +609,7 @@ test("worker continues a cold build through the queue after a cold build timeout
 
   try {
     const queue = testQueue();
-    const env = { DASHBOARD_CACHE: cache, REFRESH_QUEUE: queue };
+    const env = {};
     const context = { waitUntil: (promise: Promise<unknown>) => void waits.push(promise) };
     const response = await worker.fetch(
       new Request("https://release.bar/api/slow?unreleased=false"),
@@ -676,23 +657,20 @@ test("worker deduplicates queued refreshes for partial dashboards", async () => 
       },
     },
   };
-  const cache = kvStore({ [key]: JSON.stringify(cached) });
+  await cacheWith({ [key]: JSON.stringify(cached) });
   const { database, counts } = observedDatabase();
   const targetReads = () =>
     counts.sql.filter((sql) => sql.startsWith("SELECT value FROM refresh_targets WHERE key = ?"))
       .length;
   const sentJobs: RefreshJob[] = [];
   let deliveryDelaySeconds: number | undefined;
+  holdQueue(async (job: RefreshJob, options?: { delaySeconds?: number }) => {
+    sentJobs.push(job);
+    deliveryDelaySeconds = options?.delaySeconds;
+  });
   const env = {
-    DASHBOARD_CACHE: cache,
     DB: database,
     GITHUB_TOKEN: "shared-token",
-    REFRESH_QUEUE: {
-      async send(job: RefreshJob, options?: { delaySeconds?: number }) {
-        sentJobs.push(job);
-        deliveryDelaySeconds = options?.delaySeconds;
-      },
-    },
   };
 
   await Promise.all(

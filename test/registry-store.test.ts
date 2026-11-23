@@ -1,6 +1,5 @@
 // The registry tables of the D1 database (migrations/0003_registry.sql), through the store
 // functions the Worker uses: installations, owner metadata and dashboard profiles.
-import { env as runtimeEnv } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import type { DashboardProfile } from "../src/types.ts";
 import type { OwnerMetadataMutation, OwnerMetadataSnapshot } from "../worker/config.ts";
@@ -35,13 +34,14 @@ import {
   writeStoredProfile,
 } from "../worker/store/profiles.ts";
 import {
-  kvStore,
   observedDatabase,
   seedOwnerMetadata,
   storedOwnerMetadataJson,
   testDashboard,
   testEnv,
   testProject,
+  cacheWith,
+  testDatabase,
 } from "./dashboard-test-harness.ts";
 
 const day = 24 * 60 * 60 * 1000;
@@ -78,7 +78,7 @@ test("concurrent conflicting owner metadata mutations are all applied", async ()
   for (let round = 0; round < 4; round += 1) {
     const owner = `owner${round}`;
     const observed = observedDatabase();
-    const env = testEnv({ DASHBOARD_CACHE: kvStore(), DB: observed.database });
+    const env = testEnv({ DB: observed.database });
     const mutate = (mutation: OwnerMetadataMutation) =>
       mutateOwnerMetadataSnapshot(env, owner, mutation);
     const merge = (minutes: number, repos: string[]): OwnerMetadataMutation => ({
@@ -150,7 +150,7 @@ test("concurrent conflicting batches of owner metadata mutations are all applied
   const names = ["a", "b", "c", "d", "e", "f", "g", "h"];
   const owners = ["batch0", "batch1", "batch2", "batch3", "batch4"];
   const observed = observedDatabase();
-  const env = testEnv({ DASHBOARD_CACHE: kvStore(), DB: observed.database });
+  const env = testEnv({ DB: observed.database });
   const merge = (owner: string, minutes: number, repos: string[]): OwnerMetadataMutation => ({
     kind: "merge",
     generatedAt: at(minutes),
@@ -255,7 +255,7 @@ test("concurrent conflicting batches of owner metadata mutations are all applied
 test("a batched write applies again only the owners whose rows changed meanwhile", async () => {
   const observedAt = "2026-06-11T01:00:00.000Z";
   const owners = ["steady1", "moved", "steady2", "fresh-owner"];
-  const plain = testEnv({ DASHBOARD_CACHE: kvStore() });
+  const plain = testEnv({});
   for (const owner of owners.slice(0, 3)) {
     await mutateOwnerMetadataSnapshot(plain, owner, {
       kind: "remove",
@@ -284,7 +284,7 @@ test("a batched write applies again only the owners whose rows changed meanwhile
       return observed.database.batch(statements);
     },
   } as unknown as D1Database;
-  const env = testEnv({ DASHBOARD_CACHE: kvStore(), DB: database });
+  const env = testEnv({ DB: database });
   let applied: string[] = [];
 
   const results = await changeOwnerMetadataOf(
@@ -353,7 +353,7 @@ test("a batched write applies again only the owners whose rows changed meanwhile
     },
   } as unknown as D1Database;
   const [steady, moved] = await changeOwnerMetadataOf(
-    testEnv({ DASHBOARD_CACHE: kvStore(), DB: contended }),
+    testEnv({ DB: contended }),
     ["steady1", "moved"].map((owner) => ({
       owner,
       change: (stored) => {
@@ -400,7 +400,7 @@ test("owner metadata of many owners is read with one query, by exact slug", asyn
   await seedOwnerMetadata("mislabelled", snapshot("someone-else"));
   await seedOwnerMetadata("shapeless", { owner: "shapeless", countsUpdatedAt: earlier });
   const { database, counts } = observedDatabase();
-  const env = testEnv({ DASHBOARD_CACHE: kvStore(), DB: database });
+  const env = testEnv({ DB: database });
   const asked = [...many, "@Open", "openclaw", "expired", "mislabelled", "shapeless", "absent"];
   const patterns = ["ope", "open%", "open_law", "%", "openclaw/repo", "many-"];
 
@@ -430,15 +430,12 @@ test("owner metadata of many owners is read with one query, by exact slug", asyn
   }
 
   await expect(
-    readStoredOwnerMetadataOf(
-      testEnv({ DASHBOARD_CACHE: kvStore(), DB: observedDatabase(() => true).database }),
-      ["open"],
-    ),
+    readStoredOwnerMetadataOf(testEnv({ DB: observedDatabase(() => true).database }), ["open"]),
   ).rejects.toThrow("D1 unavailable");
 });
 
 test("concurrent first mutations of an owner are all applied", async () => {
-  const env = testEnv({ DASHBOARD_CACHE: kvStore() });
+  const env = testEnv({});
   const observedAt = "2026-06-11T01:00:00.000Z";
   const repos = ["a", "b", "c", "d", "e", "f"];
 
@@ -461,10 +458,9 @@ test("concurrent first mutations of an owner are all applied", async () => {
 test("owner metadata fails closed when the database can't be reached", async () => {
   const project = testProject({ owner: "owner", name: "repo" });
   const key = "dashboard:test";
-  const cache = kvStore({ [key]: JSON.stringify(testDashboard("owner", [project])) });
-  const reachable = testEnv({ DASHBOARD_CACHE: cache });
+  await cacheWith({ [key]: JSON.stringify(testDashboard("owner", [project])) });
+  const reachable = testEnv({});
   const unreachable = testEnv({
-    DASHBOARD_CACHE: cache,
     DB: observedDatabase(() => true).database,
   });
 
@@ -481,7 +477,7 @@ test("owner metadata fails closed when the database can't be reached", async () 
 });
 
 test("an expired owner metadata snapshot reads as absent and is deleted in bounded steps", async () => {
-  const env = testEnv({ DASHBOARD_CACHE: kvStore() });
+  const env = testEnv({});
   const now = new Date().toISOString();
   const snapshot = (owner: string) => ({
     owner,
@@ -521,7 +517,7 @@ test("an expired owner metadata snapshot reads as absent and is deleted in bound
 });
 
 test("an installation is found by its account's exact slug only", async () => {
-  const env = testEnv({ DASHBOARD_CACHE: kvStore() });
+  const env = testEnv({});
   await writeStoredInstallation(env, installation(1, "openclaw"));
   await writeStoredInstallation(env, installation(2, "open"));
 
@@ -536,7 +532,7 @@ test("an installation is found by its account's exact slug only", async () => {
 
 test("installations and profiles of many accounts are read with one query, by exact slug", async () => {
   const { database, counts } = observedDatabase();
-  const env = testEnv({ DASHBOARD_CACHE: kvStore(), DB: database });
+  const env = testEnv({ DB: database });
   // More accounts than one statement binds parameters.
   const many = Array.from({ length: 230 }, (_, index) => `many-${index}`);
   await writeStoredInstallations(env, [
@@ -547,7 +543,8 @@ test("installations and profiles of many accounts are read with one query, by ex
   ]);
   // 233 installations, 100 to a batch.
   expect(counts.queries).toBe(3);
-  await runtimeEnv.DB.prepare("UPDATE installations SET expires_at = ?1 WHERE id = 3")
+  await testDatabase
+    .prepare("UPDATE installations SET expires_at = ?1 WHERE id = 3")
     .bind(Date.now() - 1000)
     .run();
   const patterns = ["openc", "openclaw2", "open%", "open_law", "%", "openclaw/repo", "", "many-"];
@@ -602,7 +599,7 @@ test("installations and profiles of many accounts are read with one query, by ex
 });
 
 test("an account has one installation: a new id replaces it, and an id follows its account", async () => {
-  const env = testEnv({ DASHBOARD_CACHE: kvStore() });
+  const env = testEnv({});
   await writeStoredInstallation(env, installation(1, "acme", { repositories: ["acme/old"] }));
   await writeStoredInstallation(env, installation(5, "other"));
 
@@ -625,7 +622,7 @@ test("an account has one installation: a new id replaces it, and an id follows i
 });
 
 test("the installation listing reads every row in pages, most recently updated first", async () => {
-  const env = testEnv({ DASHBOARD_CACHE: kvStore() });
+  const env = testEnv({});
   const count = 205;
   for (let index = 0; index < count; index += 1) {
     await writeStoredInstallation(
@@ -644,7 +641,7 @@ test("the installation listing reads every row in pages, most recently updated f
 });
 
 test("an expired installation is not used and is deleted in bounded steps", async () => {
-  const env = testEnv({ DASHBOARD_CACHE: kvStore() });
+  const env = testEnv({});
   await writeStoredInstallation(env, installation(1, "live"));
   for (const [id, account] of [
     [2, "old1"],
@@ -653,7 +650,8 @@ test("an expired installation is not used and is deleted in bounded steps", asyn
   ] as const) {
     await writeStoredInstallation(env, installation(id, account));
   }
-  await runtimeEnv.DB.prepare("UPDATE installations SET expires_at = ?1 WHERE id > 1")
+  await testDatabase
+    .prepare("UPDATE installations SET expires_at = ?1 WHERE id > 1")
     .bind(Date.now() - 1000)
     .run();
 
@@ -662,18 +660,19 @@ test("an expired installation is not used and is deleted in bounded steps", asyn
 
   expect(await deleteExpiredInstallations(env, 2)).toBe(2);
   await deleteExpiredRegistryRows(env);
-  const left = await runtimeEnv.DB.prepare("SELECT id FROM installations").all<{ id: number }>();
+  const left = await testDatabase.prepare("SELECT id FROM installations").all<{ id: number }>();
   expect(left.results.map((row) => row.id)).toStrictEqual([1]);
 
   // A row lasts 90 days from its last write.
-  const expiry = await runtimeEnv.DB.prepare("SELECT expires_at FROM installations WHERE id = 1")
+  const expiry = await testDatabase
+    .prepare("SELECT expires_at FROM installations WHERE id = 1")
     .first<{ expires_at: number }>()
     .then((row) => row?.expires_at ?? 0);
   expect(Math.abs(expiry - (Date.now() + 90 * day))).toBeLessThan(60_000);
 });
 
 test("a profile is stored and read whole, by its owner's exact slug", async () => {
-  const env = testEnv({ DASHBOARD_CACHE: kvStore() });
+  const env = testEnv({});
   const profile: DashboardProfile = {
     owner: "openclaw",
     includeOwners: ["friends"],
@@ -700,7 +699,7 @@ test("a profile is stored and read whole, by its owner's exact slug", async () =
 });
 
 test("the database refuses a JSON column of the wrong shape", async () => {
-  const database = runtimeEnv.DB;
+  const database = testDatabase;
   const profile = (lists: [string, string, string, string]) =>
     database
       .prepare(

@@ -1,6 +1,12 @@
 import { assert, expect, test } from "vitest";
 import type { RepoDetailPayload } from "../src/types.ts";
-import { kvStore, socialRenderAsset, testProject, worker } from "./dashboard-test-harness.ts";
+import {
+  socialRenderAsset,
+  testProject,
+  worker,
+  cacheWith,
+  serveAssets,
+} from "./dashboard-test-harness.ts";
 
 test("worker social cards include owner avatars and repository release metrics", async () => {
   const generatedAt = new Date().toISOString();
@@ -26,11 +32,10 @@ test("worker social cards include owner avatars and repository release metrics",
     languages: [],
     workTrend: null,
   };
-  const env = {
-    DASHBOARD_CACHE: kvStore({
-      "repo-detail:v4:acme/releasebar": JSON.stringify(repoPayload),
-    }),
-  };
+  await cacheWith({
+    "repo-detail:v4:acme/releasebar": JSON.stringify(repoPayload),
+  });
+  const env = {};
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
@@ -66,13 +71,11 @@ test("worker social cards include owner avatars and repository release metrics",
     expect(ownerSvg).not.toMatch(/https:\/\/github\.com\/openclaw\.png\?size=240/);
 
     const pngAssetPaths: string[] = [];
+    serveAssets((request: Request) => socialRenderAsset(request, pngAssetPaths));
     const pngResponse = await worker.fetch(
       new Request("https://release.bar/og/acme%2Freleasebar.png"),
       {
         ...env,
-        ASSETS: {
-          fetch: (request: Request) => socialRenderAsset(request, pngAssetPaths),
-        },
       },
       { waitUntil: () => undefined },
     );
@@ -90,7 +93,7 @@ test("worker social cards include owner avatars and repository release metrics",
     globalThis.fetch = originalFetch;
   }
 
-  const coldStore = kvStore();
+  const coldStore = await cacheWith();
   const coldCalls: string[] = [];
   globalThis.fetch = async (input, init) => {
     const url = new URL(String(input));
@@ -144,7 +147,7 @@ test("worker social cards include owner avatars and repository release metrics",
   try {
     const coldResponse = await worker.fetch(
       new Request("https://release.bar/og/cold%2Frepo.svg"),
-      { DASHBOARD_CACHE: coldStore, GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
     const coldSvg = await coldResponse.text();
@@ -182,13 +185,12 @@ test("worker social cards include owner avatars and repository release metrics",
     throw new Error("queued refresh only");
   };
   try {
+    await cacheWith({
+      "repo-detail:v4:stale/repo": JSON.stringify(stalePayload),
+    });
     const staleResponse = await worker.fetch(
       new Request("https://release.bar/og/stale%2Frepo.svg"),
-      {
-        DASHBOARD_CACHE: kvStore({
-          "repo-detail:v4:stale/repo": JSON.stringify(stalePayload),
-        }),
-      },
+      {},
       { waitUntil: (promise) => queued.push(promise) },
     );
     const staleSvg = await staleResponse.text();

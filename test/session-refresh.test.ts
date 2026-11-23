@@ -1,18 +1,17 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
-  kvStore,
   signedJson,
   worker,
   storedInstallationJson,
   observedDatabase,
+  cacheWith,
 } from "./dashboard-test-harness.ts";
 
 const context = { waitUntil: () => undefined };
 
-function sessionEnv(cache: ReturnType<typeof kvStore>) {
+function sessionEnv() {
   return {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: cache,
     GITHUB_APP_CLIENT_ID: "Iv123",
     GITHUB_APP_CLIENT_SECRET: "client-secret",
     GITHUB_APP_SLUG: "releasebar-app",
@@ -58,7 +57,7 @@ const octocat = {
 test("worker refreshes expired GitHub user tokens instead of losing them", async () => {
   const now = Math.floor(Date.now() / 1000);
   const sessionId = "session-refresh";
-  const cache = kvStore({
+  const cache = await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: octocat,
       accessToken: "stale-token",
@@ -69,18 +68,18 @@ test("worker refreshes expired GitHub user tokens instead of losing them", async
       exp: now + 86400,
     }),
   });
-  const env = sessionEnv(cache);
+  const env = sessionEnv();
   const authCookie = await signedJson("test-secret", { id: sessionId, exp: now + 86400 });
   // Rotated grants must survive a transient KV write failure (1-write/sec/key limit).
   let failedRotationWrites = 0;
   const basePut = cache.put.bind(cache);
-  cache.put = async (key: string, value: string) => {
+  vi.spyOn(cache, "put").mockImplementation(async (key, value, options) => {
     if (key.startsWith("auth:session:") && failedRotationWrites === 0) {
       failedRotationWrites += 1;
       throw new Error("simulated KV write rate limit");
     }
-    return basePut(key, value);
-  };
+    return basePut(key, value as string, options);
+  });
 
   let refreshCalls = 0;
   const installationTokens: string[] = [];
@@ -139,7 +138,7 @@ test("worker refreshes expired GitHub user tokens instead of losing them", async
 test("worker keeps sessions logged in across redundant or failing KV writes", async () => {
   const now = Math.floor(Date.now() / 1000);
   const sessionId = "session-write-limits";
-  const cache = kvStore({
+  const cache = await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: octocat,
       accessToken: "user-token",
@@ -150,17 +149,17 @@ test("worker keeps sessions logged in across redundant or failing KV writes", as
     }),
   });
   const observed = observedDatabase();
-  const env = { ...sessionEnv(cache), DB: observed.database };
+  const env = { ...sessionEnv(), DB: observed.database };
   const authCookie = await signedJson("test-secret", { id: sessionId, exp: now + 86400 });
   const sessionPuts: string[] = [];
   const basePut = cache.put.bind(cache);
-  cache.put = async (key: string, value: string) => {
+  vi.spyOn(cache, "put").mockImplementation(async (key, value, options) => {
     if (key.startsWith("auth:session:")) {
       sessionPuts.push(key);
       throw new Error("simulated KV write rate limit");
     }
-    return basePut(key, value);
-  };
+    return basePut(key, value as string, options);
+  });
 
   let liveInstallations = [installationPayload(77, "octocat", "User")];
   const originalFetch = globalThis.fetch;
@@ -215,8 +214,8 @@ test("worker keeps sessions logged in across redundant or failing KV writes", as
 });
 
 test("worker stores refresh grants during the OAuth callback", async () => {
-  const cache = kvStore();
-  const env = sessionEnv(cache);
+  const cache = await cacheWith();
+  const env = sessionEnv();
   const login = await worker.fetch(
     new Request("https://release.bar/api/auth/login?returnTo=/openclaw"),
     env,
