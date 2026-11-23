@@ -275,8 +275,8 @@ export async function storedInstallationInventory(
   };
 }
 
-// Deletes up to `limit` installations whose time ran out, and returns how many. KV expired them
-// by itself; the scheduled handler calls this instead.
+// Deletes up to `limit` installations whose time ran out, and returns how many. D1 expires
+// nothing by itself: the scheduled handler calls this.
 export async function deleteExpiredInstallations(env: Env, limit: number): Promise<number> {
   const result = await env.DB.prepare(
     `DELETE FROM installations

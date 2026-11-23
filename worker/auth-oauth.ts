@@ -62,8 +62,8 @@ export async function meResponse(request: Request, env: Env): Promise<Response> 
   const url = new URL(request.url);
   const record = await currentSessionRecord(request, env);
   const session = record?.session ?? null;
-  // A valid session must never look logged out because GitHub or ancillary KV
-  // cache writes hiccuped; fall back to the stored installation list instead.
+  // A valid session must never look logged out because GitHub or a write of the registry or
+  // the session hiccuped; fall back to the stored installation list instead.
   let installations = session?.installations ?? [];
   if (record && session) {
     try {

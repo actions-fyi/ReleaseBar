@@ -6,8 +6,8 @@ import { deleteExpiredOwnerMetadata } from "./store/owner-metadata.ts";
 // next run. Reads ignore an expired row whether it was deleted yet or not.
 const expiredRowsPerRun = 500;
 
-// Deletes the installations and owner metadata snapshots whose time ran out. KV, which held them
-// before, expired entries by itself; D1 does not. A failure is logged and left to the next run.
+// Deletes the installations and owner metadata snapshots whose time ran out: D1 expires
+// nothing by itself. A failure is logged and left to the next run.
 export async function deleteExpiredRegistryRows(env: Env): Promise<void> {
   try {
     const [installations, ownerMetadata] = await Promise.all([

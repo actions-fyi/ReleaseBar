@@ -391,12 +391,8 @@ export async function invalidateRepoDetailCaches(env: Env, fullName: string): Pr
   if (!owner || !repo) return;
   await Promise.all([
     deleteCacheEntry(env, repoDetailCacheKey(owner, repo)),
-    deleteCachePrefix(env, repoDetailAuxCachePrefix(fullName)),
+    deleteCacheEntries(env, repoDetailAuxCachePrefix(fullName)),
   ]);
-}
-
-export function deleteCachePrefix(env: Env, prefix: string): Promise<void> {
-  return deleteCacheEntries(env, prefix);
 }
 
 export async function invalidatePublicRepoCaches(env: Env, fullName: string): Promise<void> {
@@ -417,22 +413,22 @@ export async function invalidatePublicRepoCaches(env: Env, fullName: string): Pr
     ...(["day", "week", "month"] as ActivityRange[]).map((range) =>
       deleteCacheEntry(env, ownerActivityCacheKey(owner, range)),
     ),
-    deleteCachePrefix(env, "repo-audience:v5:"),
-    deleteCachePrefix(env, "owner-activity:v"),
-    deleteCachePrefix(env, "owner-activity-summary:"),
-    deleteCachePrefix(
+    deleteCacheEntries(env, "repo-audience:v5:"),
+    deleteCacheEntries(env, "owner-activity:v"),
+    deleteCacheEntries(env, "owner-activity-summary:"),
+    deleteCacheEntries(
       env,
       `owner-activity-summary:v${activitySummaryPromptVersion}:${slugOwner(owner)}:`,
     ),
-    deleteCachePrefix(
+    deleteCacheEntries(
       env,
       `repo-activity-summary:v${activitySummaryPromptVersion}:${fullName.toLowerCase()}:`,
     ),
-    deleteCachePrefix(
+    deleteCacheEntries(
       env,
       `release-summary:v${releaseSummaryPromptVersion}:${fullName.toLowerCase()}:`,
     ),
-    deleteCachePrefix(env, `discover:v${discoverCacheSchemaVersion}:`),
+    deleteCacheEntries(env, `discover:v${discoverCacheSchemaVersion}:`),
   ]);
 }
 

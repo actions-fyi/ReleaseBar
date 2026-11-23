@@ -553,7 +553,7 @@ export async function callbackResponse(
       exp: now + sessionMaxAgeSeconds,
     };
     const liveInstallations = await githubInstallations(grant.accessToken).catch(() => null);
-    // Login must not fail because installation cache writes hit KV write limits.
+    // Login must not fail because the installation registry could not be written.
     const installations = await resolvedInstallations(env, session, liveInstallations).catch(
       () => liveInstallations ?? [],
     );

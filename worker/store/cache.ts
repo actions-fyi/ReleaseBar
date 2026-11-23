@@ -88,9 +88,3 @@ export async function deleteCacheEntries(env: Env, prefix: string): Promise<void
 export function projectCache(env: Env): ProjectCache {
   return env.DASHBOARD_CACHE;
 }
-
-// What in-memory stand-ins for a Durable Object are kept per: one cache, one set of stand-ins.
-// Undefined when the env has no cache.
-export function cacheIdentity(env: Env): object | undefined {
-  return env.DASHBOARD_CACHE as object | undefined;
-}

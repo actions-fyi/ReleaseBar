@@ -23,6 +23,7 @@ import { markHotCacheStale } from "./build-progress.ts";
 import {
   githubGraphqlOwnerCountsOperation,
   githubGraphqlRepoDetailsOperation,
+  localRefreshJobReservations,
   refreshJobReservationTtlMs,
   refreshQueueDeliveryDelaySeconds,
   schedulerBatchLimit,
@@ -50,7 +51,6 @@ import {
   jitterMs,
   listRefreshJobs,
   listRefreshTargets,
-  localRefreshJobReservationStore,
   readRefreshTarget,
   recordLocalRefreshDirty,
   refreshJob,
@@ -85,11 +85,11 @@ export async function reserveRefreshJob(
   listJobs: () => Promise<RefreshJob[]> = () => listRefreshJobs(env),
 ): Promise<boolean> {
   const reserveFallback = async (): Promise<boolean> => {
-    const reservations = localRefreshJobReservationStore(env);
+    const reservations = localRefreshJobReservations;
     const now = Date.now();
     const local = reservations.get(targetKey);
     if (local && local.jobId !== jobId && local.expiresAt > now) {
-      if (dirtyOnConflict) recordLocalRefreshDirty(env, targetKey, dirtyOnConflict);
+      if (dirtyOnConflict) recordLocalRefreshDirty(targetKey, dirtyOnConflict);
       return false;
     }
     reservations.set(targetKey, {
@@ -104,7 +104,7 @@ export async function reserveRefreshJob(
       if (reservations.get(targetKey)?.jobId === jobId) {
         reservations.delete(targetKey);
       }
-      if (dirtyOnConflict) recordLocalRefreshDirty(env, targetKey, dirtyOnConflict);
+      if (dirtyOnConflict) recordLocalRefreshDirty(targetKey, dirtyOnConflict);
       return false;
     } catch (error) {
       if (reservations.get(targetKey)?.jobId === jobId) {
@@ -133,12 +133,12 @@ export async function releaseRefreshJobReservation(
   jobId: string,
   consumeDirty = false,
 ): Promise<StoredRefreshDirty | null> {
-  const reservations = localRefreshJobReservationStore(env);
+  const reservations = localRefreshJobReservations;
   let localDirty: StoredRefreshDirty | null = null;
   if (reservations.get(targetKey)?.jobId === jobId) {
     reservations.delete(targetKey);
     if (consumeDirty) {
-      localDirty = takeLocalRefreshDirty(env, targetKey);
+      localDirty = takeLocalRefreshDirty(targetKey);
     }
   }
   try {

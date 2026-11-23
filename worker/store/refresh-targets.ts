@@ -49,7 +49,8 @@ function parseTargets(rows: ValueRow[]): RefreshTarget[] {
     .filter((target): target is RefreshTarget => target !== null);
 }
 
-// Targets seen before this are no longer stored: KV dropped them by itself, D1 does not.
+// Targets last seen before this are past their lifetime: no listing returns them, and
+// `deleteExpiredRefreshTargets` deletes them.
 function seenCutoff(now = Date.now()): number {
   return now - dashboardStorageTtlSeconds * 1000;
 }

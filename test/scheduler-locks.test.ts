@@ -355,7 +355,7 @@ test("dashboard target mutations preserve terminal backoff across stale observat
   expect(stored.terminalBackoffUntil).toBe(failed.nextDueAt);
 });
 
-test("a refresh target the object does not know yet starts from the cached one", async () => {
+test("a refresh target the object does not know yet starts from the stored one", async () => {
   const coordinator = env.BUILD_COORDINATOR.getByName("target-seed");
   const target: RefreshTarget = {
     key: "target-seed",

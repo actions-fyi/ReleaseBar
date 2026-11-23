@@ -50,12 +50,10 @@ export const hotIndexLimit = 100;
 export const hotCacheTtlMs = 5 * 60 * 1000;
 export const localBuildLocks = new Map<string, StoredBuildLock>();
 export const localRepoDetailBuilds = new Map<string, Promise<RepoDetailPayload | null>>();
-export const localRefreshReservationFallbackScope = {};
-export const localRefreshJobReservations = new WeakMap<
-  object,
-  Map<string, StoredRefreshJobReservation>
->();
-export const localRefreshDirtyMarkers = new WeakMap<object, Map<string, StoredRefreshDirty>>();
+// What stands in for a dashboard's coordinator object while it can't be reached: this isolate's
+// own reservations and dirty markers, by target key.
+export const localRefreshJobReservations = new Map<string, StoredRefreshJobReservation>();
+export const localRefreshDirtyMarkers = new Map<string, StoredRefreshDirty>();
 export const discoverLimit = 40;
 export const discoverHydrateLimit = 24;
 export const discoverHydrateBatchSize = 8;
@@ -93,7 +91,6 @@ export const dashboardSchemaVersion = 6;
 export const auxiliaryCacheSchemaVersion = 3;
 export const discoverCacheSchemaVersion = 4;
 export const dashboardCachePrefix = `dashboard:v${dashboardSchemaVersion}:`;
-export const dashboardCachePrefixes = [dashboardCachePrefix];
 export const hotCacheKey = `hot:v${auxiliaryCacheSchemaVersion}`;
 export const hotInvalidatedAtKey = `${hotCacheKey}:invalidated-at`;
 export const hotIndexKey = `hot:index:v${auxiliaryCacheSchemaVersion}`;
@@ -220,11 +217,6 @@ export type StoredRefreshJobReservation = {
 export type StoredRefreshDirty = {
   observedAt: string;
   reason: string;
-};
-
-export type StoredWebhookDelivery = {
-  id: string;
-  processedAt: number;
 };
 
 export type StoredWebhookProcessing = {

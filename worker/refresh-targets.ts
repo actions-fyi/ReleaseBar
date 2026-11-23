@@ -20,9 +20,6 @@ import {
   dashboardCachePrefix,
   refreshExpiryBatchLimit,
   localRefreshDirtyMarkers,
-  localRefreshJobReservations,
-  localRefreshReservationFallbackScope,
-  refreshAuditListLimit,
   refreshJobActiveGraceMs,
   refreshJobListLimit,
   refreshJobReservationTtlMs,
@@ -34,14 +31,12 @@ import {
   schedulerRetryBaseMs,
   schedulerTargetPageLimit,
   type StoredRefreshDirty,
-  type StoredRefreshJobReservation,
   webhookPriorityTargetLimit,
 } from "./config.ts";
 import { mutateCoordinatedTarget } from "./store/build-coordinator.ts";
-import { cacheIdentity } from "./store/cache.ts";
 import { rateLimitReached } from "./store/rate-limits.ts";
 import type { RateLimitedEndpoint } from "./runtime.ts";
-import { appendRefreshAuditEvent, listRefreshAuditEvents } from "./store/refresh-audit.ts";
+import { appendRefreshAuditEvent } from "./store/refresh-audit.ts";
 import { mapConcurrent } from "./concurrency.ts";
 import {
   deleteExpiredProfileSnapshots,
@@ -136,35 +131,6 @@ export function isRefreshTarget(value: unknown): value is RefreshTarget {
   );
 }
 
-export function isRefreshTargetMutation(value: unknown): value is RefreshTargetMutation {
-  const mutation = value as RefreshTargetMutation | null;
-  if (!mutation || typeof mutation !== "object" || typeof mutation.kind !== "string") return false;
-  if (mutation.kind === "observe") {
-    return Boolean(
-      mutation.input &&
-      typeof mutation.input.key === "string" &&
-      typeof mutation.observedAt === "string" &&
-      typeof mutation.profileProvided === "boolean",
-    );
-  }
-  if (mutation.kind === "defer") {
-    return (
-      typeof mutation.at === "string" &&
-      typeof mutation.nextDueAt === "string" &&
-      typeof mutation.message === "string"
-    );
-  }
-  if (mutation.kind === "success") {
-    return typeof mutation.at === "string";
-  }
-  return (
-    mutation.kind === "failure" &&
-    typeof mutation.at === "string" &&
-    typeof mutation.message === "string" &&
-    typeof mutation.terminal === "boolean"
-  );
-}
-
 export function isRefreshJob(value: unknown): value is RefreshJob {
   const job = value as RefreshJob | null;
   return Boolean(
@@ -221,43 +187,17 @@ export function refreshJobActive(job: RefreshJob, now = Date.now()): boolean {
   );
 }
 
-export function localRefreshJobReservationStore(
-  env: Env,
-): Map<string, StoredRefreshJobReservation> {
-  const scope = cacheIdentity(env) ?? localRefreshReservationFallbackScope;
-  const existing = localRefreshJobReservations.get(scope);
-  if (existing) return existing;
-  const created = new Map<string, StoredRefreshJobReservation>();
-  localRefreshJobReservations.set(scope, created);
-  return created;
-}
-
-export function localRefreshDirtyMarkerStore(env: Env): Map<string, StoredRefreshDirty> {
-  const scope = cacheIdentity(env) ?? localRefreshReservationFallbackScope;
-  const existing = localRefreshDirtyMarkers.get(scope);
-  if (existing) return existing;
-  const created = new Map<string, StoredRefreshDirty>();
-  localRefreshDirtyMarkers.set(scope, created);
-  return created;
-}
-
-export function recordLocalRefreshDirty(
-  env: Env,
-  targetKey: string,
-  dirty: StoredRefreshDirty,
-): void {
-  const markers = localRefreshDirtyMarkerStore(env);
-  const existing = markers.get(targetKey);
+export function recordLocalRefreshDirty(targetKey: string, dirty: StoredRefreshDirty): void {
+  const existing = localRefreshDirtyMarkers.get(targetKey);
   if (!existing || safeIso(dirty.observedAt) >= safeIso(existing.observedAt)) {
-    markers.set(targetKey, dirty);
+    localRefreshDirtyMarkers.set(targetKey, dirty);
   }
 }
 
-export function takeLocalRefreshDirty(env: Env, targetKey: string): StoredRefreshDirty | null {
-  const markers = localRefreshDirtyMarkerStore(env);
-  const dirty = markers.get(targetKey);
+export function takeLocalRefreshDirty(targetKey: string): StoredRefreshDirty | null {
+  const dirty = localRefreshDirtyMarkers.get(targetKey);
   if (!dirty) return null;
-  markers.delete(targetKey);
+  localRefreshDirtyMarkers.delete(targetKey);
   return dirty;
 }
 
@@ -726,17 +666,6 @@ export async function clientTimingResponse(
     detail: timingDetail(input),
   });
   return jsonResponse({ ok: true }, 202, { "cache-control": "no-store" });
-}
-
-export function listCurrentAuditEvents(env: Env): Promise<SchedulerAuditEvent[]> {
-  return listRefreshAuditEvents(env, refreshAuditListLimit);
-}
-
-export async function listAuditEvents(env: Env): Promise<SchedulerAuditEvent[]> {
-  return (await listCurrentAuditEvents(env))
-    .filter((event): event is SchedulerAuditEvent => Boolean(event))
-    .sort((a, b) => safeIso(b.at) - safeIso(a.at))
-    .slice(0, refreshAuditListLimit);
 }
 
 export function refreshJob(target: RefreshTarget, reason: string): RefreshJob {

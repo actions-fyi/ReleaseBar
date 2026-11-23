@@ -1,4 +1,5 @@
 import type { RefreshJob, SchedulerAdminPayload } from "../src/types.ts";
+import { listRefreshAuditEvents } from "./store/refresh-audit.ts";
 import { mapConcurrent } from "./concurrency.ts";
 import {
   githubGraphqlBackoffDeferUntil,
@@ -10,7 +11,11 @@ import { canonicalDomain } from "./runtime.ts";
 import { resolveOwners } from "./app-shell.ts";
 import { appTokenConfigured } from "./auth-oauth.ts";
 import { installationRegistryFor, sourceInstallationToken } from "./auth-tokens.ts";
-import { adminTargetListLimit, queuedProgressiveBuildBudgetMs } from "./config.ts";
+import {
+  adminTargetListLimit,
+  queuedProgressiveBuildBudgetMs,
+  refreshAuditListLimit,
+} from "./config.ts";
 import { errorMessage, isAbortError, readCached } from "./dashboard-cache.ts";
 import { continueProgressiveBuild, dashboardRequest } from "./dashboard-rebuild.ts";
 import {
@@ -22,7 +27,6 @@ import {
 import {
   auditSyncEvent,
   currentDashboardCacheKey,
-  listAuditEvents,
   listRefreshJobs,
   mergeRefreshTargetState,
   mutateRefreshTargetState,
@@ -423,7 +427,7 @@ export async function schedulerAdminPayload(env: Env): Promise<SchedulerAdminPay
   const [inventory, jobs, events, state, dueOptions] = await Promise.all([
     refreshTargetInventory(env),
     listRefreshJobs(env),
-    listAuditEvents(env),
+    listRefreshAuditEvents(env, refreshAuditListLimit),
     readSchedulerState(env),
     schedulerDueOptions(env),
   ]);

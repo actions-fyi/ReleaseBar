@@ -6,7 +6,7 @@ import { type BackgroundContext, canonicalDomain } from "./runtime.ts";
 import { hotIndexSchema, safeJsonParse } from "./schemas.ts";
 import type { InitialPageData } from "./app-shell.ts";
 import {
-  dashboardCachePrefixes,
+  dashboardCachePrefix,
   type DashboardRequest,
   dashboardSchemaVersion,
   dashboardStorageTtlSeconds,
@@ -540,11 +540,8 @@ export async function partialDashboardPayload(
 export async function readCachedDashboards(env: Env): Promise<DashboardPayload[]> {
   let keys = await readHotIndex(env);
   if (keys.length < hotSourceLimit) {
-    for (const prefix of dashboardCachePrefixes) {
-      if (keys.length >= hotSourceLimit) break;
-      const listed = await listCacheKeys(env, prefix, hotSourceLimit);
-      keys = [...new Set([...keys, ...listed])];
-    }
+    const listed = await listCacheKeys(env, dashboardCachePrefix, hotSourceLimit);
+    keys = [...new Set([...keys, ...listed])];
   }
 
   const dashboards = await mapConcurrent(
@@ -572,9 +569,7 @@ export async function readHotIndex(env: Env): Promise<string[]> {
   const raw = await readCacheText(env, hotIndexKey);
   if (!raw) return [];
   const keys = safeJsonParse(hotIndexSchema, raw, "hot index");
-  return keys
-    ? keys.filter((key) => dashboardCachePrefixes.some((prefix) => key.startsWith(prefix)))
-    : [];
+  return keys ? keys.filter((key) => key.startsWith(dashboardCachePrefix)) : [];
 }
 
 export async function rememberHotDashboard(

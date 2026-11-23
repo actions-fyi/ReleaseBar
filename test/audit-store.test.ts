@@ -1,4 +1,4 @@
-// The audit data of step 7b in the local D1 database and the rate limiter Durable Object, through
+// The audit data in the local D1 database and the rate limiter Durable Object, through
 // the store functions the Worker calls.
 import { env as runtimeEnv } from "cloudflare:workers";
 import { expect, test } from "vitest";

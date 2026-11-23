@@ -15,6 +15,7 @@ import {
 } from "./store/github-access.ts";
 import type { BackgroundContext } from "./runtime.ts";
 import { collectGitHubAccess } from "./audit-collector.ts";
+import { safeIso } from "./time.ts";
 
 export const githubAccessAdminHours = 24;
 const githubAccessAdminRouteLimit = 30;
@@ -579,11 +580,6 @@ export function quotaFromGitHubResponse(
     GITHUB_TOKEN: source === "anonymous" ? undefined : "token",
   } as Env);
   return { ...quota, source, account };
-}
-
-function safeIso(value: string | null | undefined): number {
-  const parsed = value ? Date.parse(value) : 0;
-  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function incrementSummary(map: Map<string, number>, key: string, count: number): void {

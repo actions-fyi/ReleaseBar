@@ -280,12 +280,7 @@ export const storedAuthSessionSchema = v.object({
 
 export const hotIndexSchema = v.array(v.string());
 
-export type GitHubOAuthToken = v.InferOutput<typeof gitHubOAuthTokenSchema>;
-export type GitHubOAuthUser = v.InferOutput<typeof gitHubOAuthUserSchema>;
-export type GitHubInstallation = v.InferOutput<typeof gitHubInstallationSchema>;
 export type GitHubInstallationRepository = v.InferOutput<typeof gitHubInstallationRepositorySchema>;
-export type GitHubInstallationToken = v.InferOutput<typeof gitHubInstallationTokenSchema>;
-export type GitHubRepository = v.InferOutput<typeof gitHubRepositorySchema>;
 export type GitHubRelease = v.InferOutput<typeof gitHubReleaseSchema>;
 export type GitHubSearchRepository = v.InferOutput<typeof gitHubSearchRepositorySchema>;
 export type GitHubStargazer = v.InferOutput<typeof gitHubStargazerSchema>;
