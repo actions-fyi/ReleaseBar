@@ -60,7 +60,6 @@ import {
 } from "./webhook.ts";
 import { webhookRepo } from "./webhook-targets.ts";
 
-export { dashboardStreamSignature, dashboardStreamState } from "./dashboard-rebuild.ts";
 export { DashboardBuildLock } from "./request-lock.ts";
 
 export default {
