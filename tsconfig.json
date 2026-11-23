@@ -8,7 +8,7 @@
     "skipLibCheck": true,
     "strict": true,
     "target": "ES2023",
-    "types": ["node"],
+    "types": ["node", "@cloudflare/vitest-plugin/types"],
     "verbatimModuleSyntax": true
   },
   "include": [

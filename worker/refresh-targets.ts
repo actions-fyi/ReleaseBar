@@ -9,7 +9,12 @@ import type {
 import { mapConcurrent } from "./concurrency.ts";
 import { randomNonce, sha256Base64Url } from "./crypto.ts";
 import { jsonResponse } from "./http.ts";
-import type { BackgroundContext, GitHubWebhookFanoutJob, GitHubWebhookJob } from "./runtime.ts";
+import {
+  type BackgroundContext,
+  type GitHubWebhookFanoutJob,
+  type GitHubWebhookJob,
+  refreshTargetIndexName,
+} from "./runtime.ts";
 import { tryJsonParse } from "./schemas.ts";
 import {
   adminTargetListLimit,
@@ -83,40 +88,29 @@ export async function writeDurableRefreshTargetIndexes(
   env: Env,
   target: RefreshTarget,
 ): Promise<RefreshTargetIndexWrite> {
-  const locks = env.DASHBOARD_LOCKS;
-  if (!locks) return "unavailable";
   try {
     const writes = await Promise.all(
       refreshTargetSources(target).map(async ({ kind, value }) => {
-        const id = locks.idFromName(`refresh-target-index:${kind}:${value}`);
-        const stub = locks.get(id);
-        const response = await stub
-          .fetch(
-            new Request("https://releasebar.internal/target-index/upsert", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(target),
-            }),
-          )
-          .catch(() => null);
-        return { response, stub };
+        const index = env.REFRESH_TARGET_INDEX.getByName(refreshTargetIndexName(kind, value));
+        try {
+          return { index, result: await index.upsert(target) };
+        } catch {
+          return { index, result: null };
+        }
       }),
     );
-    if (writes.every(({ response }) => response?.ok)) return "accepted";
+    if (writes.every(({ result }) => result === "created" || result === "updated")) {
+      return "accepted";
+    }
+    // Take the target back out of the indexes this write added it to.
     await Promise.allSettled(
       writes
-        .filter(({ response }) => response?.headers.get("x-refresh-target-created") === "true")
-        .map(({ stub }) =>
-          stub.fetch(
-            new Request("https://releasebar.internal/target-index/delete", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ key: target.key }),
-            }),
-          ),
-        ),
+        .filter(({ result }) => result === "created")
+        .map(async ({ index }) => {
+          await index.remove(target.key);
+        }),
     );
-    return writes.some(({ response }) => response?.status === 429) ? "rejected" : "unavailable";
+    return writes.some(({ result }) => result === "full") ? "rejected" : "unavailable";
   } catch {
     return "unavailable";
   }
@@ -151,9 +145,7 @@ export async function persistRefreshTargetWithIndexes(
   const indexWrite = await writeRefreshTargetIndexes(env, indexed);
   const admissionFailed =
     indexWrite === "rejected" ||
-    (options.requireAdmission === true &&
-      indexWrite === "unavailable" &&
-      Boolean(env.DASHBOARD_LOCKS));
+    (options.requireAdmission === true && indexWrite === "unavailable");
   if (admissionFailed) {
     await env.DASHBOARD_CACHE.delete(refreshTargetStorageKey(target.key));
     return { target: { ...target, indexVersion: undefined }, persisted: false };
@@ -309,10 +301,7 @@ export function refreshJobActive(job: RefreshJob, now = Date.now()): boolean {
 export function localRefreshJobReservationStore(
   env: Env,
 ): Map<string, StoredRefreshJobReservation> {
-  const scope =
-    (env.DASHBOARD_CACHE as object | undefined) ??
-    (env.DASHBOARD_LOCKS as object | undefined) ??
-    localRefreshReservationFallbackScope;
+  const scope = (env.DASHBOARD_CACHE as object | undefined) ?? localRefreshReservationFallbackScope;
   const existing = localRefreshJobReservations.get(scope);
   if (existing) return existing;
   const created = new Map<string, StoredRefreshJobReservation>();
@@ -321,10 +310,7 @@ export function localRefreshJobReservationStore(
 }
 
 export function localRefreshDirtyMarkerStore(env: Env): Map<string, StoredRefreshDirty> {
-  const scope =
-    (env.DASHBOARD_CACHE as object | undefined) ??
-    (env.DASHBOARD_LOCKS as object | undefined) ??
-    localRefreshReservationFallbackScope;
+  const scope = (env.DASHBOARD_CACHE as object | undefined) ?? localRefreshReservationFallbackScope;
   const existing = localRefreshDirtyMarkers.get(scope);
   if (existing) return existing;
   const created = new Map<string, StoredRefreshDirty>();
@@ -456,27 +442,27 @@ export async function mutateRefreshTargetState(
   }
   const observedCurrent = mutation.kind === "observe" ? await readRefreshTarget(env, key) : null;
   const requireAdmission = mutation.kind === "observe" && observedCurrent === null;
-  if (env.DASHBOARD_LOCKS) {
-    try {
-      const id = env.DASHBOARD_LOCKS.idFromName(key);
-      const response = await env.DASHBOARD_LOCKS.get(id).fetch(
-        new Request("https://releasebar.internal/target/mutate", {
-          method: "POST",
-          body: JSON.stringify({ snapshot, mutation }),
-        }),
-      );
-      if (response.ok) {
-        const updated = (await response.json()) as RefreshTarget;
-        if (isRefreshTarget(updated)) {
-          const persisted = await persistRefreshTargetWithIndexes(env, updated, {
-            requireAdmission,
-          });
-          return persisted.persisted ? persisted.target : null;
-        }
-      }
-    } catch {
-      // KV fallback keeps preview and degraded Durable Object paths operational.
+  try {
+    const coordinator = env.BUILD_COORDINATOR.getByName(key);
+    // The object answers null when it has no state for the target yet: it then needs what the
+    // cache holds, which an observation has read already.
+    const updated =
+      (await coordinator.mutateTarget(
+        snapshot,
+        mutation,
+        mutation.kind === "observe" ? { current: observedCurrent } : undefined,
+      )) ??
+      (await coordinator.mutateTarget(snapshot, mutation, {
+        current: await readRefreshTarget(env, key),
+      }));
+    if (isRefreshTarget(updated)) {
+      const persisted = await persistRefreshTargetWithIndexes(env, updated, {
+        requireAdmission,
+      });
+      return persisted.persisted ? persisted.target : null;
     }
+  } catch {
+    // The object can't be reached: the cache alone keeps the target.
   }
   const current = mutation.kind === "observe" ? observedCurrent : await readRefreshTarget(env, key);
   const updated = applyRefreshTargetMutation(snapshot, current, mutation);

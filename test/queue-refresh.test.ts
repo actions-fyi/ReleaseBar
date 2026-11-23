@@ -1,8 +1,10 @@
 import { generateKeyPairSync } from "node:crypto";
+import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
+  buildLocksHeld,
   kvStore,
   refreshAuditEvents,
   testDashboard,
@@ -345,21 +347,7 @@ test("worker retries refresh jobs when the dashboard build lock is busy", async 
     [`refresh:target:v1:${key}`]: JSON.stringify(target),
     [`refresh:job:v1:${job.id}`]: JSON.stringify(job),
   });
-  const busyLocks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async (request: Request) => {
-        const path = new URL(request.url).pathname;
-        if (path === "/job/reserve") {
-          return new Response(null, { status: 204 });
-        }
-        if (path === "/acquire") {
-          return new Response(null, { status: 409 });
-        }
-        return new Response(null, { status: 204 });
-      },
-    }),
-  };
+  buildLocksHeld();
   let acked = false;
   let retryDelaySeconds: number | undefined;
 
@@ -391,7 +379,7 @@ test("worker retries refresh jobs when the dashboard build lock is busy", async 
         },
       ],
     },
-    { DASHBOARD_CACHE: cache, DASHBOARD_LOCKS: busyLocks },
+    { DASHBOARD_CACHE: cache },
     { waitUntil: () => undefined },
   );
 
@@ -458,13 +446,13 @@ test("worker stops and retries stalled progressive dashboard scans", async () =>
   };
   const cache = kvStore({
     [key]: JSON.stringify(dashboard),
-    [`progress:v1:${key}`]: JSON.stringify({
-      scannedRepos: projects.map((project) => project.fullName.toLowerCase()),
-      projects,
-      updatedAt: "2026-06-11T07:00:00Z",
-    }),
     [`refresh:target:v1:${key}`]: JSON.stringify(target),
     [`refresh:job:v1:${job.id}`]: JSON.stringify(job),
+  });
+  await env.BUILD_COORDINATOR.getByName(key).putProgress({
+    scannedRepos: projects.map((project) => project.fullName.toLowerCase()),
+    projects,
+    updatedAt: "2026-06-11T07:00:00Z",
   });
   const repoRows = projects.map((project) => ({
     owner: { login: "stalled" },

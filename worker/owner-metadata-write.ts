@@ -1,6 +1,7 @@
 import { slugOwner } from "../shared/dashboard.ts";
 import type { DashboardPayload } from "../src/types.ts";
 import { jsonResponse } from "./http.ts";
+import { ownerMetadataObjectName } from "./runtime.ts";
 import { dashboardTotals } from "./build-progress.ts";
 import {
   crawlerUserAgentPattern,
@@ -368,25 +369,14 @@ export async function mutateOwnerMetadataSnapshot(
 ): Promise<OwnerMetadataSnapshot | null> {
   const normalizedOwner = slugOwner(owner);
   const requireDurablePrivacy = mutation.kind === "remove" || mutation.kind === "restore";
-  if (env.DASHBOARD_LOCKS) {
-    try {
-      const id = env.DASHBOARD_LOCKS.idFromName(`owner-metadata:${normalizedOwner}`);
-      const response = await env.DASHBOARD_LOCKS.get(id).fetch(
-        new Request("https://releasebar.internal/owner-metadata/mutate", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ owner: normalizedOwner, mutation }),
-        }),
-      );
-      if (response.status === 204) return null;
-      if (response.ok) return (await response.json()) as OwnerMetadataSnapshot;
-      if (requireDurablePrivacy) {
-        throw new Error(`owner metadata mutation returned ${response.status}`);
-      }
-    } catch (error) {
-      if (requireDurablePrivacy) throw error;
-      // KV fallback keeps preview and degraded Durable Object paths operational.
-    }
+  try {
+    return await env.OWNER_METADATA.getByName(ownerMetadataObjectName(normalizedOwner)).mutate(
+      normalizedOwner,
+      mutation,
+    );
+  } catch (error) {
+    if (requireDurablePrivacy) throw error;
+    // The object can't be reached: the cache alone keeps what is not about privacy.
   }
   const existing = await readOwnerMetadataKv(env, normalizedOwner);
   const updated = applyOwnerMetadataMutation(normalizedOwner, existing, mutation);

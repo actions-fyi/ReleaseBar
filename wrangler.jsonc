@@ -72,9 +72,34 @@
     },
   },
 
+  // One class per kind of object; worker/runtime.ts names the instances. Every binding is listed
+  // in `durableObjectBindings` there, which scopes them to RELEASEBAR_DO_JURISDICTION.
   "durable_objects": {
-    "bindings": [{ "name": "DASHBOARD_LOCKS", "class_name": "DashboardBuildLock" }],
+    "bindings": [
+      { "name": "BUILD_COORDINATOR", "class_name": "BuildCoordinator" },
+      { "name": "OWNER_METADATA", "class_name": "OwnerMetadata" },
+      { "name": "REFRESH_TARGET_INDEX", "class_name": "RefreshTargetIndex" },
+      { "name": "SUMMARY_QUOTA", "class_name": "SummaryQuota" },
+      { "name": "WEBHOOK_ADMISSION", "class_name": "WebhookAdmission" },
+      { "name": "WEBHOOK_PROCESSOR", "class_name": "WebhookProcessor" },
+    ],
   },
 
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DashboardBuildLock"] }],
+  // A migration is applied once and never edited afterwards: a change to the classes is a new
+  // entry with a new tag. v2 deleted DashboardBuildLock with everything it stored.
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["DashboardBuildLock"] },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "BuildCoordinator",
+        "OwnerMetadata",
+        "RefreshTargetIndex",
+        "SummaryQuota",
+        "WebhookAdmission",
+        "WebhookProcessor",
+      ],
+      "deleted_classes": ["DashboardBuildLock"],
+    },
+  ],
 }

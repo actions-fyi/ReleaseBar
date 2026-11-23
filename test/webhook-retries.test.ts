@@ -1,10 +1,17 @@
-import { assert, expect, test } from "vitest";
+import { runInDurableObject } from "cloudflare:test";
+import { env as runtimeEnv } from "cloudflare:workers";
+import { assert, expect, test, vi } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, RefreshTarget } from "../src/types.ts";
+import type { StoredWebhookPending } from "../worker/runtime.ts";
+import { webhookProcessorObjectName } from "../worker/runtime.ts";
 import {
-  DashboardBuildLock,
-  durableLocks,
   kvStore,
+  objectsUnavailable,
+  type TestEnv,
+  testEnv,
+  WebhookAdmission,
+  WebhookProcessor,
   testDashboard,
   testProject,
   worker,
@@ -45,7 +52,7 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
   const queued: unknown[] = [];
   const queuedDelays: Array<number | undefined> = [];
   const dashboardCacheAtEnqueue: Array<string | null> = [];
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
     REFRESH_QUEUE: {
       send: async (message, options) => {
@@ -60,11 +67,6 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
         }
       },
     },
-  };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = {
-    idFromName: locks.idFromName,
-    get: locks.get,
   };
 
   await worker.queue(
@@ -162,18 +164,8 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
       (message as { delivery?: unknown }).delivery === "delivery-reserved-push",
   );
   expect(requeued).toBe(undefined);
-  const targetStub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName(key));
-  const release = await targetStub.fetch(
-    new Request("https://releasebar.internal/job/release", {
-      method: "POST",
-      body: JSON.stringify({
-        jobId: activeJob.id,
-        consumeDirty: true,
-      }),
-    }),
-  );
-  expect(release.status).toBe(200);
-  expect(((await release.json()) as { reason?: string }).reason).toBe("webhook:push");
+  const dirty = await testEnv(env).BUILD_COORDINATOR.getByName(key).releaseJob(activeJob.id, true);
+  expect(dirty?.reason).toBe("webhook:push");
 });
 
 test("reserved webhook refreshes queue one follow-up after the active job", async () => {
@@ -207,7 +199,7 @@ test("reserved webhook refreshes queue one follow-up after the active job", asyn
   });
   const queued: unknown[] = [];
   const delays: Array<number | undefined> = [];
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
     REFRESH_QUEUE: {
       send: async (message, options) => {
@@ -216,19 +208,8 @@ test("reserved webhook refreshes queue one follow-up after the active job", asyn
       },
     },
   };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = {
-    idFromName: locks.idFromName,
-    get: locks.get,
-  };
-  const targetStub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName(key));
-  const reservation = await targetStub.fetch(
-    new Request("https://releasebar.internal/job/reserve", {
-      method: "POST",
-      body: JSON.stringify({ jobId: "existing-job" }),
-    }),
-  );
-  expect(reservation.status).toBe(204);
+  const coordinator = testEnv(env).BUILD_COORDINATOR.getByName(key);
+  expect(await coordinator.reserveJob("existing-job")).toBe(true);
 
   let acknowledged = false;
   let retried = false;
@@ -324,25 +305,13 @@ test("reserved webhook refreshes queue one follow-up after the active job", asyn
 });
 
 test("worker acknowledges webhook jobs after the durable requeue limit", async () => {
-  let abandoned = false;
   let acknowledged = false;
   let retried = false;
-  const locks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async (request: Request) => {
-        const path = new URL(request.url).pathname;
-        if (path === "/webhook/process") {
-          return new Response(null, { status: 500 });
-        }
-        if (path === "/webhook/abandon") {
-          abandoned = true;
-          return new Response(null, { status: 204 });
-        }
-        return new Response(null, { status: 404 });
-      },
-    }),
-  };
+  vi.spyOn(WebhookProcessor.prototype, "process").mockRejectedValue(
+    new Error("webhook processing failed"),
+  );
+  const admissionAbandons = vi.spyOn(WebhookAdmission.prototype, "abandon");
+  const processorAbandons = vi.spyOn(WebhookProcessor.prototype, "abandon");
 
   await (
     worker as unknown as {
@@ -388,120 +357,101 @@ test("worker acknowledges webhook jobs after the durable requeue limit", async (
         },
       ],
     },
-    { DASHBOARD_LOCKS: locks },
+    {},
     { waitUntil: () => undefined },
   );
 
-  expect(abandoned).toBe(true);
+  expect(admissionAbandons).toHaveBeenCalledWith("delivery-terminal");
+  expect(processorAbandons).toHaveBeenCalledWith("delivery-terminal");
   expect(acknowledged).toBe(true);
   expect(retried).toBe(false);
 });
 
 test("processed webhook retries take over followers behind a stale matching lease", async () => {
   const now = new Date().toISOString();
-  const values = new Map<string, unknown>([
-    ["webhook-deliveries", [{ id: "delivery-leader", processedAt: Date.now() }]],
-    [
-      "webhook-active",
-      {
-        jobId: "job-leader",
-        leaseId: "stale-lease",
-        delivery: "delivery-leader",
-        expiresAt: Date.now() + 60_000,
-      },
-    ],
-    [
-      "webhook-pending",
-      [
-        {
-          key: "delivery:delivery-follower",
-          revision: "follower-revision",
-          job: {
-            kind: "github-webhook",
-            id: "job-follower",
-            event: "status",
-            delivery: "delivery-follower",
-            payload: {
-              repository: {
-                full_name: "owner/repo",
-                default_branch: "main",
-              },
-            },
-            createdAt: now,
-            attempts: 0,
-          },
-          deliveries: ["delivery-follower"],
-        },
-      ],
-    ],
-  ]);
-  const lock = new DashboardBuildLock(
-    {
-      storage: {
-        async get<T>(key: string) {
-          return values.get(key) as T | undefined;
-        },
-        async put<T>(key: string, value: T) {
-          values.set(key, value);
-        },
-        async delete(key: string) {
-          return values.delete(key);
+  const follower: StoredWebhookPending = {
+    key: "delivery:delivery-follower",
+    revision: "follower-revision",
+    job: {
+      kind: "github-webhook",
+      id: "job-follower",
+      event: "status",
+      delivery: "delivery-follower",
+      payload: {
+        repository: {
+          full_name: "owner/repo",
+          default_branch: "main",
         },
       },
-      async blockConcurrencyWhile<T>(callback: () => Promise<T>) {
-        return callback();
+      createdAt: now,
+      attempts: 0,
+    },
+    deliveries: ["delivery-follower"],
+  };
+  const objectName = webhookProcessorObjectName("owner");
+  const processor = testEnv({ DASHBOARD_CACHE: kvStore() }).WEBHOOK_PROCESSOR.getByName(objectName);
+  // The same object, as the runtime's own stub: only that one opens its storage to a test.
+  const storage = runtimeEnv.WEBHOOK_PROCESSOR.getByName(objectName);
+  // The leader's delivery is processed, but its earlier attempt still holds the lease, and a
+  // follower is pending behind it.
+  await runInDurableObject(storage, (_instance, state) => {
+    const sql = state.storage.sql;
+    sql.exec(
+      "INSERT INTO processed_deliveries (id, processed_at) VALUES (?, ?)",
+      "delivery-leader",
+      Date.now(),
+    );
+    sql.exec(
+      `INSERT INTO active_processing (id, job_id, lease_id, delivery, expires_at)
+       VALUES (1, ?, ?, ?, ?)`,
+      "job-leader",
+      "stale-lease",
+      "delivery-leader",
+      Date.now() + 60_000,
+    );
+    sql.exec(
+      "INSERT INTO pending_webhooks (position, value) VALUES (0, ?)",
+      JSON.stringify(follower),
+    );
+  });
+
+  const result = await processor.process({
+    kind: "github-webhook",
+    id: "job-leader",
+    event: "issues",
+    delivery: "delivery-leader",
+    payload: {
+      action: "opened",
+      repository: {
+        full_name: "owner/repo",
+        default_branch: "main",
       },
     },
-    { DASHBOARD_CACHE: kvStore() },
-  );
+    createdAt: now,
+    attempts: 1,
+  });
 
-  const response = await lock.fetch(
-    new Request("https://releasebar.internal/webhook/process", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        kind: "github-webhook",
-        id: "job-leader",
-        event: "issues",
-        delivery: "delivery-leader",
-        payload: {
-          action: "opened",
-          repository: {
-            full_name: "owner/repo",
-            default_branch: "main",
-          },
-        },
-        createdAt: now,
-        attempts: 1,
-      }),
-    }),
-  );
-
-  expect(response.status).toBe(202);
-  expect(values.get("webhook-pending")).toStrictEqual([]);
-  expect(values.has("webhook-active")).toBe(false);
-  expect(
-    (values.get("webhook-deliveries") as Array<{ id: string }>).some(
-      (delivery) => delivery.id === "delivery-follower",
-    ),
-  ).toBe(true);
+  expect(result).toStrictEqual({ state: "processed", coalesced: 1, remaining: false });
+  const stored = await runInDurableObject(storage, (_instance, state) => {
+    const sql = state.storage.sql;
+    return {
+      pending: sql.exec("SELECT value FROM pending_webhooks").toArray(),
+      active: sql.exec("SELECT lease_id FROM active_processing").toArray(),
+      processed: sql
+        .exec<{ id: string }>("SELECT id FROM processed_deliveries ORDER BY sequence")
+        .toArray()
+        .map((row) => row.id),
+    };
+  });
+  expect(stored.pending).toStrictEqual([]);
+  expect(stored.active).toStrictEqual([]);
+  expect(stored.processed).toStrictEqual(["delivery-leader", "delivery-follower"]);
 });
 
 test("worker retries terminal webhook jobs when durable abandonment fails", async () => {
   let acknowledged = false;
   let retryDelaySeconds: number | undefined;
-  const locks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async (request: Request) => {
-        const path = new URL(request.url).pathname;
-        if (path === "/webhook/process" || path === "/webhook/abandon") {
-          return new Response(null, { status: 500 });
-        }
-        return new Response(null, { status: 404 });
-      },
-    }),
-  };
+  objectsUnavailable(WebhookAdmission, WebhookProcessor);
 
   await worker.queue(
     {
@@ -532,7 +482,7 @@ test("worker retries terminal webhook jobs when durable abandonment fails", asyn
         } as never,
       ],
     },
-    { DASHBOARD_LOCKS: locks },
+    {},
     { waitUntil: () => undefined },
   );
 
@@ -544,17 +494,7 @@ test("worker quickly requeues busy webhook jobs without consuming their failure 
   let acknowledged = false;
   let queuedDelaySeconds: number | undefined;
   let queuedJob: { attempts?: number; delivery?: string } | undefined;
-  const locks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async (request: Request) => {
-        if (new URL(request.url).pathname === "/webhook/process") {
-          return new Response(null, { status: 409 });
-        }
-        return new Response(null, { status: 404 });
-      },
-    }),
-  };
+  vi.spyOn(WebhookProcessor.prototype, "process").mockResolvedValue({ state: "busy" });
 
   await (
     worker as unknown as {
@@ -601,7 +541,6 @@ test("worker quickly requeues busy webhook jobs without consuming their failure 
       ],
     },
     {
-      DASHBOARD_LOCKS: locks,
       REFRESH_QUEUE: {
         async send(
           job: { attempts?: number; delivery?: string },
@@ -622,21 +561,11 @@ test("worker quickly requeues busy webhook jobs without consuming their failure 
 });
 
 test("terminal webhook fanout clears admission and processing deduplication", async () => {
-  const abandoned: string[] = [];
   let acknowledged = false;
   let retried = false;
-  const locks = {
-    idFromName: (name: string) => name,
-    get: (id: string) => ({
-      fetch: async (request: Request) => {
-        if (new URL(request.url).pathname === "/webhook/abandon") {
-          abandoned.push(id);
-          return new Response(null, { status: 204 });
-        }
-        return new Response(null, { status: 404 });
-      },
-    }),
-  };
+  const admissionAbandons = vi.spyOn(WebhookAdmission.prototype, "abandon");
+  const processorAbandons = vi.spyOn(WebhookProcessor.prototype, "abandon");
+  const objectName = (object: unknown) => (object as { ctx: DurableObjectState }).ctx.id.name;
   const cache = {
     ...kvStore(),
     async list() {
@@ -680,13 +609,14 @@ test("terminal webhook fanout clears admission and processing deduplication", as
     },
     {
       DASHBOARD_CACHE: cache,
-      DASHBOARD_LOCKS: locks,
     },
     { waitUntil: () => undefined },
   );
 
-  expect(abandoned.sort()).toStrictEqual([
+  expect(admissionAbandons.mock.contexts.map(objectName)).toStrictEqual([
     "github-webhook-admission",
+  ]);
+  expect(processorAbandons.mock.contexts.map(objectName)).toStrictEqual([
     "github-webhook-process:owner",
   ]);
   expect(acknowledged).toBe(true);
@@ -696,12 +626,7 @@ test("terminal webhook fanout clears admission and processing deduplication", as
 test("terminal webhook fanout retries when durable abandonment fails", async () => {
   let acknowledged = false;
   let retried = false;
-  const locks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async () => new Response(null, { status: 500 }),
-    }),
-  };
+  objectsUnavailable();
   const cache = {
     ...kvStore(),
     async list() {
@@ -745,7 +670,6 @@ test("terminal webhook fanout retries when durable abandonment fails", async () 
     },
     {
       DASHBOARD_CACHE: cache,
-      DASHBOARD_LOCKS: locks,
     },
     { waitUntil: () => undefined },
   );

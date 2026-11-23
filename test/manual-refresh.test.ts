@@ -2,9 +2,9 @@ import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, RefreshJob } from "../src/types.ts";
 import {
-  DashboardBuildLock,
-  durableLocks,
   kvStore,
+  ownerMetadataMutator,
+  type TestEnv,
   testDashboard,
   testProject,
   worker,
@@ -129,18 +129,10 @@ test("worker manual dashboard refresh returns metadata before release hydration"
 test("manual refreshes merge owner removals observed during the build before caching", async () => {
   const originalFetch = globalThis.fetch;
   const cache = kvStore();
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] & {
-    GITHUB_TOKEN: string;
-    REFRESH_QUEUE: { send(): Promise<void> };
-  } = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
     GITHUB_TOKEN: "shared-token",
     REFRESH_QUEUE: { send: async () => undefined },
-  };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = {
-    idFromName: locks.idFromName,
-    get: locks.get,
   };
   let removalRecorded = false;
   globalThis.fetch = async (input) => {
@@ -151,25 +143,15 @@ test("manual refreshes merge owner removals observed during the build before cac
     if (url.pathname === "/graphql") {
       if (!removalRecorded) {
         await new Promise((resolve) => setTimeout(resolve, 2));
-        assert.ok(env.DASHBOARD_LOCKS);
-        const stub = env.DASHBOARD_LOCKS.get(
-          env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"),
-        );
-        const removed = await stub.fetch(
-          new Request("https://releasebar.internal/owner-metadata/mutate", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              owner: "owner",
-              mutation: {
-                kind: "remove",
-                fullName: "owner/repo",
-                observedAt: new Date().toISOString(),
-              },
-            }),
-          }),
-        );
-        expect(removed.ok).toBe(true);
+        const removed = await ownerMetadataMutator(
+          env,
+          "owner",
+        )({
+          kind: "remove",
+          fullName: "owner/repo",
+          observedAt: new Date().toISOString(),
+        });
+        assert(removed);
         removalRecorded = true;
       }
       return Response.json({

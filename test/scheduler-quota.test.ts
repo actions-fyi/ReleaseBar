@@ -3,6 +3,7 @@ import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
   kvStore,
+  objectsUnavailable,
   signedJson,
   testDashboard,
   testProject,
@@ -149,18 +150,12 @@ test("worker clears fallback reservations after active-job scans fail", async ()
       return backingCache.list(options);
     },
   };
-  const unavailableLocks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async () => new Response(null, { status: 500 }),
-    }),
-  };
+  objectsUnavailable();
   const sentJobs: RefreshJob[] = [];
   const env = {
     ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
     DASHBOARD_CACHE: cache,
-    DASHBOARD_LOCKS: unavailableLocks,
     REFRESH_QUEUE: {
       async send(job: RefreshJob) {
         sentJobs.push(job);
@@ -221,12 +216,7 @@ test("worker scheduler falls back when the reservation Durable Object is unavail
     [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
   });
   const sentJobs: RefreshJob[] = [];
-  const unavailableLocks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async () => new Response(null, { status: 500 }),
-    }),
-  };
+  objectsUnavailable();
 
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler/run", {
@@ -237,7 +227,6 @@ test("worker scheduler falls back when the reservation Durable Object is unavail
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
       DASHBOARD_CACHE: cache,
-      DASHBOARD_LOCKS: unavailableLocks,
       REFRESH_QUEUE: {
         async send(job: RefreshJob) {
           sentJobs.push(job);

@@ -153,68 +153,54 @@ export async function beginProgressGeneration(env: Env, key: string): Promise<st
   return progressGenerationStartedAt(await readProgressTombstone(env, key));
 }
 
-export async function durableProgressResponse(
+// The progress the dashboard's coordinator object holds. Null when the object can't be reached:
+// the cache then stands in for it.
+async function readDurableProgress(
   env: Env,
   key: string,
-  pathname: "get" | "put" | "delete",
-  progress?: StoredBuildProgress,
-): Promise<Response | null> {
-  if (!env.DASHBOARD_LOCKS) return null;
+): Promise<{ progress: StoredBuildProgress | null } | null> {
   try {
-    const id = env.DASHBOARD_LOCKS.idFromName(key);
-    return await env.DASHBOARD_LOCKS.get(id).fetch(
-      new Request(`https://releasebar.internal/progress/${pathname}`, {
-        method: "POST",
-        ...(progress ? { body: JSON.stringify(progress) } : {}),
-      }),
-    );
+    const progress = await env.BUILD_COORDINATOR.getByName(key).progress();
+    return { progress: isStoredBuildProgress(progress) ? progress : null };
   } catch {
     return null;
   }
 }
 
-export function durableProgressSupported(response: Response | null): response is Response {
-  return response?.headers.get("x-releasebar-progress") === "durable";
+async function deleteDurableProgress(env: Env, key: string): Promise<void> {
+  try {
+    await env.BUILD_COORDINATOR.getByName(key).deleteProgress();
+  } catch {
+    // The tombstone in the cache still hides the progress.
+  }
 }
 
 export async function readProgress(env: Env, key: string): Promise<StoredBuildProgress | null> {
-  const [response, fallbackStored, storedTombstone] = await Promise.all([
-    durableProgressResponse(env, key, "get"),
+  const [durable, fallbackStored, storedTombstone] = await Promise.all([
+    readDurableProgress(env, key),
     readFallbackProgress(env, key),
     readProgressTombstone(env, key),
   ]);
-  const durable = durableProgressSupported(response);
   const fallback = isStoredBuildProgress(fallbackStored) ? fallbackStored : null;
   const tombstone = latestProgressTombstone(fallbackStored, storedTombstone);
-  let durableProgress: StoredBuildProgress | null = null;
-  if (durable && response.ok) {
-    try {
-      const progress = await response.json();
-      if (isStoredBuildProgress(progress)) {
-        durableProgress = progress;
-      }
-    } catch {
-      durableProgress = null;
-    }
-  }
+  const durableProgress = durable?.progress ?? null;
 
   const markedFallback = fallback?.durableFallback ? fallback : null;
-  const authoritativeDurable = durable && response.ok;
   const progress =
     durableProgress &&
     (!markedFallback || safeIso(durableProgress.updatedAt) >= safeIso(markedFallback.updatedAt))
       ? durableProgress
-      : (markedFallback ?? (!authoritativeDurable ? fallback : null));
+      : (markedFallback ?? (!durable ? fallback : null));
   if (!progress) return null;
   if (progressCleared(progress, tombstone)) {
     if (progress === durableProgress) {
-      await durableProgressResponse(env, key, "delete");
+      await deleteDurableProgress(env, key);
     }
     return null;
   }
   if (storedBuildProgressExpired(progress)) {
     if (progress === durableProgress) {
-      await durableProgressResponse(env, key, "delete");
+      await deleteDurableProgress(env, key);
     }
     await env.DASHBOARD_CACHE.delete(progressKey(key));
     return null;
@@ -229,10 +215,12 @@ export async function writeProgress(
 ): Promise<void> {
   const tombstone = await readProgressTombstone(env, key);
   if (progressCleared(progress, tombstone)) return;
-  const response = await durableProgressResponse(env, key, "put", progress);
-  if (durableProgressSupported(response) && response.ok) {
+  try {
+    await env.BUILD_COORDINATOR.getByName(key).putProgress(progress);
     await env.DASHBOARD_CACHE.delete(progressKey(key)).catch(() => undefined);
     return;
+  } catch {
+    // The object can't be reached: the cache keeps the progress, marked as standing in for it.
   }
   await env.DASHBOARD_CACHE.put(
     progressKey(key),
@@ -257,19 +245,7 @@ export async function writeProgressTombstone(
 }
 
 export async function deleteProgress(env: Env, key: string): Promise<StoredBuildProgressTombstone> {
-  if (env.DASHBOARD_LOCKS) {
-    const response = await durableProgressResponse(env, key, "delete");
-    if (!response) {
-      return writeProgressTombstone(env, key);
-    }
-    if (response.headers.get("x-releasebar-progress") === "durable") {
-      if (!response.ok) {
-        return writeProgressTombstone(env, key);
-      }
-    } else if (!response.ok && response.status !== 404 && response.status !== 405) {
-      return writeProgressTombstone(env, key);
-    }
-  }
+  await deleteDurableProgress(env, key);
   return writeProgressTombstone(env, key);
 }
 

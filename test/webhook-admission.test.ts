@@ -1,11 +1,14 @@
 import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.ts";
+import { durableRefreshTargetIndexLimit, refreshTargetSourceLimit } from "../worker/config.ts";
 import {
-  DashboardBuildLock,
-  durableLocks,
+  fillTargetIndex,
   kvStore,
+  targetIndex,
   testDashboard,
+  type TestEnv,
+  testEnv,
   testProject,
   webhookSignature,
   worker,
@@ -118,7 +121,7 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
     JSON.stringify(degradedRepoTarget.key),
   );
   const queued: Array<RefreshJob | QueuedWebhook | QueuedFanout> = [];
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
     GITHUB_WEBHOOK_SECRET: secret,
     REFRESH_QUEUE: {
@@ -127,14 +130,7 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
       },
     },
   };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = {
-    idFromName: locks.idFromName,
-    get: locks.get,
-  };
-  const durableOwnerIndex = env.DASHBOARD_LOCKS.get(
-    env.DASHBOARD_LOCKS.idFromName(`refresh-target-index:owner:${owner}`),
-  );
+  const durableOwnerIndex = targetIndex(env, "owner", owner);
   for (const [index, target] of targets.entries()) {
     const indexedTarget =
       index === fallbackTargetIndex
@@ -143,29 +139,15 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
             lastSeenAt: new Date(Date.parse(now) - 2 * 24 * 60 * 60 * 1_000).toISOString(),
           }
         : target;
-    const indexed = await durableOwnerIndex.fetch(
-      new Request("https://releasebar.internal/target-index/upsert", {
-        method: "POST",
-        body: JSON.stringify(indexedTarget),
-      }),
-    );
-    expect(indexed.status).toBe(204);
+    expect(await durableOwnerIndex.upsert(indexedTarget)).toBe("created");
   }
   await cache.delete(`refresh:target:v1:${targets[durableOnlyTargetIndex].key}`);
-  const durableRepoIndex = env.DASHBOARD_LOCKS.get(
-    env.DASHBOARD_LOCKS.idFromName(`refresh-target-index:repo:${owner}/repo`),
-  );
+  const durableRepoIndex = targetIndex(env, "repo", `${owner}/repo`);
   const staleRepoDuplicate = {
     ...targets[newestTargetIndex],
     lastSeenAt: new Date(Date.parse(now) - 2 * 24 * 60 * 60 * 1_000).toISOString(),
   };
-  const duplicate = await durableRepoIndex.fetch(
-    new Request("https://releasebar.internal/target-index/upsert", {
-      method: "POST",
-      body: JSON.stringify(staleRepoDuplicate),
-    }),
-  );
-  expect(duplicate.status).toBe(204);
+  expect(await durableRepoIndex.upsert(staleRepoDuplicate)).toBe("created");
   const payload = {
     ref: "refs/heads/main",
     after: "abcdef1234567890",
@@ -260,15 +242,7 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
   expect(fanoutRetryDelaySeconds).toBe(20);
   await cache.delete("github:budget:v1:shared:_");
   for (const job of initialDashboardJobs) {
-    const releaseResponse: Response = await env.DASHBOARD_LOCKS.get(
-      env.DASHBOARD_LOCKS.idFromName(job.targetKey),
-    ).fetch(
-      new Request("https://releasebar.internal/job/release", {
-        method: "POST",
-        body: JSON.stringify({ jobId: job.id }),
-      }),
-    );
-    expect(releaseResponse.status).toBe(204);
+    await testEnv(env).BUILD_COORDINATOR.getByName(job.targetKey).releaseJob(job.id, false);
   }
   const movedTarget = targets[movedTargetIndex];
   const newestTarget = targets[newestTargetIndex];
@@ -286,16 +260,11 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
   assert.ok(firstReleaseTarget);
   assert.ok(secondTarget);
   assert.ok(lastTarget);
-  const moved = await durableOwnerIndex.fetch(
-    new Request("https://releasebar.internal/target-index/upsert", {
-      method: "POST",
-      body: JSON.stringify({
-        ...movedTarget,
-        lastSeenAt: new Date(Date.parse(now) + 4_000).toISOString(),
-      }),
-    }),
-  );
-  expect(moved.status).toBe(204);
+  const moved = await durableOwnerIndex.upsert({
+    ...movedTarget,
+    lastSeenAt: new Date(Date.parse(now) + 4_000).toISOString(),
+  });
+  expect(moved).toBe("updated");
   const rebuiltPrioritizedCache = JSON.stringify(testDashboard(owner, [project]));
   await cache.put(newestTarget.key, rebuiltPrioritizedCache);
   const pageSizes = [
@@ -348,16 +317,11 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
   expect(dashboardJobs[0]?.targetKey).toBe(newestTarget.key);
   const firstJob = dashboardJobs.find((job) => job.targetKey === firstReleaseTarget.key);
   assert.ok(firstJob);
-  const firstTargetStub = env.DASHBOARD_LOCKS.get(
-    env.DASHBOARD_LOCKS.idFromName(firstReleaseTarget.key),
-  );
-  const release = await firstTargetStub.fetch(
-    new Request("https://releasebar.internal/job/release", {
-      method: "POST",
-      body: JSON.stringify({ jobId: firstJob.id, consumeDirty: true }),
-    }),
-  );
-  expect(release.status).toBe(204);
+  // No webhook marked the target dirty while its job ran.
+  const dirty = await testEnv(env)
+    .BUILD_COORDINATOR.getByName(firstReleaseTarget.key)
+    .releaseJob(firstJob.id, true);
+  expect(dirty).toBe(null);
   expect(await cache.get(staleTarget.key)).toBe(null);
   expect(await cache.get(secondTarget.key)).not.toBe(null);
   expect(await cache.get(firstReleaseTarget.key)).toBe(null);
@@ -369,65 +333,43 @@ test("GitHub push webhooks prioritize recent targets beyond the durable hot-cach
 test("durable target indexes cap persistent variants per source", async () => {
   const now = new Date().toISOString();
   const cache = kvStore();
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
-  const locks = durableLocks(env);
-  const stub = locks.get(locks.idFromName("refresh-target-index:owner:owner"));
-  for (let index = 0; index < 512; index += 1) {
-    const response = await stub.fetch(
-      new Request("https://releasebar.internal/target-index/upsert", {
-        method: "POST",
-        body: JSON.stringify({
-          key: `dashboard:v6:owner:variant-${index}`,
-          kind: "dashboard",
-          owner: "owner",
-          owners: ["owner"],
-          repos: [],
-          includeReleaseData: true,
-          path: `/owner?variant=${index}`,
-          priority: 60,
-          lastSeenAt: now,
-          lastAttemptAt: null,
-          lastSuccessAt: null,
-          nextDueAt: now,
-          failureCount: 0,
-        } satisfies RefreshTarget),
-      }),
-    );
-    expect(response.status).toBe(204);
+  const index = targetIndex(env, "owner", "owner");
+  const variant = (name: string): RefreshTarget => ({
+    key: `dashboard:v6:owner:variant-${name}`,
+    kind: "dashboard",
+    owner: "owner",
+    owners: ["owner"],
+    repos: [],
+    includeReleaseData: true,
+    path: `/owner?variant=${name}`,
+    priority: 60,
+    lastSeenAt: now,
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+    nextDueAt: now,
+    failureCount: 0,
+  });
+  for (let count = 0; count < refreshTargetSourceLimit; count += 1) {
+    expect(await index.upsert(variant(String(count)))).toBe("created");
   }
-  const rejected = await stub.fetch(
-    new Request("https://releasebar.internal/target-index/upsert", {
-      method: "POST",
-      body: JSON.stringify({
-        key: "dashboard:v6:owner:variant-overflow",
-        kind: "dashboard",
-        owner: "owner",
-        owners: ["owner"],
-        repos: [],
-        includeReleaseData: true,
-        path: "/owner?variant=overflow",
-        priority: 60,
-        lastSeenAt: now,
-        lastAttemptAt: null,
-        lastSuccessAt: null,
-        nextDueAt: now,
-        failureCount: 0,
-      } satisfies RefreshTarget),
-    }),
-  );
-  expect(rejected.status).toBe(429);
+  expect(await index.upsert(variant("overflow"))).toBe("full");
+  // A target the index holds already is still updated, and removing one makes room.
+  expect(await index.upsert(variant("0"))).toBe("updated");
+  await index.remove(variant("1").key);
+  expect(await index.upsert(variant("overflow"))).toBe("created");
+  expect((await index.list()).length).toBe(durableRefreshTargetIndexLimit);
 });
 
 test("durable target indexes reject oversized entries and serialized source state", async () => {
   const now = new Date().toISOString();
   const cache = kvStore();
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
-  const locks = durableLocks(env);
-  const stub = locks.get(locks.idFromName("refresh-target-index:owner:owner"));
+  const index = targetIndex(env, "owner", "owner");
   const target = (index: number, padding: number): RefreshTarget => ({
     key: `dashboard:v6:owner:large-${index}`,
     kind: "dashboard",
@@ -443,26 +385,15 @@ test("durable target indexes reject oversized entries and serialized source stat
     nextDueAt: now,
     failureCount: 0,
   });
-  const oversized = await stub.fetch(
-    new Request("https://releasebar.internal/target-index/upsert", {
-      method: "POST",
-      body: JSON.stringify(target(0, 9 * 1024)),
-    }),
-  );
-  expect(oversized.status).toBe(413);
+  expect(await index.upsert(target(0, 9 * 1024))).toBe("too-large");
 
   let accepted = 0;
   let rejected = 0;
-  for (let index = 1; index <= 512; index += 1) {
-    const response = await stub.fetch(
-      new Request("https://releasebar.internal/target-index/upsert", {
-        method: "POST",
-        body: JSON.stringify(target(index, 4 * 1024)),
-      }),
-    );
-    if (response.status === 204) accepted += 1;
-    if (response.status === 429) {
-      rejected = index;
+  for (let count = 1; count <= 512; count += 1) {
+    const result = await index.upsert(target(count, 4 * 1024));
+    if (result === "created") accepted += 1;
+    if (result === "full") {
+      rejected = count;
       break;
     }
   }
@@ -493,11 +424,9 @@ test("repo-only refresh targets do not consume a shared custom-owner index", asy
     ),
     [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
   });
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = locks;
   const waits: Promise<unknown>[] = [];
 
   await worker.scheduled({ cron: "0 * * * *" } as never, env, {
@@ -505,18 +434,8 @@ test("repo-only refresh targets do not consume a shared custom-owner index", asy
   });
   await Promise.all(waits);
 
-  const customIndex = await locks.get(locks.idFromName("refresh-target-index:owner:custom")).fetch(
-    new Request("https://releasebar.internal/target-index/list", {
-      method: "POST",
-    }),
-  );
-  const repoIndex = await locks.get(locks.idFromName("refresh-target-index:repo:owner/repo")).fetch(
-    new Request("https://releasebar.internal/target-index/list", {
-      method: "POST",
-    }),
-  );
-  expect(await customIndex.json()).toStrictEqual([]);
-  expect(((await repoIndex.json()) as RefreshTarget[])[0]?.key).toBe(target.key);
+  expect(await targetIndex(env, "owner", "custom").list()).toStrictEqual([]);
+  expect((await targetIndex(env, "repo", "owner/repo").list())[0]?.key).toBe(target.key);
 });
 
 test("multi-source target admission rolls back newly-created durable indexes", async () => {
@@ -542,26 +461,11 @@ test("multi-source target admission rolls back newly-created durable indexes", a
     ),
     [`refresh:target:v1:${target.key}`]: JSON.stringify(target),
   });
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
-  const backing = durableLocks(env);
-  const locks = {
-    idFromName: backing.idFromName,
-    get(id: string) {
-      if (id === "refresh-target-index:repo:other/repo") {
-        return {
-          async fetch(request: Request) {
-            return new URL(request.url).pathname === "/target-index/upsert"
-              ? new Response(null, { status: 429 })
-              : new Response(null, { status: 204 });
-          },
-        };
-      }
-      return backing.get(id);
-    },
-  };
-  env.DASHBOARD_LOCKS = locks;
+  // The repository's index is full; the owner's has room.
+  await fillTargetIndex(env, "repo", "other/repo");
   const waits: Promise<unknown>[] = [];
 
   await worker.scheduled({ cron: "0 * * * *" } as never, env, {
@@ -569,14 +473,7 @@ test("multi-source target admission rolls back newly-created durable indexes", a
   });
   await Promise.all(waits);
 
-  const ownerIndex = await backing
-    .get(backing.idFromName("refresh-target-index:owner:owner"))
-    .fetch(
-      new Request("https://releasebar.internal/target-index/list", {
-        method: "POST",
-      }),
-    );
-  expect(await ownerIndex.json()).toStrictEqual([]);
+  expect(await targetIndex(env, "owner", "owner").list()).toStrictEqual([]);
   expect(await cache.get(`refresh:target:v1:${target.key}`)).toBe(null);
 });
 
@@ -609,7 +506,7 @@ test("rejected target admission does not persist or queue the target", async () 
     [`owner:v1:${owner}`]: JSON.stringify({ type: "user", login: owner }),
   });
   const queued: unknown[] = [];
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
     REFRESH_QUEUE: {
       async send(message) {
@@ -617,22 +514,7 @@ test("rejected target admission does not persist or queue the target", async () 
       },
     },
   };
-  const backing = durableLocks(env);
-  env.DASHBOARD_LOCKS = {
-    idFromName: backing.idFromName,
-    get(id: string) {
-      if (id === `refresh-target-index:owner:${owner}`) {
-        return {
-          async fetch(request: Request) {
-            return new URL(request.url).pathname === "/target-index/upsert"
-              ? new Response(null, { status: 429 })
-              : new Response(null, { status: 204 });
-          },
-        };
-      }
-      return backing.get(id);
-    },
-  };
+  await fillTargetIndex(env, "owner", owner);
   const waits: Promise<unknown>[] = [];
   const response = await worker.fetch(new Request(`https://release.bar/api/${owner}`), env, {
     waitUntil: (promise) => waits.push(promise),
@@ -685,7 +567,7 @@ test("archive webhooks invalidate caches when owner snapshots omit the repositor
     }),
   });
   const queued: unknown[] = [];
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
     GITHUB_WEBHOOK_SECRET: secret,
     GITHUB_TOKEN: "shared-token",
@@ -694,11 +576,6 @@ test("archive webhooks invalidate caches when owner snapshots omit the repositor
         queued.push(message);
       },
     },
-  };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = {
-    idFromName: locks.idFromName,
-    get: locks.get,
   };
   const payload = {
     action: "archived",

@@ -1,8 +1,11 @@
 import { generateKeyPairSync } from "node:crypto";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
+  BuildCoordinator,
+  buildLocksHeld,
+  forgetRefreshTargetState,
   crawlerRequest,
   kvStore,
   refreshAuditEvents,
@@ -64,26 +67,8 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
       await backingCache.put(storageKey, value);
     },
   };
-  let released = false;
-  const busyLocks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async (request: Request) => {
-        const path = new URL(request.url).pathname;
-        if (path === "/job/reserve") {
-          return new Response(null, { status: 204 });
-        }
-        if (path === "/job/release") {
-          released = true;
-          return new Response(null, { status: 204 });
-        }
-        if (path === "/acquire") {
-          return new Response(null, { status: 409 });
-        }
-        return new Response(null, { status: 204 });
-      },
-    }),
-  };
+  buildLocksHeld();
+  const releases = vi.spyOn(BuildCoordinator.prototype, "releaseJob");
   let retryDelaySeconds: number | undefined;
 
   const deliver = async (attempts: number) =>
@@ -117,20 +102,20 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
           },
         ],
       },
-      { DASHBOARD_CACHE: cache, DASHBOARD_LOCKS: busyLocks },
+      { DASHBOARD_CACHE: cache },
       { waitUntil: () => undefined },
     );
 
   await deliver(9);
   expect(retryDelaySeconds).toBe(60);
-  expect(released).toBe(false);
+  expect(releases).not.toHaveBeenCalled();
   const retrying = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
   expect(retrying.status).toBe("queued");
   expect(retrying.error).toBe("dashboard locked");
 
   await deliver(10);
   expect(retryDelaySeconds).toBe(60);
-  expect(released).toBe(false);
+  expect(releases).not.toHaveBeenCalled();
   const finalRetry = JSON.parse(
     (await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}",
   ) as RefreshJob;
@@ -139,7 +124,7 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
 
   await deliver(11);
   expect(retryDelaySeconds).toBe(60);
-  expect(released).toBe(true);
+  expect(releases).toHaveBeenCalled();
   const updated = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
   expect(updated.status).toBe("failed");
   expect(updated.error ?? "").toMatch(/after 11 Queue attempts/);
@@ -165,7 +150,6 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
       new Request("https://release.bar/api/openclaw"),
       {
         DASHBOARD_CACHE: cache,
-        DASHBOARD_LOCKS: busyLocks,
         REFRESH_QUEUE: {
           async send(sent: RefreshJob) {
             sentJobs.push(sent);
@@ -183,7 +167,6 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
       new Request("https://release.bar/api/openclaw"),
       {
         DASHBOARD_CACHE: cache,
-        DASHBOARD_LOCKS: busyLocks,
         REFRESH_QUEUE: {
           async send(sent: RefreshJob) {
             sentJobs.push(sent);
@@ -203,6 +186,7 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
       `refresh:target:v1:${target.key}`,
       JSON.stringify({ ...failedTarget, terminalBackoffUntil: null }),
     );
+    await forgetRefreshTargetState(target.key);
     await cache.put(
       key,
       JSON.stringify(testDashboard("openclaw", [testProject({ owner: "openclaw", name: "repo" })])),
@@ -211,7 +195,6 @@ test("worker terminalizes exhausted refresh retries before dead-lettering", asyn
       new Request("https://release.bar/api/openclaw"),
       {
         DASHBOARD_CACHE: cache,
-        DASHBOARD_LOCKS: busyLocks,
         REFRESH_QUEUE: {
           async send(sent: RefreshJob) {
             sentJobs.push(sent);
@@ -276,23 +259,7 @@ test("worker terminalizes final-delivery queue handler failures", async () => {
       return backingCache.get(key);
     },
   };
-  let released = false;
-  const locks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async (request: Request) => {
-        const path = new URL(request.url).pathname;
-        if (path === "/job/reserve") {
-          return new Response(null, { status: 204 });
-        }
-        if (path === "/job/release") {
-          released = true;
-          return new Response(null, { status: 204 });
-        }
-        return new Response(null, { status: 404 });
-      },
-    }),
-  };
+  const releases = vi.spyOn(BuildCoordinator.prototype, "releaseJob");
   let retryDelaySeconds: number | undefined;
 
   await (
@@ -325,12 +292,12 @@ test("worker terminalizes final-delivery queue handler failures", async () => {
         },
       ],
     },
-    { DASHBOARD_CACHE: cache, DASHBOARD_LOCKS: locks },
+    { DASHBOARD_CACHE: cache },
     { waitUntil: () => undefined },
   );
 
   expect(retryDelaySeconds).toBe(300);
-  expect(released).toBe(true);
+  expect(releases).toHaveBeenCalled();
   const stored = JSON.parse((await cache.get(`refresh:job:v1:${job.id}`)) ?? "{}") as RefreshJob;
   expect(stored.status).toBe("failed");
   expect(stored.attempts).toBe(11);

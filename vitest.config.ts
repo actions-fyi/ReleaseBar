@@ -31,6 +31,7 @@ export default defineConfig({
           name: "workers",
           include: [`${tests}/*.test.ts`],
           exclude: nodeTests,
+          setupFiles: [`${tests}/reset-storage.ts`],
         },
       },
       {

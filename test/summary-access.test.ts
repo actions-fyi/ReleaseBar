@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import type {
   OwnerActivityPayload,
@@ -6,6 +7,7 @@ import type {
   RepoDetailPayload,
 } from "../src/types.ts";
 import { activitySummaryPromptVersion } from "../worker/config.ts";
+import { summaryQuotaObjectName } from "../worker/runtime.ts";
 import { summaryRateLimitSettings, summaryRateLimits } from "../worker/summary-limits.ts";
 import {
   summaryGlobalLimitMessage,
@@ -15,7 +17,6 @@ import {
 import {
   claudeJson,
   crawlerRequest,
-  durableLocks,
   kvStore,
   signedIn,
   testProject,
@@ -143,13 +144,14 @@ async function withModel(run: (modelCalls: () => number) => Promise<void>): Prom
 }
 
 type Cache = ReturnType<typeof kvStore>;
-type Locks = ReturnType<typeof durableLocks>;
+// Worker vars, such as the summary limits.
+type Vars = Record<string, string>;
 
 // Requests a page as a signed-in user and waits for its background work. Returns the summary
 // the response showed.
 async function summaryFor(
   cache: Cache,
-  locks: Locks,
+  vars: Vars,
   userId: number,
   url: string,
 ): Promise<{ status: number; summary: OwnerActivitySummary | undefined }> {
@@ -162,7 +164,7 @@ async function summaryFor(
       GITHUB_TOKEN: "shared-token",
       ANTHROPIC_API_KEY: "claude-key",
       ...user.env,
-      DASHBOARD_LOCKS: locks,
+      ...vars,
     },
     { waitUntil: (promise) => queued.push(promise) },
   );
@@ -246,24 +248,24 @@ test("anonymous requests get a cached summary", async () => {
 
 test("a signed-in user generates summaries up to the hourly limit", async () => {
   const cache = twoOwners();
-  const locks = durableLocks({ DASHBOARD_CACHE: cache, SUMMARY_USER_HOURLY_LIMIT: "1" });
+  const limits = { SUMMARY_USER_HOURLY_LIMIT: "1" };
   await withModel(async (modelCalls) => {
-    const first = await summaryFor(cache, locks, 1, ownerActivityUrl("acme"));
+    const first = await summaryFor(cache, limits, 1, ownerActivityUrl("acme"));
     expect(first.status).toBe(httpAccepted);
     expect(first.summary?.state).toBe("warming");
     expect(modelCalls()).toBe(1);
     // The generated summary is cached, and reading it again costs nothing.
-    const again = await summaryFor(cache, locks, 1, ownerActivityUrl("acme"));
+    const again = await summaryFor(cache, limits, 1, ownerActivityUrl("acme"));
     expect(again.summary?.text).toBe("@acme improved summaries.");
 
-    const refused = await summaryFor(cache, locks, 1, ownerActivityUrl("beta"));
+    const refused = await summaryFor(cache, limits, 1, ownerActivityUrl("beta"));
     expect(refused.status).toBe(httpOk);
     expect(refused.summary?.state).toBe("unavailable");
     expect(refused.summary?.message).toBe(summaryUserLimitMessage);
     expect(modelCalls()).toBe(1);
 
     // The limit is per user.
-    const other = await summaryFor(cache, locks, 2, ownerActivityUrl("beta"));
+    const other = await summaryFor(cache, limits, 2, ownerActivityUrl("beta"));
     expect(other.summary?.state).toBe("warming");
     expect(modelCalls()).toBe(2);
   });
@@ -271,10 +273,10 @@ test("a signed-in user generates summaries up to the hourly limit", async () => 
 
 test("the daily limit for all users stops further summaries", async () => {
   const cache = twoOwners();
-  const locks = durableLocks({ DASHBOARD_CACHE: cache, SUMMARY_GLOBAL_DAILY_LIMIT: "1" });
+  const limits = { SUMMARY_GLOBAL_DAILY_LIMIT: "1" };
   await withModel(async (modelCalls) => {
-    await summaryFor(cache, locks, 1, ownerActivityUrl("acme"));
-    const refused = await summaryFor(cache, locks, 2, ownerActivityUrl("beta"));
+    await summaryFor(cache, limits, 1, ownerActivityUrl("acme"));
+    const refused = await summaryFor(cache, limits, 2, ownerActivityUrl("beta"));
     expect(refused.summary?.state).toBe("unavailable");
     expect(refused.summary?.message).toBe(summaryGlobalLimitMessage);
     expect(modelCalls()).toBe(1);
@@ -284,15 +286,15 @@ test("the daily limit for all users stops further summaries", async () => {
 test("a summary that never calls the model is not counted", async () => {
   const cache = twoOwners();
   await cache.put(repoDetailKey, JSON.stringify(repoDetail()));
-  const locks = durableLocks({ DASHBOARD_CACHE: cache, SUMMARY_USER_HOURLY_LIMIT: "1" });
+  const limits = { SUMMARY_USER_HOURLY_LIMIT: "1" };
   await withModel(async (modelCalls) => {
     // GitHub returns no commit titles, so the release summary ends without the model.
-    await summaryFor(cache, locks, 1, `${origin}/api/repos/acme/releasebar`);
+    await summaryFor(cache, limits, 1, `${origin}/api/repos/acme/releasebar`);
     const stored = JSON.parse((await cache.get(repoDetailKey)) ?? "{}") as RepoDetailPayload;
     expect(stored.releaseSummary?.message).toBe("No commit titles were available to summarize.");
     expect(modelCalls()).toBe(0);
 
-    const next = await summaryFor(cache, locks, 1, ownerActivityUrl("acme"));
+    const next = await summaryFor(cache, limits, 1, ownerActivityUrl("acme"));
     expect(next.summary?.state).toBe("warming");
     expect(modelCalls()).toBe(1);
   });
@@ -301,16 +303,10 @@ test("a summary that never calls the model is not counted", async () => {
 test("the summary quota counts atomically and starts over each hour", async () => {
   const limit = 3;
   const attempts = 10;
-  const quota = durableLocks({ SUMMARY_USER_HOURLY_LIMIT: String(limit) }).get("summary-quota");
-  const ask = async (reserve: boolean): Promise<boolean> => {
-    const response = await quota.fetch(
-      new Request("https://releasebar.internal/summary-quota", {
-        method: "POST",
-        body: JSON.stringify({ userId: 1, reserve }),
-      }),
-    );
-    return ((await response.json()) as { allowed: boolean }).allowed;
-  };
+  const limits = summaryRateLimits({ SUMMARY_USER_HOURLY_LIMIT: String(limit) });
+  const quota = env.SUMMARY_QUOTA.getByName(summaryQuotaObjectName);
+  const ask = async (reserve: boolean): Promise<boolean> =>
+    (await quota.check(1, limits, reserve)).allowed;
   const reserved = await Promise.all(Array.from({ length: attempts }, () => ask(true)));
   expect(reserved.filter(Boolean).length).toBe(limit);
   expect(await ask(false)).toBe(false);

@@ -2,9 +2,9 @@ import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, Project, RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
-  DashboardBuildLock,
-  durableLocks,
   kvStore,
+  ownerMetadataMutator,
+  type TestEnv,
   testDashboard,
   testProject,
   webhookSignature,
@@ -18,25 +18,10 @@ test("older owner count refreshes cannot replace newer snapshots", async () => {
   const repo = testProject({ owner: "owner", name: "repo", openIssues: 1 });
   const sibling = testProject({ owner: "owner", name: "sibling", openIssues: 2 });
   const cache = kvStore();
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = {
-    idFromName: locks.idFromName,
-    get: locks.get,
-  };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
-  const mutate = async (mutation: Record<string, unknown>) => {
-    const response = await stub.fetch(
-      new Request("https://releasebar.internal/owner-metadata/mutate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ owner: "owner", mutation }),
-      }),
-    );
-    expect(response.ok || response.status === 204).toBe(true);
-  };
+  const mutate = ownerMetadataMutator(env, "owner");
 
   await mutate({
     kind: "merge",
@@ -114,25 +99,10 @@ test("older complete count scans preserve newer repository metadata", async () =
   const metadataAt = "2026-06-11T04:00:00Z";
   const project = testProject({ owner: "owner", name: "repo", updatedAt: metadataAt });
   const cache = kvStore();
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = {
-    idFromName: locks.idFromName,
-    get: locks.get,
-  };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
-  const mutate = async (mutation: Record<string, unknown>) => {
-    const response = await stub.fetch(
-      new Request("https://releasebar.internal/owner-metadata/mutate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ owner: "owner", mutation }),
-      }),
-    );
-    expect(response.ok || response.status === 204).toBe(true);
-  };
+  const mutate = ownerMetadataMutator(env, "owner");
 
   await mutate({
     kind: "merge",
@@ -175,25 +145,10 @@ test("newer metadata merges preserve counts without restoring stale repository s
     updatedAt: countsAt,
   });
   const cache = kvStore();
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = {
-    idFromName: locks.idFromName,
-    get: locks.get,
-  };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
-  const mutate = async (mutation: Record<string, unknown>) => {
-    const response = await stub.fetch(
-      new Request("https://releasebar.internal/owner-metadata/mutate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ owner: "owner", mutation }),
-      }),
-    );
-    expect(response.ok || response.status === 204).toBe(true);
-  };
+  const mutate = ownerMetadataMutator(env, "owner");
 
   await mutate({
     kind: "merge",
@@ -272,25 +227,10 @@ test("older dashboard builds cannot restore repositories removed by newer counts
   const countsUpdatedAt = "2026-06-11T03:00:00Z";
   const project = testProject({ owner: "owner", name: "repo" });
   const cache = kvStore();
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = {
-    idFromName: locks.idFromName,
-    get: locks.get,
-  };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
-  const mutate = async (mutation: Record<string, unknown>) => {
-    const response = await stub.fetch(
-      new Request("https://releasebar.internal/owner-metadata/mutate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ owner: "owner", mutation }),
-      }),
-    );
-    expect(response.ok || response.status === 204).toBe(true);
-  };
+  const mutate = ownerMetadataMutator(env, "owner");
 
   await mutate({
     kind: "merge",
@@ -369,25 +309,10 @@ test("complete metadata scans tombstone absent repositories across cached varian
       projects: [repo, sibling],
     }),
   });
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = {
-    idFromName: locks.idFromName,
-    get: locks.get,
-  };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
-  const mutate = async (mutation: Record<string, unknown>) => {
-    const response = await stub.fetch(
-      new Request("https://releasebar.internal/owner-metadata/mutate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ owner: "owner", mutation }),
-      }),
-    );
-    expect(response.ok || response.status === 204).toBe(true);
-  };
+  const mutate = ownerMetadataMutator(env, "owner");
 
   await mutate({
     kind: "merge",
@@ -438,25 +363,10 @@ test("stale repository removals cannot hide newer public metadata", async () => 
     updatedAt: publicAt,
   });
   const cache = kvStore();
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = {
-    idFromName: locks.idFromName,
-    get: locks.get,
-  };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
-  const mutate = async (mutation: Record<string, unknown>) => {
-    const response = await stub.fetch(
-      new Request("https://releasebar.internal/owner-metadata/mutate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ owner: "owner", mutation }),
-      }),
-    );
-    expect(response.ok || response.status === 204).toBe(true);
-  };
+  const mutate = ownerMetadataMutator(env, "owner");
 
   await mutate({
     kind: "merge",
@@ -486,25 +396,10 @@ test("newer owner metadata merges cannot clear privacy tombstones", async () => 
   const observedAt = "2026-06-11T04:00:00Z";
   const project = testProject({ owner: "owner", name: "repo" });
   const cache = kvStore();
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = {
-    idFromName: locks.idFromName,
-    get: locks.get,
-  };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
-  const mutate = async (mutation: Record<string, unknown>) => {
-    const response = await stub.fetch(
-      new Request("https://releasebar.internal/owner-metadata/mutate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ owner: "owner", mutation }),
-      }),
-    );
-    expect(response.ok || response.status === 204).toBe(true);
-  };
+  const mutate = ownerMetadataMutator(env, "owner");
 
   await mutate({ kind: "remove", fullName: "owner/repo", observedAt: removedAt });
   await mutate({

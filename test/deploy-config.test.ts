@@ -1,13 +1,13 @@
 import { expect, test } from "vitest";
 
-import { type FakeLocks, claudeText, testEnv } from "./dashboard-test-harness.ts";
+import { claudeText, testEnv } from "./dashboard-test-harness.ts";
 import {
   type RawWranglerConfig,
   deployConfig,
   hasDeploySettings,
 } from "../shared/deploy-config.ts";
 import { claudeSummaryText } from "../worker/release-summary.ts";
-import { withLockJurisdiction } from "../worker/runtime.ts";
+import { durableObjectBindings, withLockJurisdiction } from "../worker/runtime.ts";
 
 const kvId = "0123456789abcdef0123456789abcdef";
 
@@ -124,38 +124,40 @@ test("Claude summaries go to ANTHROPIC_BASE_URL when it is set", async () => {
   ]);
 });
 
-function fakeLocks(calls: string[]): FakeLocks {
-  const namespace: FakeLocks = {
-    idFromName: (name) => name,
-    get: () => ({ fetch: async () => new Response(null) }),
-    jurisdiction: (jurisdiction) => {
-      calls.push(jurisdiction);
-      return { ...namespace, idFromName: (name) => `${jurisdiction}:${name}` };
+// Namespaces that record the jurisdiction they are scoped to: the local runtime has none.
+function jurisdictionEnv(calls: string[], settings: { RELEASEBAR_DO_JURISDICTION?: string }): Env {
+  const namespace = (binding: string, scope = "") => ({
+    idFromName: (name: string) => `${scope}${binding}:${name}`,
+    jurisdiction: (jurisdiction: string) => {
+      calls.push(`${binding}:${jurisdiction}`);
+      return namespace(binding, `${jurisdiction}:`);
     },
-  };
-  return namespace;
+  });
+  return {
+    ...Object.fromEntries(durableObjectBindings.map((binding) => [binding, namespace(binding)])),
+    ...settings,
+  } as unknown as Env;
 }
 
-test("lock jurisdiction leaves the binding alone when unset", () => {
-  const env = testEnv({ DASHBOARD_LOCKS: fakeLocks([]) });
+test("lock jurisdiction leaves the bindings alone when unset", () => {
+  const env = jurisdictionEnv([], {});
   expect(withLockJurisdiction(env)).toBe(env);
 });
 
 test("lock jurisdiction scopes every Durable Object to the configured jurisdiction", () => {
   const calls: string[] = [];
-  const env = testEnv({ DASHBOARD_LOCKS: fakeLocks(calls), RELEASEBAR_DO_JURISDICTION: "eu" });
+  const env = jurisdictionEnv(calls, { RELEASEBAR_DO_JURISDICTION: "eu" });
   const scoped = withLockJurisdiction(env);
-  expect(scoped.DASHBOARD_LOCKS?.idFromName("lock")).toBe("eu:lock");
-  expect(withLockJurisdiction(env).DASHBOARD_LOCKS).toBe(scoped.DASHBOARD_LOCKS);
-  expect(calls).toStrictEqual(["eu"]);
+  for (const binding of durableObjectBindings) {
+    expect(scoped[binding].idFromName("lock")).toBe(`eu:${binding}:lock`);
+  }
+  // Scoped once for an env, however often it is asked for.
+  expect(withLockJurisdiction(env)).toBe(scoped);
+  expect(calls).toStrictEqual(durableObjectBindings.map((binding) => `${binding}:eu`));
 });
 
 test("lock jurisdiction fails loudly on a binding without jurisdictions", () => {
-  const locks: FakeLocks = {
-    idFromName: (name) => name,
-    get: () => ({ fetch: async () => new Response(null) }),
-  };
-  expect(() =>
-    withLockJurisdiction(testEnv({ DASHBOARD_LOCKS: locks, RELEASEBAR_DO_JURISDICTION: "eu" })),
-  ).toThrow();
+  const env = jurisdictionEnv([], { RELEASEBAR_DO_JURISDICTION: "eu" });
+  Object.assign(env, { SUMMARY_QUOTA: { idFromName: (name: string) => name } });
+  expect(() => withLockJurisdiction(env)).toThrow("SUMMARY_QUOTA has no jurisdictions");
 });

@@ -10,6 +10,7 @@ import {
   ownerSnapshotIsNewer,
 } from "./dashboard-cache.ts";
 import { safeIso } from "./owner-metadata-write.ts";
+import { ownerMetadataObjectName } from "./runtime.ts";
 
 export function reconcileOwnerMetadataSnapshots(
   owner: string,
@@ -183,23 +184,12 @@ export async function readDurableOwnerMetadata(
   owner: string,
 ): Promise<OwnerMetadataSnapshot | null> {
   const normalizedOwner = slugOwner(owner);
-  if (!env.DASHBOARD_LOCKS) return readOwnerMetadataKv(env, normalizedOwner);
-  const id = env.DASHBOARD_LOCKS.idFromName(`owner-metadata:${normalizedOwner}`);
-  const response = await env.DASHBOARD_LOCKS.get(id).fetch(
-    new Request("https://releasebar.internal/owner-metadata/read", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ owner: normalizedOwner }),
-    }),
+  return normalizeOwnerMetadataSnapshot(
+    normalizedOwner,
+    await env.OWNER_METADATA.getByName(ownerMetadataObjectName(normalizedOwner)).read(
+      normalizedOwner,
+    ),
   );
-  if (response.status === 404 || response.status === 409) {
-    return readOwnerMetadataKv(env, normalizedOwner);
-  }
-  if (response.status === 204) return null;
-  if (!response.ok) {
-    throw new Error(`owner metadata read returned ${response.status}`);
-  }
-  return normalizeOwnerMetadataSnapshot(normalizedOwner, await response.json());
 }
 
 export async function readOwnerMetadata(

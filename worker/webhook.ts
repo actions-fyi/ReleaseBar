@@ -7,7 +7,13 @@ import {
   sharedQuotaDeferUntil,
 } from "./github-audit.ts";
 import { jsonResponse } from "./http.ts";
-import type { BackgroundContext, GitHubWebhookFanoutJob, WebhookTargetAction } from "./runtime.ts";
+import {
+  type BackgroundContext,
+  type GitHubWebhookFanoutJob,
+  webhookAdmissionObjectName,
+  webhookProcessorObjectName,
+  type WebhookTargetAction,
+} from "./runtime.ts";
 import { tryJsonParse } from "./schemas.ts";
 import { markHotCacheStale } from "./build-progress.ts";
 import {
@@ -257,21 +263,10 @@ export async function enqueueWebhookFanout(
 }
 
 export async function webhookPriorityBatchActive(env: Env, targetKeys: string[]): Promise<boolean> {
-  const locks = env.DASHBOARD_LOCKS;
-  if (!locks || targetKeys.length === 0) return false;
-  const active = await mapConcurrent(targetKeys, 8, async (targetKey) => {
-    const id = locks.idFromName(targetKey);
-    const response = await locks.get(id).fetch(
-      new Request("https://releasebar.internal/job/status", {
-        method: "POST",
-      }),
-    );
-    if (!response.ok) {
-      throw new Error(`priority refresh status returned ${response.status}`);
-    }
-    const body = (await response.json()) as { active?: unknown };
-    return body.active === true;
-  });
+  if (targetKeys.length === 0) return false;
+  const active = await mapConcurrent(targetKeys, 8, (targetKey) =>
+    env.BUILD_COORDINATOR.getByName(targetKey).jobActive(),
+  );
   return active.some(Boolean);
 }
 
@@ -366,7 +361,7 @@ export async function processGitHubWebhook(
 
 export function githubWebhookProcessorBusy(error: unknown): boolean {
   const reason = errorMessage(error);
-  return reason.includes("webhook processor returned 409") || reason.includes("processor busy");
+  return reason.includes("processor busy");
 }
 
 export async function githubWebhookRetryDelaySeconds(env: Env, error: unknown): Promise<number> {
@@ -401,25 +396,11 @@ export async function abandonGitHubWebhookDelivery(
   delivery: string,
   payload: Record<string, unknown>,
 ): Promise<void> {
-  const locks = env.DASHBOARD_LOCKS;
-  if (!locks) return;
   const owner = webhookRepo(payload)?.owner ?? delivery;
-  const objectNames = ["github-webhook-admission", `github-webhook-process:${owner}`];
-  const responses = await Promise.all(
-    objectNames.map((name) =>
-      locks.get(locks.idFromName(name)).fetch(
-        new Request("https://releasebar.internal/webhook/abandon", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ delivery }),
-        }),
-      ),
-    ),
-  );
-  const failed = responses.find((response: Response) => !response.ok);
-  if (failed) {
-    throw new Error(`webhook delivery abandon returned ${failed.status}`);
-  }
+  await Promise.all([
+    env.WEBHOOK_ADMISSION.getByName(webhookAdmissionObjectName).abandon(delivery),
+    env.WEBHOOK_PROCESSOR.getByName(webhookProcessorObjectName(owner)).abandon(delivery),
+  ]);
 }
 
 export async function boundedRequestText(request: Request, limit: number): Promise<string | null> {
@@ -501,20 +482,21 @@ export async function githubWebhookResponse(
       "cache-control": "no-store",
     });
   }
-  if (!env.DASHBOARD_LOCKS) {
-    return jsonResponse({ error: "webhook delivery unavailable" }, 503, {
-      "cache-control": "no-store",
-    });
-  }
   try {
-    const id = env.DASHBOARD_LOCKS.idFromName("github-webhook-admission");
-    const compactPayload = compactGitHubWebhookPayload(event, payload);
-    return await env.DASHBOARD_LOCKS.get(id).fetch(
-      new Request("https://releasebar.internal/webhook/enqueue", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ event, delivery, payload: compactPayload }),
-      }),
+    const admission = await env.WEBHOOK_ADMISSION.getByName(webhookAdmissionObjectName).enqueue(
+      event,
+      delivery,
+      compactGitHubWebhookPayload(event, payload),
+    );
+    if (admission === "unavailable") {
+      return jsonResponse({ error: "webhook queue unavailable" }, 503, {
+        "cache-control": "no-store",
+      });
+    }
+    return jsonResponse(
+      admission === "duplicate" ? { ok: true, duplicate: true } : { ok: true },
+      202,
+      { "cache-control": "no-store" },
     );
   } catch (error) {
     await auditSyncEvent(env, {

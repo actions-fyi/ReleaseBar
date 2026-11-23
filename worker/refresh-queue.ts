@@ -96,26 +96,8 @@ export async function reserveRefreshJob(
       throw error;
     }
   };
-  if (!env.DASHBOARD_LOCKS) {
-    return reserveFallback();
-  }
   try {
-    const id = env.DASHBOARD_LOCKS.idFromName(targetKey);
-    const response = await env.DASHBOARD_LOCKS.get(id).fetch(
-      new Request("https://releasebar.internal/job/reserve", {
-        method: "POST",
-        body: JSON.stringify({ jobId, dirtyOnConflict }),
-      }),
-    );
-    if (response.status === 409) return false;
-    if (response.ok) return true;
-    await auditSyncEvent(env, {
-      event: "job_reservation_fallback",
-      targetKey,
-      jobId,
-      status: "fallback",
-      reason: `durable reservation status ${response.status}`,
-    }).catch(() => undefined);
+    return await env.BUILD_COORDINATOR.getByName(targetKey).reserveJob(jobId, dirtyOnConflict);
   } catch (error) {
     await auditSyncEvent(env, {
       event: "job_reservation_fallback",
@@ -142,31 +124,9 @@ export async function releaseRefreshJobReservation(
       localDirty = takeLocalRefreshDirty(env, targetKey);
     }
   }
-  if (!env.DASHBOARD_LOCKS) return localDirty;
   try {
-    const id = env.DASHBOARD_LOCKS.idFromName(targetKey);
-    const response = await env.DASHBOARD_LOCKS.get(id).fetch(
-      new Request("https://releasebar.internal/job/release", {
-        method: "POST",
-        body: JSON.stringify({ jobId, consumeDirty }),
-      }),
-    );
-    if (response.ok) {
-      if (response.status === 200) {
-        const dirty = (await response.json()) as StoredRefreshDirty;
-        if (typeof dirty.observedAt === "string" && typeof dirty.reason === "string") {
-          return dirty;
-        }
-      }
-      return localDirty;
-    }
-    await auditSyncEvent(env, {
-      event: "job_reservation_release_failed",
-      targetKey,
-      jobId,
-      status: "failed",
-      reason: `durable reservation release status ${response.status}`,
-    }).catch(() => undefined);
+    const dirty = await env.BUILD_COORDINATOR.getByName(targetKey).releaseJob(jobId, consumeDirty);
+    return dirty ?? localDirty;
   } catch (error) {
     await auditSyncEvent(env, {
       event: "job_reservation_release_failed",

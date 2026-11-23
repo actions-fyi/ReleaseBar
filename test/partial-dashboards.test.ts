@@ -1,8 +1,17 @@
 import { generateKeyPairSync } from "node:crypto";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, Project, RefreshJob } from "../src/types.ts";
-import { kvStore, testDashboard, testProject, worker } from "./dashboard-test-harness.ts";
+import { ownerMetadataObjectName } from "../worker/runtime.ts";
+import {
+  BuildCoordinator,
+  buildLocksHeld,
+  kvStore,
+  testDashboard,
+  testEnv,
+  testProject,
+  worker,
+} from "./dashboard-test-harness.ts";
 
 test("worker filters shared owner snapshots for cold combined dashboards", async () => {
   const originalFetch = globalThis.fetch;
@@ -19,12 +28,7 @@ test("worker filters shared owner snapshots for cold combined dashboards", async
     }
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
-  const busyLocks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async () => new Response(null, { status: 409 }),
-    }),
-  };
+  buildLocksHeld();
   const now = new Date().toISOString();
   const snapshot = (
     owner: string,
@@ -78,7 +82,6 @@ test("worker filters shared owner snapshots for cold combined dashboards", async
             projects: [testProject({ owner: "stale", name: "private-now", fork: false })],
           }),
         }),
-        DASHBOARD_LOCKS: busyLocks,
         GITHUB_TOKEN: "shared-token",
       },
       { waitUntil: () => undefined },
@@ -97,6 +100,7 @@ test("worker filters shared owner snapshots for cold combined dashboards", async
 test("worker uses explicit repository owner snapshots for cold dashboards", async () => {
   const now = new Date().toISOString();
   const project = testProject({ owner: "other", name: "repo" });
+  buildLocksHeld();
   const response = await worker.fetch(
     new Request("https://release.bar/api/dashboard?repos=other/repo"),
     {
@@ -112,12 +116,6 @@ test("worker uses explicit repository owner snapshots for cold dashboards", asyn
           projects: [project],
         }),
       }),
-      DASHBOARD_LOCKS: {
-        idFromName: (name: string) => name,
-        get: () => ({
-          fetch: async () => new Response(null, { status: 409 }),
-        }),
-      },
     },
     { waitUntil: () => undefined },
   );
@@ -144,6 +142,14 @@ test("cold partial dashboards honor durable privatization tombstones over stale 
     countOverlays: {},
     projects: [],
   };
+  // The owner's Durable Object learns of the privatization from a cache that has it; the cache
+  // the Worker then runs with is older.
+  await testEnv({
+    DASHBOARD_CACHE: kvStore({ "owner-metadata:v1:owner": JSON.stringify(privateSnapshot) }),
+  })
+    .OWNER_METADATA.getByName(ownerMetadataObjectName("owner"))
+    .read("owner");
+  buildLocksHeld();
   const response = await worker.fetch(
     new Request("https://release.bar/api/dashboard?repos=owner/repo"),
     {
@@ -157,16 +163,6 @@ test("cold partial dashboards honor durable privatization tombstones over stale 
           projects: [project],
         }),
       }),
-      DASHBOARD_LOCKS: {
-        idFromName: (name: string) => name,
-        get: (id: string) => ({
-          fetch: async (request: Request) =>
-            id === "owner-metadata:owner" &&
-            new URL(request.url).pathname === "/owner-metadata/read"
-              ? Response.json(privateSnapshot)
-              : new Response(null, { status: 409 }),
-        }),
-      },
     },
     { waitUntil: () => undefined },
   );
@@ -187,12 +183,7 @@ test("metadata-only partial dashboards strip hydrated release and CI fields", as
     }
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
-  const busyLocks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async () => new Response(null, { status: 409 }),
-    }),
-  };
+  buildLocksHeld();
   const now = new Date().toISOString();
   const snapshot = (owner: string) =>
     JSON.stringify({
@@ -211,7 +202,6 @@ test("metadata-only partial dashboards strip hydrated release and CI fields", as
           "owner-metadata:v1:alpha": snapshot("alpha"),
           "owner-metadata:v1:beta": snapshot("beta"),
         }),
-        DASHBOARD_LOCKS: busyLocks,
         GITHUB_APP_ID: "1",
         GITHUB_APP_PRIVATE_KEY: "unused",
       },
@@ -488,47 +478,11 @@ test("worker resumes durable progress on cold metadata cache misses", async () =
     projects: [project],
     updatedAt: new Date().toISOString(),
   };
-  let progressDeletes = 0;
-  let progressWrites = 0;
-  let released = false;
-  const locks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async (request: Request) => {
-        const path = new URL(request.url).pathname;
-        if (path === "/acquire" || path === "/job/reserve") {
-          return new Response(null, { status: 204 });
-        }
-        if (path === "/release") {
-          released = true;
-          return new Response(null, { status: 204 });
-        }
-        if (path === "/progress/get") {
-          return Response.json(progress, {
-            headers: { "x-releasebar-progress": "durable" },
-          });
-        }
-        if (path === "/progress/delete") {
-          progressDeletes += 1;
-          return new Response(null, {
-            status: 204,
-            headers: { "x-releasebar-progress": "durable" },
-          });
-        }
-        if (path === "/progress/put") {
-          progressWrites += 1;
-          return new Response(null, {
-            status: 204,
-            headers: { "x-releasebar-progress": "durable" },
-          });
-        }
-        if (path === "/target-index/upsert") {
-          return new Response(null, { status: 204 });
-        }
-        return new Response(null, { status: 404 });
-      },
-    }),
-  };
+  // The dashboard's coordinator object holds the progress of an earlier build.
+  vi.spyOn(BuildCoordinator.prototype, "progress").mockReturnValue(progress);
+  const progressDeletes = vi.spyOn(BuildCoordinator.prototype, "deleteProgress");
+  const progressWrites = vi.spyOn(BuildCoordinator.prototype, "putProgress");
+  const releases = vi.spyOn(BuildCoordinator.prototype, "releaseLock");
 
   globalThis.fetch = async (input) => {
     const path = new URL(String(input)).pathname;
@@ -543,7 +497,6 @@ test("worker resumes durable progress on cold metadata cache misses", async () =
       new Request("https://release.bar/api/checkpoint"),
       {
         DASHBOARD_CACHE: cache,
-        DASHBOARD_LOCKS: locks,
         REFRESH_QUEUE: {
           async send(job: RefreshJob) {
             sentJobs.push(job);
@@ -560,9 +513,9 @@ test("worker resumes durable progress on cold metadata cache misses", async () =
     await Promise.all(waits);
     expect(sentJobs.length).toBe(1);
     expect(sentJobs[0]?.reason).toBe("cold-metadata");
-    expect(progressDeletes).toBe(0);
-    expect(progressWrites).toBe(0);
-    expect(released).toBe(true);
+    expect(progressDeletes).not.toHaveBeenCalled();
+    expect(progressWrites).not.toHaveBeenCalled();
+    expect(releases).toHaveBeenCalled();
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -716,36 +669,8 @@ test("worker deduplicates queued refreshes for partial dashboards", async () => 
   };
   const sentJobs: RefreshJob[] = [];
   let deliveryDelaySeconds: number | undefined;
-  let reservedJobId: string | null = null;
-  const locks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async (request: Request) => {
-        const path = new URL(request.url).pathname;
-        const body = (await request.json()) as { jobId?: string };
-        if (path === "/job/reserve") {
-          if (reservedJobId && reservedJobId !== body.jobId) {
-            return new Response(null, { status: 409 });
-          }
-          reservedJobId = body.jobId ?? null;
-          return new Response(null, { status: 204 });
-        }
-        if (path === "/job/release") {
-          if (reservedJobId === body.jobId) {
-            reservedJobId = null;
-          }
-          return new Response(null, { status: 204 });
-        }
-        if (path === "/target-index/upsert") {
-          return new Response(null, { status: 204 });
-        }
-        return new Response(null, { status: 404 });
-      },
-    }),
-  };
   const env = {
     DASHBOARD_CACHE: cache,
-    DASHBOARD_LOCKS: locks,
     GITHUB_TOKEN: "shared-token",
     REFRESH_QUEUE: {
       async send(job: RefreshJob, options?: { delaySeconds?: number }) {
