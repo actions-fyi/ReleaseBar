@@ -1,15 +1,38 @@
 import font400 from "@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2?inline";
 import font700 from "@fontsource/jetbrains-mono/files/jetbrains-mono-latin-700-normal.woff2?inline";
 
-import type { DashboardPayload, Project, SchedulerAuditEvent } from "../src/types.ts";
-import handler, { DashboardBuildLock as WorkerBuildLock } from "../worker/index.ts";
-import type { WorkerQueueMessage } from "../worker/runtime.ts";
+import { runInDurableObject } from "cloudflare:test";
+import { env as runtimeEnv } from "cloudflare:workers";
+import { vi } from "vitest";
+import type { SchedulerAuditEvent } from "../src/types.ts";
+import handler, {
+  BuildCoordinator,
+  OwnerMetadata,
+  RefreshTargetIndex,
+  SummaryQuota,
+  WebhookAdmission,
+  WebhookProcessor,
+} from "../worker/index.ts";
+import {
+  type OwnerMetadataMutation,
+  type OwnerMetadataSnapshot,
+  refreshTargetSourceLimit,
+} from "../worker/config.ts";
+import {
+  durableObjectBindings,
+  ownerMetadataObjectName,
+  refreshTargetIndexName,
+  type WorkerQueueMessage,
+} from "../worker/runtime.ts";
+
+export { testDashboard, testProject } from "./dashboard-fixtures.ts";
 
 const textEncoder = new TextEncoder();
 
-// The tests hand the Worker hand-written fakes with only what a case needs of each binding, not
-// the generated binding types. These types describe the fakes; `worker`, `DashboardBuildLock` and
-// `testEnv` pass them on as the real ones.
+// The tests hand the Worker hand-written fakes with only what a case needs of the KV, queue and
+// assets bindings, not the generated binding types. These types describe the fakes; `worker` and
+// `testEnv` pass them on as the real ones. The Durable Objects are not faked: `testEnv` adds the
+// bindings the Workers runtime provides from wrangler.jsonc.
 type FakeKv = {
   get(key: string): Promise<string | null>;
   put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
@@ -21,28 +44,9 @@ type FakeKv = {
   }>;
 };
 
-type FakeLockStub = { fetch(request: Request): Promise<Response> };
-
-export type FakeLocks = {
-  // Method syntax, so a fake may take the string IDs its own idFromName returns.
-  idFromName(name: string): unknown;
-  get(id: unknown): FakeLockStub;
-  jurisdiction?(jurisdiction: string): FakeLocks;
-};
-
-type FakeLockState = {
-  blockConcurrencyWhile?<T>(callback: () => Promise<T>): Promise<T>;
-  storage: {
-    get<T>(key: string): Promise<T | undefined>;
-    put<T>(key: string, value: T): Promise<void>;
-    delete(key: string): Promise<boolean>;
-  };
-};
-
 type FakeBindings = {
   ASSETS: { fetch(request: Request): Promise<Response> };
   DASHBOARD_CACHE: FakeKv;
-  DASHBOARD_LOCKS: FakeLocks;
   REFRESH_QUEUE: { send(message: never, options?: { delaySeconds?: number }): Promise<void> };
 };
 
@@ -59,8 +63,160 @@ type TestBatch = {
   }>;
 };
 
+type ObjectBinding = (typeof durableObjectBindings)[number];
+
+const objectClasses = [
+  BuildCoordinator,
+  OwnerMetadata,
+  RefreshTargetIndex,
+  SummaryQuota,
+  WebhookAdmission,
+  WebhookProcessor,
+];
+
+// The env each Durable Object is to run its next call with, by the object's ID.
+const objectEnvs = new Map<string, object>();
+
+// The objects are the real local ones, with their SQLite storage, and are called over RPC as in
+// production. But the runtime constructs them with its own env, whose KV namespace and queue are
+// not the fakes a test asserts on. So each method of each class first takes the env of the test
+// that called it. The objects run in the tests' isolate, which is what lets them see `objectEnvs`.
+for (const objectClass of objectClasses) {
+  const prototype = objectClass.prototype as unknown as Record<
+    string,
+    (this: { ctx: DurableObjectState; env: object }, ...parameters: unknown[]) => unknown
+  >;
+  for (const method of Object.getOwnPropertyNames(prototype)) {
+    const original = prototype[method];
+    if (method === "constructor" || typeof original !== "function") continue;
+    prototype[method] = function (...parameters) {
+      this.env = objectEnvs.get(this.ctx.id.toString()) ?? this.env;
+      return Reflect.apply(original, this, parameters);
+    };
+  }
+}
+
+// Stub members that are not methods of the object's class.
+const stubMembers = new Set(["then", "fetch", "connect", "id", "name", "dup"]);
+
+// A Durable Object binding of the Workers runtime for one test's env: calls through it reach the
+// object with that env.
+function objectBinding<Binding extends ObjectBinding>(binding: Binding, env: object): Env[Binding] {
+  const namespace: DurableObjectNamespace = runtimeEnv[binding];
+  const withTestEnv = (stub: DurableObjectStub): DurableObjectStub =>
+    new Proxy(stub, {
+      get(target, property) {
+        const member: unknown = Reflect.get(target, property);
+        if (
+          typeof property !== "string" ||
+          typeof member !== "function" ||
+          stubMembers.has(property)
+        ) {
+          return member;
+        }
+        return (...parameters: unknown[]): unknown => {
+          objectEnvs.set(target.id.toString(), env);
+          return Reflect.apply(member, target, parameters);
+        };
+      },
+    });
+  const fake = {
+    idFromName: (name: string) => namespace.idFromName(name),
+    get: (id: DurableObjectId) => withTestEnv(namespace.get(id)),
+    getByName: (name: string) => withTestEnv(namespace.getByName(name)),
+  };
+  return fake as unknown as Env[Binding];
+}
+
+// Completes a test's env with the Durable Object bindings, in place: a test may keep changing the
+// object it passed.
 export function testEnv(env: TestEnv): Env {
+  const bindings = env as Record<string, unknown>;
+  for (const binding of durableObjectBindings) {
+    bindings[binding] ??= objectBinding(binding, env);
+  }
   return env as unknown as Env;
+}
+
+export {
+  BuildCoordinator,
+  OwnerMetadata,
+  RefreshTargetIndex,
+  SummaryQuota,
+  WebhookAdmission,
+  WebhookProcessor,
+};
+
+// Makes every dashboard's build lock answer as held by someone else, until the test ends.
+export function buildLocksHeld(): void {
+  vi.spyOn(BuildCoordinator.prototype, "acquireLock").mockReturnValue(false);
+}
+
+// Makes every call to a Durable Object of the given classes fail, as when the objects can't be
+// reached, until the test ends. Without classes, all of them.
+export function objectsUnavailable(...classes: Array<(typeof objectClasses)[number]>): void {
+  for (const objectClass of classes.length > 0 ? classes : objectClasses) {
+    const prototype: object = objectClass.prototype;
+    for (const method of Object.getOwnPropertyNames(prototype)) {
+      if (method === "constructor") continue;
+      vi.spyOn(prototype as Record<string, () => unknown>, method).mockImplementation(() => {
+        throw new Error("Durable Object unavailable");
+      });
+    }
+  }
+}
+
+// Makes a dashboard's coordinator object forget the refresh target's state, so that it takes the
+// state from the cache again: for a test that writes a target to the cache directly.
+export async function forgetRefreshTargetState(key: string): Promise<void> {
+  await runInDurableObject(runtimeEnv.BUILD_COORDINATOR.getByName(key), (_instance, state) => {
+    state.storage.sql.exec("DELETE FROM refresh_target");
+  });
+}
+
+// The index of the refresh targets that show an owner or a repository.
+export function targetIndex(
+  env: TestEnv,
+  kind: "owner" | "repo",
+  value: string,
+): DurableObjectStub<RefreshTargetIndex> {
+  return testEnv(env).REFRESH_TARGET_INDEX.getByName(refreshTargetIndexName(kind, value));
+}
+
+// Fills an index with as many targets as it takes, so that it refuses the next new one.
+export async function fillTargetIndex(
+  env: TestEnv,
+  kind: "owner" | "repo",
+  value: string,
+): Promise<void> {
+  const index = targetIndex(env, kind, value);
+  const now = new Date().toISOString();
+  for (let count = 0; count < refreshTargetSourceLimit; count += 1) {
+    await index.upsert({
+      key: `filler:${kind}:${value}:${count}`,
+      kind: "dashboard",
+      owner: "filler",
+      owners: ["filler"],
+      repos: [],
+      includeReleaseData: true,
+      path: `/filler?variant=${count}`,
+      priority: 1,
+      lastSeenAt: now,
+      lastAttemptAt: null,
+      lastSuccessAt: null,
+      nextDueAt: now,
+      failureCount: 0,
+    });
+  }
+}
+
+// Applies mutations to an owner's metadata in its Durable Object, as the Worker does.
+export function ownerMetadataMutator(
+  env: TestEnv,
+  owner: string,
+): (mutation: OwnerMetadataMutation) => Promise<OwnerMetadataSnapshot | null> {
+  const metadata = testEnv(env).OWNER_METADATA.getByName(ownerMetadataObjectName(owner));
+  return (mutation) => metadata.mutate(owner, mutation);
 }
 
 export const worker = {
@@ -79,11 +235,6 @@ export const worker = {
       context as ExecutionContext,
     ),
 };
-
-export const DashboardBuildLock = WorkerBuildLock as unknown as new (
-  state: FakeLockState,
-  env: TestEnv,
-) => FakeLockStub;
 
 const systemDate = Date;
 
@@ -150,46 +301,6 @@ export function kvStore(initial: Record<string, string> = {}) {
   };
 }
 
-export function durableLocks(env: ConstructorParameters<typeof DashboardBuildLock>[1]) {
-  const stubs = new Map<string, { fetch(request: Request): Promise<Response> }>();
-  return {
-    idFromName(name: string) {
-      return name;
-    },
-    get(id: string) {
-      const existing = stubs.get(id);
-      if (existing) return existing;
-      const values = new Map<string, unknown>();
-      let chain = Promise.resolve();
-      const state = {
-        storage: {
-          async get<T>(key: string) {
-            return values.get(key) as T | undefined;
-          },
-          async put<T>(key: string, value: T) {
-            values.set(key, value);
-          },
-          async delete(key: string) {
-            return values.delete(key);
-          },
-        },
-        blockConcurrencyWhile<T>(callback: () => Promise<T>) {
-          const result = chain.then(callback, callback);
-          chain = result.then(
-            () => undefined,
-            () => undefined,
-          );
-          return result;
-        },
-      };
-      const object = new DashboardBuildLock(state, env);
-      const stub = { fetch: (request: Request) => object.fetch(request) };
-      stubs.set(id, stub);
-      return stub;
-    },
-  };
-}
-
 export async function refreshAuditEvents(
   cache: ReturnType<typeof kvStore>,
 ): Promise<SchedulerAuditEvent[]> {
@@ -245,8 +356,8 @@ export async function signedJson(secret: string, value: unknown): Promise<string
 }
 
 // A signed-in user, as AI summaries need one to start: stores the session in the cache and
-// returns the env entries and request headers that carry it. `vars` reach the Durable Object,
-// for the summary limits.
+// returns the env entries and request headers that carry it. `vars` are more env entries, such
+// as the summary limits.
 export async function signedIn(
   cache: ReturnType<typeof kvStore>,
   userId = 1,
@@ -276,7 +387,7 @@ export async function signedIn(
   return {
     env: {
       AUTH_COOKIE_SECRET: secret,
-      DASHBOARD_LOCKS: durableLocks({ DASHBOARD_CACHE: cache, ...vars }),
+      ...vars,
     },
     headers: { cookie: `rd_session=${await signedJson(secret, { id: sessionId, exp })}` },
   };
@@ -310,81 +421,6 @@ export function crawlerRequest(
     });
   }
   return request;
-}
-
-export function testProject(
-  overrides: Partial<Project> & Pick<Project, "owner" | "name">,
-): Project {
-  const { owner, name, ...rest } = overrides;
-  const fullName = `${owner}/${name}`;
-  return {
-    owner,
-    name,
-    fullName,
-    description: null,
-    url: `https://github.com/${fullName}`,
-    defaultBranch: "main",
-    language: null,
-    topics: [],
-    stars: 1,
-    forks: 0,
-    openIssues: 0,
-    openPullRequests: 0,
-    issuesUrl: `https://github.com/${fullName}/issues`,
-    pullRequestsUrl: `https://github.com/${fullName}/pulls`,
-    archived: false,
-    pushedAt: "2026-05-15T00:00:00Z",
-    updatedAt: "2026-05-15T00:00:00Z",
-    latestCommitSha: "abcdef1",
-    latestCommitDate: "2026-05-15T00:00:00Z",
-    version: "v1.0.0",
-    releaseName: null,
-    releaseUrl: `https://github.com/${fullName}/releases/tag/v1.0.0`,
-    releaseDate: "2026-05-01T00:00:00Z",
-    commitsSinceRelease: 0,
-    compareUrl: `https://github.com/${fullName}/compare/v1.0.0...main`,
-    ciState: "success",
-    ciStatus: null,
-    ciConclusion: null,
-    ciWorkflow: null,
-    ciUrl: null,
-    ciRunDate: null,
-    freshness: "fresh",
-    ...rest,
-  };
-}
-
-export function testDashboard(owner: string, projects: Project[]): DashboardPayload {
-  return {
-    title: "ReleaseBar",
-    subtitle: `Release freshness for @${owner}.`,
-    canonicalDomain: "release.bar",
-    generatedAt: "2026-05-15T12:00:00Z",
-    owners: [{ type: "user", login: owner }],
-    options: {
-      includeForks: false,
-      includeArchived: false,
-      includeUnreleased: false,
-      repoLimit: 200,
-    },
-    cache: {
-      state: "fresh",
-      stale: false,
-      capped: false,
-      repoLimit: 200,
-      generatedAt: "2026-05-15T12:00:00Z",
-    },
-    totals: {
-      repos: projects.length,
-      released: projects.filter((project) => project.releaseDate).length,
-      unreleased: projects.filter((project) => !project.releaseDate).length,
-      commitsSinceRelease: projects.reduce(
-        (sum, project) => sum + (project.commitsSinceRelease ?? 0),
-        0,
-      ),
-    },
-    projects,
-  };
 }
 
 export function claudeText(text: string): Array<{ type: "text"; text: string }> {

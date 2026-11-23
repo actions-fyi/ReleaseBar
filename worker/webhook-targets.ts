@@ -2,11 +2,12 @@ import { slugOwner, validRepoSlug } from "../shared/dashboard.ts";
 import type { ActivityRange, RefreshTarget } from "../src/types.ts";
 import { mapConcurrent } from "./concurrency.ts";
 import { randomNonce } from "./crypto.ts";
-import type {
-  GitHubWebhookFanoutJob,
-  GitHubWebhookJob,
-  StoredWebhookPending,
-  WebhookTargetAction,
+import {
+  type GitHubWebhookFanoutJob,
+  type GitHubWebhookJob,
+  refreshTargetIndexName,
+  type StoredWebhookPending,
+  type WebhookTargetAction,
 } from "./runtime.ts";
 import { tryJsonParse } from "./schemas.ts";
 import { repoActivityCacheKey } from "./activity-data.ts";
@@ -281,24 +282,15 @@ export async function indexedWebhookTargets(
   value: string,
   cursor?: string,
 ): Promise<WebhookTargetPage> {
-  if (env.DASHBOARD_LOCKS) {
-    const { targets, nextCursor } = await durableIndexedWebhookTargets(env, source, value, cursor);
-    return {
-      targets,
-      next: nextCursor
-        ? { source, cursor: nextCursor, backfillFailed: undefined }
-        : source === "owner"
-          ? { source: "repo", cursor: undefined, backfillFailed: undefined }
-          : { source: "kv-owner", cursor: undefined, backfillFailed: undefined },
-    };
-  }
-  const page = await kvIndexedWebhookTargets(env, source, value, cursor);
-  const next = page.nextCursor
-    ? { source, cursor: page.nextCursor, backfillFailed: undefined }
-    : source === "owner"
-      ? { source: "repo" as const, cursor: undefined, backfillFailed: undefined }
-      : { source: "kv-owner" as const, cursor: undefined, backfillFailed: undefined };
-  return { targets: page.targets, next };
+  const { targets, nextCursor } = await durableIndexedWebhookTargets(env, source, value, cursor);
+  return {
+    targets,
+    next: nextCursor
+      ? { source, cursor: nextCursor, backfillFailed: undefined }
+      : source === "owner"
+        ? { source: "repo", cursor: undefined, backfillFailed: undefined }
+        : { source: "kv-owner", cursor: undefined, backfillFailed: undefined },
+  };
 }
 
 export async function kvIndexedWebhookTargets(
@@ -350,32 +342,13 @@ export async function durableIndexedWebhookTargets(
   value: string,
   cursor?: string,
 ): Promise<{ targets: RefreshTarget[]; nextCursor?: string }> {
-  if (!env.DASHBOARD_LOCKS) return { targets: [] };
-  const id = env.DASHBOARD_LOCKS.idFromName(`refresh-target-index:${source}:${value}`);
-  const response = await env.DASHBOARD_LOCKS.get(id).fetch(
-    new Request("https://releasebar.internal/target-index/page", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ cursor, limit: webhookTargetPageSize }),
-    }),
-  );
-  if (!response.ok) {
-    throw new Error(`durable refresh target index returned ${response.status}`);
-  }
-  const stored = (await response.json()) as {
-    targets?: unknown;
-    nextCursor?: unknown;
-  };
-  if (!Array.isArray(stored.targets)) {
-    throw new Error("durable refresh target index returned invalid data");
-  }
-  const indexed = freshestWebhookTargets(
-    stored.targets.filter((target): target is RefreshTarget => isRefreshTarget(target)),
-  );
+  const stored = await env.REFRESH_TARGET_INDEX.getByName(
+    refreshTargetIndexName(source, value),
+  ).page(cursor, webhookTargetPageSize);
+  const indexed = freshestWebhookTargets(stored.targets.filter(isRefreshTarget));
   return {
     targets: await currentWebhookTargets(env, indexed),
-    nextCursor:
-      typeof stored.nextCursor === "string" && stored.nextCursor ? stored.nextCursor : undefined,
+    nextCursor: stored.nextCursor ?? undefined,
   };
 }
 
@@ -385,23 +358,11 @@ export async function prioritizedIndexedWebhookTargets(
   fullName: string,
   includeReleaseDataOnly: boolean,
 ): Promise<WebhookTargetPage> {
-  const locks = env.DASHBOARD_LOCKS;
-  if (!locks) return { targets: [], next: null };
   const read = async (source: "owner" | "repo", value: string): Promise<RefreshTarget[]> => {
-    const id = locks.idFromName(`refresh-target-index:${source}:${value}`);
-    const response = await locks.get(id).fetch(
-      new Request("https://releasebar.internal/target-index/list", {
-        method: "POST",
-      }),
-    );
-    if (!response.ok) {
-      throw new Error(`durable refresh target index returned ${response.status}`);
-    }
-    const stored = await response.json();
-    if (!Array.isArray(stored)) {
-      throw new Error("durable refresh target index returned invalid data");
-    }
-    return stored.filter((target): target is RefreshTarget => isRefreshTarget(target));
+    const stored = await env.REFRESH_TARGET_INDEX.getByName(
+      refreshTargetIndexName(source, value),
+    ).list();
+    return stored.filter(isRefreshTarget);
   };
   const [ownerTargets, repoTargets] = await Promise.all([
     read("owner", owner),
@@ -498,8 +459,7 @@ export async function webhookTargetPage(
   const indexReady =
     (await env.DASHBOARD_CACHE.get(refreshTargetIndexReadyKey)) ===
     String(refreshTargetIndexVersion);
-  const selectedSource =
-    source ?? (indexReady ? (env.DASHBOARD_LOCKS ? "indexed" : "owner") : "legacy");
+  const selectedSource = source ?? (indexReady ? "indexed" : "legacy");
   if (selectedSource === "legacy") {
     if (source === undefined && priorityIncludeReleaseDataOnly) {
       return {

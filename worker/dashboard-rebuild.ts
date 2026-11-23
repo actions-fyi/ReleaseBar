@@ -250,42 +250,28 @@ export async function acquireBuildLock(env: Env, key: string): Promise<BuildLock
       },
     };
   };
-  if (!env.DASHBOARD_LOCKS) {
-    return acquireLocal();
-  }
-
   try {
     const token = randomNonce();
-    const id = env.DASHBOARD_LOCKS.idFromName(key);
-    const stub = env.DASHBOARD_LOCKS.get(id);
-    const response = await stub.fetch(
-      new Request("https://releasebar.internal/acquire", {
-        method: "POST",
-        body: JSON.stringify({ token }),
-      }),
-    );
-    if (response.status === 409) {
-      return null;
-    }
-    if (!response.ok) {
-      return acquireLocal();
-    }
-    const sendToken = (pathname: string) =>
-      stub.fetch(
-        new Request(`https://releasebar.internal/${pathname}`, {
-          method: "POST",
-          body: JSON.stringify({ token }),
-        }),
-      );
+    const coordinator = env.BUILD_COORDINATOR.getByName(key);
+    if (!(await coordinator.acquireLock(token))) return null;
     return {
       refresh: async () => {
-        await sendToken("refresh").catch(() => undefined);
+        try {
+          await coordinator.refreshLock(token);
+        } catch {
+          // The lock expires by itself.
+        }
       },
       release: async () => {
-        await sendToken("release").catch(() => undefined);
+        try {
+          await coordinator.releaseLock(token);
+        } catch {
+          // The lock expires by itself.
+        }
       },
     };
   } catch {
+    // The object can't be reached: a lock that holds within this isolate is the best left.
     return acquireLocal();
   }
 }

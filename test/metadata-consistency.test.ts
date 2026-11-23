@@ -1,10 +1,10 @@
-import { expect, test } from "vitest";
+import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
-import type { DashboardPayload, Project, RefreshTarget } from "../src/types.ts";
+import type { DashboardPayload, RefreshTarget } from "../src/types.ts";
 import {
-  DashboardBuildLock,
-  durableLocks,
   kvStore,
+  ownerMetadataMutator,
+  type TestEnv,
   testDashboard,
   testProject,
   worker,
@@ -233,48 +233,40 @@ test("owner count overlays update repositories absent from a narrow metadata sna
       projects: [narrowProject],
     }),
   });
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = locks;
-  const response = await locks.get(locks.idFromName("owner-metadata:owner")).fetch(
-    new Request("https://releasebar.internal/owner-metadata/mutate", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        owner: "owner",
-        mutation: {
-          kind: "counts",
-          updatedAt: observedAt,
-          complete: true,
-          counts: [
-            {
-              fullName: "owner/inside-filter",
-              openIssues: 0,
-              openPullRequests: 0,
-              archived: false,
-              fork: false,
-              private: false,
-              pushedAt: observedAt,
-              updatedAt: observedAt,
-            },
-            {
-              fullName: "owner/outside-filter",
-              openIssues: 9,
-              openPullRequests: 2,
-              archived: true,
-              fork: false,
-              private: false,
-              pushedAt: observedAt,
-              updatedAt: observedAt,
-            },
-          ],
-        },
-      }),
-    }),
-  );
-  expect(response.ok).toBe(true);
+  const response = await ownerMetadataMutator(
+    env,
+    "owner",
+  )({
+    kind: "counts",
+    updatedAt: observedAt,
+    complete: true,
+    counts: [
+      {
+        fullName: "owner/inside-filter",
+        openIssues: 0,
+        openPullRequests: 0,
+        archived: false,
+        fork: false,
+        private: false,
+        pushedAt: observedAt,
+        updatedAt: observedAt,
+      },
+      {
+        fullName: "owner/outside-filter",
+        openIssues: 9,
+        openPullRequests: 2,
+        archived: true,
+        fork: false,
+        private: false,
+        pushedAt: observedAt,
+        updatedAt: observedAt,
+      },
+    ],
+  });
+  assert(response);
 
   const dashboard = await worker.fetch(new Request("https://release.bar/api/owner"), env, {
     waitUntil: () => undefined,
@@ -381,47 +373,32 @@ test("partial owner count scans expose matched repository counts without advanci
       projects: [repo, sibling],
     }),
   });
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = {
-    idFromName: locks.idFromName,
-    get: locks.get,
-  };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
-  const mutation = await stub.fetch(
-    new Request("https://releasebar.internal/owner-metadata/mutate", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        owner: "owner",
-        mutation: {
-          kind: "counts",
-          updatedAt: partialAt,
-          complete: false,
-          counts: [
-            {
-              fullName: "owner/repo",
-              openIssues: 9,
-              openPullRequests: 3,
-              archived: false,
-              fork: false,
-              private: false,
-              pushedAt: partialAt,
-              updatedAt: partialAt,
-            },
-          ],
-        },
-      }),
-    }),
-  );
-  expect(mutation.ok).toBe(true);
+  const mutation = await ownerMetadataMutator(
+    env,
+    "owner",
+  )({
+    kind: "counts",
+    updatedAt: partialAt,
+    complete: false,
+    counts: [
+      {
+        fullName: "owner/repo",
+        openIssues: 9,
+        openPullRequests: 3,
+        archived: false,
+        fork: false,
+        private: false,
+        pushedAt: partialAt,
+        updatedAt: partialAt,
+      },
+    ],
+  });
+  assert(mutation);
 
-  const snapshot = (await mutation.json()) as {
-    countsUpdatedAt?: string;
-    projectCountsUpdatedAt?: Record<string, string>;
-  };
+  const snapshot = mutation;
   expect(snapshot.countsUpdatedAt).toBe(initialAt);
   expect(snapshot.projectCountsUpdatedAt?.["owner/repo"]).toBe(partialAt);
   expect(snapshot.projectCountsUpdatedAt?.["owner/sibling"]).toBe(initialAt);
@@ -455,29 +432,21 @@ test("stale archive observations do not override newer count observations", asyn
       projects: [project],
     }),
   });
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
-  const locks = durableLocks(env);
-  const stub = locks.get(locks.idFromName("owner-metadata:owner"));
-  const response = await stub.fetch(
-    new Request("https://releasebar.internal/owner-metadata/mutate", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        owner: "owner",
-        mutation: {
-          kind: "visibility",
-          fullName: "owner/repo",
-          archived: true,
-          observedAt: archiveAt,
-          repositoryUpdatedAt: archiveAt,
-        },
-      }),
-    }),
-  );
-  expect(response.ok).toBe(true);
-  const snapshot = (await response.json()) as { projects?: Project[] };
+  const response = await ownerMetadataMutator(
+    env,
+    "owner",
+  )({
+    kind: "visibility",
+    fullName: "owner/repo",
+    archived: true,
+    observedAt: archiveAt,
+    repositoryUpdatedAt: archiveAt,
+  });
+  assert(response);
+  const snapshot = response;
   expect(snapshot.projects?.[0]?.archived).toBe(false);
 });
 
@@ -506,45 +475,29 @@ test("partial owner count scans cannot make an incomplete repository set authori
       projects: [repo, newlyDiscovered],
     }),
   });
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = {
-    idFromName: locks.idFromName,
-    get: locks.get,
-  };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
-  const response = await stub.fetch(
-    new Request("https://releasebar.internal/owner-metadata/mutate", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        owner: "owner",
-        mutation: {
-          kind: "counts",
-          updatedAt: partialAt,
-          complete: false,
-          counts: [repo, newlyDiscovered].map((project) => ({
-            fullName: project.fullName,
-            openIssues: 1,
-            openPullRequests: 0,
-            archived: false,
-            fork: false,
-            private: false,
-            pushedAt: partialAt,
-            updatedAt: partialAt,
-          })),
-        },
-      }),
-    }),
-  );
-  expect(response.ok).toBe(true);
-  const snapshot = (await response.json()) as {
-    countsUpdatedAt?: string;
-    countsAttemptedAt?: string;
-    knownRepos?: string[];
-  };
+  const response = await ownerMetadataMutator(
+    env,
+    "owner",
+  )({
+    kind: "counts",
+    updatedAt: partialAt,
+    complete: false,
+    counts: [repo, newlyDiscovered].map((project) => ({
+      fullName: project.fullName,
+      openIssues: 1,
+      openPullRequests: 0,
+      archived: false,
+      fork: false,
+      private: false,
+      pushedAt: partialAt,
+      updatedAt: partialAt,
+    })),
+  });
+  assert(response);
+  const snapshot = response;
   expect(snapshot.countsUpdatedAt).toBe(initialAt);
   expect(snapshot.countsAttemptedAt).toBe(partialAt);
   expect(snapshot.knownRepos).toStrictEqual(["owner/repo"]);
@@ -719,25 +672,10 @@ test("owner removal tombstones survive older refresh observations", async () => 
   const olderAt = "2026-06-11T02:00:00Z";
   const newerAt = "2026-06-11T04:00:00Z";
   const cache = kvStore();
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = {
-    idFromName: locks.idFromName,
-    get: locks.get,
-  };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
-  const mutate = async (mutation: Record<string, unknown>) => {
-    const response = await stub.fetch(
-      new Request("https://releasebar.internal/owner-metadata/mutate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ owner: "owner", mutation }),
-      }),
-    );
-    expect(response.ok || response.status === 204).toBe(true);
-  };
+  const mutate = ownerMetadataMutator(env, "owner");
 
   await mutate({ kind: "remove", fullName: "owner/repo", observedAt: removedAt });
   await mutate({
@@ -776,26 +714,10 @@ test("owner mutations reconcile newer KV fallback state before updating durable 
   const followUpAt = "2026-06-11T03:00:00Z";
   const project = testProject({ owner: "owner", name: "repo" });
   const cache = kvStore();
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
   };
-  const locks = durableLocks(env);
-  env.DASHBOARD_LOCKS = {
-    idFromName: locks.idFromName,
-    get: locks.get,
-  };
-  const stub = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("owner-metadata:owner"));
-  const mutate = async (mutation: Record<string, unknown>) => {
-    const response = await stub.fetch(
-      new Request("https://releasebar.internal/owner-metadata/mutate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ owner: "owner", mutation }),
-      }),
-    );
-    expect(response.ok || response.status === 204).toBe(true);
-    return response;
-  };
+  const mutate = ownerMetadataMutator(env, "owner");
 
   await mutate({
     kind: "merge",
@@ -824,16 +746,13 @@ test("owner mutations reconcile newer KV fallback state before updating durable 
     }),
   );
 
-  const response = await mutate({
+  const snapshot = await mutate({
     kind: "counts",
     updatedAt: followUpAt,
     complete: false,
     counts: [],
   });
-  const snapshot = (await response.json()) as {
-    removedRepos?: Record<string, string>;
-    projects?: Project[];
-  };
+  assert(snapshot);
   expect(snapshot.removedRepos?.["owner/repo"]).toBe(removedAt);
   expect(snapshot.projects?.some((candidate) => candidate.fullName === project.fullName)).toBe(
     false,

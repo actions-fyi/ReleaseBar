@@ -1,7 +1,7 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.ts";
-import { kvStore, testProject, worker } from "./dashboard-test-harness.ts";
+import { BuildCoordinator, kvStore, testProject, worker } from "./dashboard-test-harness.ts";
 
 test("worker does not restore stale KV progress after an authoritative Durable Object miss", async () => {
   const key = dashboardCacheKey({
@@ -48,27 +48,6 @@ test("worker does not restore stale KV progress after an authoritative Durable O
     }),
     [`refresh:job:v1:${job.id}`]: JSON.stringify(job),
   });
-  const locks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async (request: Request) => {
-        const path = new URL(request.url).pathname;
-        if (path === "/progress/get") {
-          return new Response(null, {
-            status: 204,
-            headers: { "x-releasebar-progress": "durable" },
-          });
-        }
-        if (path === "/progress/put" || path === "/progress/delete") {
-          return new Response(null, {
-            status: 204,
-            headers: { "x-releasebar-progress": "durable" },
-          });
-        }
-        return new Response(null, { status: 204 });
-      },
-    }),
-  };
   const originalFetch = globalThis.fetch;
   let acked = false;
   try {
@@ -112,7 +91,7 @@ test("worker does not restore stale KV progress after an authoritative Durable O
           },
         ],
       },
-      { DASHBOARD_CACHE: cache, DASHBOARD_LOCKS: locks },
+      { DASHBOARD_CACHE: cache },
       { waitUntil: () => undefined },
     );
   } finally {
@@ -271,59 +250,26 @@ test("worker tombstones failed Durable Object progress deletion before publishin
     version: "v0.1.0",
     releaseDate: "2025-01-01T00:00:00Z",
   });
-  let released = false;
-  let deleteAttempts = 0;
+  // The dashboard's coordinator object holds the progress of an earlier build, and can't delete it
+  // at first.
   let deleteFails = true;
   let durableProgressPresent = false;
-  const locks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async (request: Request) => {
-        const path = new URL(request.url).pathname;
-        if (path === "/acquire") {
-          return new Response(null, { status: 204 });
+  vi.spyOn(BuildCoordinator.prototype, "progress").mockImplementation(() =>
+    durableProgressPresent
+      ? {
+          scannedRepos: [staleProject.fullName.toLowerCase()],
+          projects: [staleProject],
+          updatedAt: "2026-06-10T00:00:00Z",
         }
-        if (path === "/release") {
-          released = true;
-          return new Response(null, { status: 204 });
-        }
-        if (path === "/progress/get") {
-          return durableProgressPresent
-            ? Response.json(
-                {
-                  scannedRepos: [staleProject.fullName.toLowerCase()],
-                  projects: [staleProject],
-                  updatedAt: "2026-06-10T00:00:00Z",
-                },
-                { headers: { "x-releasebar-progress": "durable" } },
-              )
-            : new Response(null, {
-                status: 204,
-                headers: { "x-releasebar-progress": "durable" },
-              });
-        }
-        if (path === "/progress/delete") {
-          deleteAttempts += 1;
-          if (!deleteFails) {
-            durableProgressPresent = false;
-            return new Response(null, {
-              status: 204,
-              headers: { "x-releasebar-progress": "durable" },
-            });
-          }
-          durableProgressPresent = true;
-          return new Response(null, {
-            status: 503,
-            headers: { "x-releasebar-progress": "durable" },
-          });
-        }
-        if (path === "/job/reserve" || path === "/job/release") {
-          return new Response(null, { status: 204 });
-        }
-        return new Response(null, { status: 404 });
-      },
-    }),
-  };
+      : null,
+  );
+  const deleteAttempts = vi
+    .spyOn(BuildCoordinator.prototype, "deleteProgress")
+    .mockImplementation(() => {
+      durableProgressPresent = deleteFails;
+      if (deleteFails) throw new Error("Durable Object unavailable");
+    });
+  const releases = vi.spyOn(BuildCoordinator.prototype, "releaseLock");
   globalThis.fetch = async (input) => {
     const path = new URL(String(input)).pathname;
     if (path === "/users/delete-failure") {
@@ -387,7 +333,6 @@ test("worker tombstones failed Durable Object progress deletion before publishin
       new Request("https://release.bar/api/delete-failure?unreleased=false"),
       {
         DASHBOARD_CACHE: cache,
-        DASHBOARD_LOCKS: locks,
       },
       { waitUntil: () => undefined },
     );
@@ -401,8 +346,8 @@ test("worker tombstones failed Durable Object progress deletion before publishin
     expect(typeof tombstone.clearedAt).toBe("string");
     const cached = JSON.parse((await cache.get(key)) ?? "{}") as DashboardPayload;
     expect(cached.cache?.state).toBe("fresh");
-    expect(deleteAttempts).toBe(1);
-    expect(released).toBe(true);
+    expect(deleteAttempts).toHaveBeenCalledTimes(1);
+    expect(releases).toHaveBeenCalled();
 
     deleteFails = false;
     const target: RefreshTarget = {
@@ -467,7 +412,6 @@ test("worker tombstones failed Durable Object progress deletion before publishin
       },
       {
         DASHBOARD_CACHE: cache,
-        DASHBOARD_LOCKS: locks,
       },
       { waitUntil: () => undefined },
     );
@@ -480,7 +424,7 @@ test("worker tombstones failed Durable Object progress deletion before publishin
       (await cache.get(progressTombstoneStorageKey)) ?? "{}",
     ) as { clearedAt?: string };
     expect(typeof recoveredTombstone.clearedAt).toBe("string");
-    expect(deleteAttempts >= 2).toBe(true);
+    expect(deleteAttempts.mock.calls.length >= 2).toBe(true);
   } finally {
     globalThis.fetch = originalFetch;
   }

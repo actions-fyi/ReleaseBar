@@ -45,21 +45,58 @@ export type WorkerQueueMessage = RefreshJob | GitHubWebhookJob | GitHubWebhookFa
 // passes its own, to await that work before it answers.
 export type BackgroundContext = Pick<ExecutionContext, "waitUntil">;
 
-const jurisdictionLocks = new WeakMap<DurableObjectNamespace, DurableObjectNamespace>();
+// The name of each Durable Object instance. A name is all that addresses an instance, so every
+// caller builds it here.
+export const summaryQuotaObjectName = "summary-quota";
+export const webhookAdmissionObjectName = "github-webhook-admission";
+export const webhookProcessorObjectName = (owner: string): string =>
+  `github-webhook-process:${owner}`;
+export const ownerMetadataObjectName = (owner: string): string => `owner-metadata:${owner}`;
+export const refreshTargetIndexName = (kind: "owner" | "repo", value: string): string =>
+  `refresh-target-index:${kind}:${value}`;
 
-// Scopes DASHBOARD_LOCKS to the jurisdiction in RELEASEBAR_DO_JURISDICTION (such as "eu"), so every
-// Durable Object is created and stored only there. Unset, the binding is used as it is.
+type DurableObjectBinding = {
+  [Name in keyof Env]-?: Env[Name] extends Pick<DurableObjectNamespace, "idFromName">
+    ? Name
+    : never;
+}[keyof Env];
+
+// Every Durable Object binding of wrangler.jsonc: the type fails when one is missing here.
+const durableObjectBindingNames: Record<DurableObjectBinding, true> = {
+  BUILD_COORDINATOR: true,
+  OWNER_METADATA: true,
+  REFRESH_TARGET_INDEX: true,
+  SUMMARY_QUOTA: true,
+  WEBHOOK_ADMISSION: true,
+  WEBHOOK_PROCESSOR: true,
+};
+export const durableObjectBindings = Object.keys(
+  durableObjectBindingNames,
+) as DurableObjectBinding[];
+
+const jurisdictionEnvs = new WeakMap<Env, { jurisdiction: string; scoped: Env }>();
+
+// Scopes every Durable Object binding to the jurisdiction in RELEASEBAR_DO_JURISDICTION (such as
+// "eu"), so every Durable Object is created and stored only there. Unset, the bindings are used
+// as they are. Each handler, and each Durable Object that calls another one, passes its env
+// through here before it uses a binding.
 export function withLockJurisdiction(env: Env): Env {
   const jurisdiction = env.RELEASEBAR_DO_JURISDICTION?.trim();
-  const locks = env.DASHBOARD_LOCKS;
-  if (!jurisdiction || !locks) return env;
-  if (!locks.jurisdiction) {
-    throw new Error("RELEASEBAR_DO_JURISDICTION is set, but DASHBOARD_LOCKS has no jurisdictions");
+  if (!jurisdiction) return env;
+  const known = jurisdictionEnvs.get(env);
+  if (known?.jurisdiction === jurisdiction) return known.scoped;
+  const scoped: Env = { ...env };
+  for (const binding of durableObjectBindings) {
+    const namespace: DurableObjectNamespace = env[binding];
+    if (typeof namespace.jurisdiction !== "function") {
+      throw new Error(`RELEASEBAR_DO_JURISDICTION is set, but ${binding} has no jurisdictions`);
+    }
+    Object.assign(scoped, {
+      [binding]: namespace.jurisdiction(jurisdiction as DurableObjectJurisdiction),
+    });
   }
-  const scoped =
-    jurisdictionLocks.get(locks) ?? locks.jurisdiction(jurisdiction as DurableObjectJurisdiction);
-  jurisdictionLocks.set(locks, scoped);
-  return { ...env, DASHBOARD_LOCKS: scoped };
+  jurisdictionEnvs.set(env, { jurisdiction, scoped });
+  return scoped;
 }
 
 // A leading http(s) scheme: matches "https://releasebar.example.com", rejects "releasebar.example.com".

@@ -20,6 +20,8 @@ Work style: terse.
 - Local real-data dev: `npm run dev:worker:real` uses Wrangler `--remote` on port 8787 with real secrets. It reads `wrangler.jsonc`, not the Vite build's config.
 - Static proof: `npm run check:static`.
 - Tests: `npm test` runs Vitest with coverage; `vitest.config.ts` has a `workers` project (Workers runtime, bindings from `wrangler.jsonc`) and a `node` project for the files it lists. Tests import the TypeScript sources; no build first. One file or test: `npx vitest run <file> -t <name>`.
+- Durable Objects in tests are the real local ones: `testEnv` of `test/dashboard-test-harness.ts` adds the runtime's bindings to a test's env, and `test/reset-storage.ts` empties all storage after each test. To make an object busy or failing, spy on the class prototype (`buildLocksHeld`, `objectsUnavailable`, `vi.spyOn(BuildCoordinator.prototype, ...)`); never build a fake namespace.
+- Durable Object classes live in `worker/objects/`, one file each. A class change needs a new entry in `migrations` of `wrangler.jsonc`, never an edit of an applied one, and the binding in `durableObjectBindings` of `worker/runtime.ts`, which scopes it to the jurisdiction.
 - Dependency updates come from Renovate, not Dependabot.
 
 ## Stack migration
@@ -32,7 +34,7 @@ Steps, one pull request each, in order; 7a to 7c may run in parallel. Tick a ste
 - [x] 2 Config and types: `wrangler.jsonc`, types from `wrangler types`, handlers `satisfies ExportedHandler<Env>`.
 - [x] 3 Test runner: Vitest in the Workers runtime; tests import TypeScript sources, no compile step.
 - [x] 4 Single build: Cloudflare Vite plugin v1, one `vite build`, one `vite dev`; shared code moves from `scripts/lib` to `shared/`.
-- [ ] 5 Durable Objects: classes that extend `DurableObject`, typed RPC methods, SQLite tables.
+- [x] 5 Durable Objects: classes that extend `DurableObject`, typed RPC methods, SQLite tables.
 - [ ] 6 Store layer: `worker/store/` is the only code that touches a binding; D1 binding added.
 - [ ] 7a Refresh data to D1: targets, target index, jobs, deliveries, scheduler state.
 - [ ] 7b Audit and counters to D1: audit logs, sign-in funnel, client timing.

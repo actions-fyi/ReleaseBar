@@ -2,14 +2,13 @@
 // each one that calls the model counts against that user's hourly limit and the daily limit for
 // all users. Cached summaries are served to everyone and count nothing.
 //
-// The counters live in one Durable Object, the DASHBOARD_LOCKS instance named below, because a
+// The counters live in one Durable Object, the SUMMARY_QUOTA instance of that name, because a
 // limit needs an atomic read-and-add, which KV cannot give.
 
 import { currentSession } from "./app-shell.ts";
-import { jsonResponse } from "./http.ts";
 import { isCrawlerRequest } from "./owner-metadata-write.ts";
 import { summaryRateLimits } from "./summary-limits.ts";
-import type { BackgroundContext } from "./runtime.ts";
+import { type BackgroundContext, summaryQuotaObjectName } from "./runtime.ts";
 
 export const summarySignInMessage = "Sign in to generate this AI summary.";
 export const summaryUserLimitMessage =
@@ -18,87 +17,21 @@ export const summaryGlobalLimitMessage =
   "The daily AI summary limit has been reached. Try again tomorrow.";
 export const summaryQuotaUnavailableMessage = "AI summaries are unavailable right now.";
 
-const quotaObjectName = "summary-quota";
-const globalCounterKey = "summary-quota:global";
-const hourMs = 3_600_000;
-const dayMs = 86_400_000;
-
-// A count within one fixed window: `window` is the window's index since the epoch.
-type StoredSummaryCount = { window: number; count: number };
-
-type QuotaVerdict = { allowed: boolean; scope?: "user" | "global" };
-
 // Counts one model call against the limits, and throws SummaryLimitError when one is reached.
 export type SummaryReservation = () => Promise<void>;
 
 export class SummaryLimitError extends Error {}
 
-// The Durable Object side: checks both limits for a user and, with `reserve`, counts one
-// generation against them. Check and count happen as one step.
-export async function summaryQuotaResponse(
-  state: DurableObjectState,
-  env: Env,
-  request: Request,
-): Promise<Response> {
-  const body = (await request.json().catch(() => null)) as {
-    userId?: unknown;
-    reserve?: unknown;
-  } | null;
-  const userId = body?.userId;
-  if (typeof userId !== "number" || !Number.isSafeInteger(userId)) {
-    return new Response(null, { status: 400 });
-  }
-  const check = async (): Promise<Response> => {
-    const limits = summaryRateLimits(env);
-    const now = Date.now();
-    const userWindow = Math.floor(now / hourMs);
-    const globalWindow = Math.floor(now / dayMs);
-    const userKey = `summary-quota:user:${userId}`;
-    const [user, global] = await Promise.all([
-      state.storage.get<StoredSummaryCount>(userKey),
-      state.storage.get<StoredSummaryCount>(globalCounterKey),
-    ]);
-    const userCount = user?.window === userWindow ? user.count : 0;
-    const globalCount = global?.window === globalWindow ? global.count : 0;
-    const headers = { "cache-control": "no-store" };
-    if (userCount >= limits.userHourly) {
-      return jsonResponse({ allowed: false, scope: "user" } satisfies QuotaVerdict, 200, headers);
-    }
-    if (globalCount >= limits.globalDaily) {
-      return jsonResponse({ allowed: false, scope: "global" } satisfies QuotaVerdict, 200, headers);
-    }
-    if (body?.reserve === true) {
-      await Promise.all([
-        state.storage.put(userKey, {
-          window: userWindow,
-          count: userCount + 1,
-        } satisfies StoredSummaryCount),
-        state.storage.put(globalCounterKey, {
-          window: globalWindow,
-          count: globalCount + 1,
-        } satisfies StoredSummaryCount),
-      ]);
-    }
-    return jsonResponse({ allowed: true } satisfies QuotaVerdict, 200, headers);
-  };
-  return state.blockConcurrencyWhile ? state.blockConcurrencyWhile(check) : check();
-}
-
 // Asks the quota object; returns why the user may not generate, or null when they may.
-// Without the object nothing can be counted, so nothing is generated.
+// When the object can't be reached nothing can be counted, so nothing is generated.
 async function quotaRefusal(env: Env, userId: number, reserve: boolean): Promise<string | null> {
-  const locks = env.DASHBOARD_LOCKS;
-  if (!locks) return summaryQuotaUnavailableMessage;
   try {
-    const response = await locks.get(locks.idFromName(quotaObjectName)).fetch(
-      new Request("https://releasebar.internal/summary-quota", {
-        method: "POST",
-        body: JSON.stringify({ userId, reserve }),
-      }),
+    const verdict = await env.SUMMARY_QUOTA.getByName(summaryQuotaObjectName).check(
+      userId,
+      summaryRateLimits(env),
+      reserve,
     );
-    if (!response.ok) return summaryQuotaUnavailableMessage;
-    const verdict = (await response.json()) as QuotaVerdict;
-    if (verdict.allowed === true) return null;
+    if (verdict.allowed) return null;
     return verdict.scope === "global" ? summaryGlobalLimitMessage : summaryUserLimitMessage;
   } catch {
     return summaryQuotaUnavailableMessage;

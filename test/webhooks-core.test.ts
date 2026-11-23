@@ -1,4 +1,4 @@
-import { assert, expect, test } from "vitest";
+import { assert, expect, test, vi } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type {
   DashboardPayload,
@@ -8,11 +8,14 @@ import type {
   RefreshTarget,
 } from "../src/types.ts";
 import {
-  DashboardBuildLock,
-  durableLocks,
+  BuildCoordinator,
   kvStore,
   testDashboard,
+  type TestEnv,
+  testEnv,
   testProject,
+  WebhookAdmission,
+  WebhookProcessor,
   webhookSignature,
   worker,
 } from "./dashboard-test-harness.ts";
@@ -210,7 +213,7 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
   let delivery7ImmediateCaptured = false;
   const queuedWebhooks: Array<Record<string, unknown>> = [];
   const queuedWebhookDelays: Array<number | undefined> = [];
-  const env: ConstructorParameters<typeof DashboardBuildLock>[1] = {
+  const env: TestEnv = {
     DASHBOARD_CACHE: cache,
     GITHUB_WEBHOOK_SECRET: secret,
     GITHUB_TOKEN: "shared-token",
@@ -246,15 +249,12 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       },
     },
   };
-  const locks = durableLocks(env);
-  const durableObjectNames: string[] = [];
-  env.DASHBOARD_LOCKS = {
-    idFromName(name) {
-      durableObjectNames.push(name);
-      return locks.idFromName(name);
-    },
-    get: locks.get,
-  };
+  const admissions = vi.spyOn(WebhookAdmission.prototype, "enqueue");
+  const processing = vi.spyOn(WebhookProcessor.prototype, "process");
+  // The names of the objects a spied method ran on.
+  const objectNames = (contexts: unknown[]) => [
+    ...new Set(contexts.map((object) => (object as { ctx: DurableObjectState }).ctx.id.name)),
+  ];
   let exactIssues = 2;
   let exactArchived = false;
   let failCounts = false;
@@ -302,13 +302,9 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
         continue;
       }
       queued.splice(queuedIndex, 1);
-      assert.ok(env.DASHBOARD_LOCKS);
-      await env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName(queuedJob.targetKey)).fetch(
-        new Request("https://releasebar.internal/job/release", {
-          method: "POST",
-          body: JSON.stringify({ jobId: queuedJob.id }),
-        }),
-      );
+      await testEnv(env)
+        .BUILD_COORDINATOR.getByName(queuedJob.targetKey)
+        .releaseJob(queuedJob.id, false);
     }
   };
   const send = async (event: string, delivery: string, payload: unknown) => {
@@ -387,7 +383,9 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     pushed_at: "2026-06-11T00:00:00Z",
     updated_at: new Date(Date.parse(now) + 1_000).toISOString(),
   };
-  let repositoryObservation = Date.parse(repository.updated_at);
+  // Each observation is newer than the one before and than any count refresh the test runs:
+  // a minute ahead, the test's own running time can't overtake them.
+  let repositoryObservation = Date.parse(repository.updated_at) + 60_000;
   const observedRepository = (overrides: Record<string, unknown> = {}) => ({
     ...repository,
     ...overrides,
@@ -562,15 +560,9 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     ).toBe(true);
     expect(await cache.get(key)).toBe(null);
     expect(await cache.get(secondaryKey)).toBe(null);
-    const activeLocks = env.DASHBOARD_LOCKS;
-    env.DASHBOARD_LOCKS = {
-      idFromName: (name) => name,
-      get: () => ({
-        fetch: async () => new Response(null, { status: 409 }),
-      }),
-    };
+    const lockHeld = vi.spyOn(BuildCoordinator.prototype, "acquireLock").mockReturnValue(false);
     const pushFallback = await readDashboard();
-    env.DASHBOARD_LOCKS = activeLocks;
+    lockHeld.mockRestore();
     expect(pushFallback.projects[0]?.version).toBe("repo search");
     expect(pushFallback.projects[0]?.releaseDate).toBe(null);
     expect(pushFallback.projects[0]?.latestCommitSha).toBe(null);
@@ -824,9 +816,8 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
     expect(JSON.stringify(compactPush).length < 2_000).toBe(true);
     const indexes = await cache.list({ prefix: "refresh:target-index:v1:owner:owner:" });
     expect(indexes.keys.length > 0).toBe(true);
-    expect(durableObjectNames.includes("github-webhook-admission")).toBe(true);
-    expect(durableObjectNames.includes("github-webhook-process:owner")).toBe(true);
-    expect(durableObjectNames.includes("github-webhooks")).toBe(false);
+    expect(objectNames(admissions.mock.contexts)).toStrictEqual(["github-webhook-admission"]);
+    expect(objectNames(processing.mock.contexts)).toStrictEqual(["github-webhook-process:owner"]);
   } finally {
     globalThis.fetch = originalFetch;
   }

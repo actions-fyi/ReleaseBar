@@ -14,7 +14,11 @@ import {
   isRepoDetailApiPath,
   isTrustProfileApiPath,
 } from "./routes.ts";
-import { type WorkerQueueMessage, withLockJurisdiction } from "./runtime.ts";
+import {
+  webhookProcessorObjectName,
+  type WorkerQueueMessage,
+  withLockJurisdiction,
+} from "./runtime.ts";
 import { ownerActivityResponse, repoActivityResponse } from "./activity.ts";
 import { adminResponse, profileResponse } from "./admin.ts";
 import { assetResponse, ownerActivityPageOwner } from "./app-shell.ts";
@@ -60,8 +64,12 @@ import {
 } from "./webhook.ts";
 import { webhookRepo } from "./webhook-targets.ts";
 
-export { dashboardStreamSignature, dashboardStreamState } from "./dashboard-rebuild.ts";
-export { DashboardBuildLock } from "./request-lock.ts";
+export { BuildCoordinator } from "./objects/build-coordinator.ts";
+export { OwnerMetadata } from "./objects/owner-metadata.ts";
+export { RefreshTargetIndex } from "./objects/refresh-target-index.ts";
+export { SummaryQuota } from "./objects/summary-quota.ts";
+export { WebhookAdmission } from "./objects/webhook-admission.ts";
+export { WebhookProcessor } from "./objects/webhook-processor.ts";
 
 export default {
   async fetch(request: Request, rawEnv: Env, context: ExecutionContext): Promise<Response> {
@@ -164,19 +172,12 @@ export default {
       if (isGitHubWebhookJob(message.body)) {
         const webhookJob = message.body;
         try {
-          if (!env.DASHBOARD_LOCKS) throw new Error("webhook processor unavailable");
           const owner = webhookRepo(webhookJob.payload)?.owner ?? webhookJob.delivery;
-          const id = env.DASHBOARD_LOCKS.idFromName(`github-webhook-process:${owner}`);
-          const response = await env.DASHBOARD_LOCKS.get(id).fetch(
-            new Request("https://releasebar.internal/webhook/process", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(webhookJob),
-            }),
-          );
-          if (!response.ok) {
-            throw new Error(`webhook processor returned ${response.status}`);
-          }
+          const result = await env.WEBHOOK_PROCESSOR.getByName(
+            webhookProcessorObjectName(owner),
+          ).process(webhookJob);
+          if (result.state === "busy") throw new Error("webhook processor busy");
+          if (result.state === "full") throw new Error("webhook coalescer full");
           message.ack();
         } catch (error) {
           const delaySeconds = await githubWebhookRetryDelaySeconds(env, error);

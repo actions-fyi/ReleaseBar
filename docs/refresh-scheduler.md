@@ -6,7 +6,13 @@ ReleaseBar keeps public dashboard data warm with a small scheduler on the Cloudf
 
 - Cloudflare cron runs every 15 minutes from `wrangler.jsonc`.
 - `DASHBOARD_CACHE` stores compact refresh targets, shared owner metadata/count snapshots, immutable profile and per-job snapshots, latest job states, visible dashboard snapshots, audit events, and scheduler state.
-- `DASHBOARD_LOCKS` Durable Objects hold the active job reservation, refresh-target failure state, and strongly consistent progressive-scan checkpoint for each dashboard.
+- Durable Objects hold what must be checked and changed in one step. Each is a class with typed RPC methods and SQLite storage, under `worker/objects/`:
+  - `BUILD_COORDINATOR` (`BuildCoordinator`), one per dashboard: the build lock, the active job reservation with its dirty marker, the refresh-target failure state, and the strongly consistent progressive-scan checkpoint.
+  - `REFRESH_TARGET_INDEX` (`RefreshTargetIndex`), one per owner and per repository: the dashboards that show it, which a webhook refreshes.
+  - `OWNER_METADATA` (`OwnerMetadata`), one per owner: the owner's metadata snapshot, including repositories that turned private or were removed.
+  - `WEBHOOK_ADMISSION` (`WebhookAdmission`), a single one: the GitHub deliveries already put on the queue.
+  - `WEBHOOK_PROCESSOR` (`WebhookProcessor`), one per owner: pending and processed deliveries, and the lease of the job that drains them.
+  - `SUMMARY_QUOTA` (`SummaryQuota`), a single one: the AI summary counters.
 - `REFRESH_QUEUE` receives background rebuild jobs in production.
 - User requests return cheap repository metadata first, bounded by the same 15-second cold-response deadline, then enqueue release hydration instead of keeping long scans inside HTTP `waitUntil()`.
 - If the queue binding is missing, scheduler jobs run one bounded `waitUntil()` attempt and record retryable work as failed so a later tick can schedule it again.
@@ -88,7 +94,7 @@ Audit events are stored in KV and logged to Worker logs with `area: "scheduler"`
 
 ## GitHub Webhooks
 
-`POST /api/github/webhook` accepts payloads up to 2 MiB, verifies `X-Hub-Signature-256` with `GITHUB_WEBHOOK_SECRET`, accepts GitHub setup pings, and serializes delivery admission through `DASHBOARD_LOCKS`. It acknowledges event deliveries only after the payload is durably written to Cloudflare Queue. Queue consumers persist pending work in a per-owner Durable Object, elect one delivery to drain it, and deduplicate accepted and processed `X-GitHub-Delivery` values for 24 hours.
+`POST /api/github/webhook` accepts payloads up to 2 MiB, verifies `X-Hub-Signature-256` with `GITHUB_WEBHOOK_SECRET`, accepts GitHub setup pings, and serializes delivery admission through the `WEBHOOK_ADMISSION` Durable Object. It acknowledges event deliveries only after the payload is durably written to Cloudflare Queue. Queue consumers persist pending work in a per-owner Durable Object, elect one delivery to drain it, and deduplicate accepted and processed `X-GitHub-Delivery` values for 24 hours.
 
 Push and release deliveries eagerly invalidate and refresh release-enabled dashboard variants viewed in the last 24 hours. Up to 25 recently viewed matching candidates from the available target indexes enter an immediate batch; fanout waits for its Durable Object reservations to drain, capped at two minutes from batch creation, before remaining recent variants follow through a stable key-ordered sweep that cannot skip targets when view timestamps change. Older variants refresh when viewed. Repository privacy and archive events still fan out across every matching target so removal and visibility changes apply immediately.
 

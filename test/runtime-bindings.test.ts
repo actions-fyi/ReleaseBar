@@ -1,6 +1,7 @@
 // These tests use the bindings the Workers runtime provides from wrangler.jsonc, not the fakes of
-// dashboard-test-harness.ts: the fetch handler, the Durable Object, the KV namespace and the queue
-// are the local ones Miniflare runs. Storage is separate for each test file.
+// dashboard-test-harness.ts: the fetch handler, the Durable Objects, the KV namespace and the queue
+// are the local ones Miniflare runs. Storage is separate for each test file, and reset-storage.ts
+// empties it after each test.
 import { env, exports } from "cloudflare:workers";
 import { expect, test, vi } from "vitest";
 import type { RefreshJob } from "../src/types.ts";
@@ -15,20 +16,17 @@ test("the Worker's fetch handler answers a request", async () => {
   expect(body.loginUrl).toBe("https://releasebar.test/api/auth/login");
 });
 
-test("the dashboard lock Durable Object keeps a lock between calls", async () => {
-  const lock = env.DASHBOARD_LOCKS.get(env.DASHBOARD_LOCKS.idFromName("runtime-bindings"));
-  const call = (path: string, token: string) =>
-    lock.fetch(
-      new Request(`https://releasebar.internal${path}`, {
-        method: "POST",
-        body: JSON.stringify({ token }),
-      }),
-    );
+test("the build coordinator Durable Object keeps a lock between calls", async () => {
+  const coordinator = env.BUILD_COORDINATOR.getByName("runtime-bindings");
 
-  expect((await call("/acquire", "first")).status).toBe(204);
-  expect((await call("/acquire", "second")).status).toBe(409);
-  expect((await call("/release", "first")).status).toBe(204);
-  expect((await call("/acquire", "second")).status).toBe(204);
+  expect(await coordinator.acquireLock("first")).toBe(true);
+  expect(await coordinator.acquireLock("second")).toBe(false);
+  expect(await coordinator.refreshLock("second")).toBe(false);
+  expect(await coordinator.refreshLock("first")).toBe(true);
+  await coordinator.releaseLock("second");
+  expect(await coordinator.acquireLock("second")).toBe(false);
+  await coordinator.releaseLock("first");
+  expect(await coordinator.acquireLock("second")).toBe(true);
 });
 
 test("the dashboard cache KV namespace round-trips a value", async () => {

@@ -1,9 +1,21 @@
-import { expect, test } from "vitest";
+import { runInDurableObject } from "cloudflare:test";
+import { env } from "cloudflare:workers";
+import { assert, expect, test, vi } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
-  DashboardBuildLock,
+  buildLockTtlMs,
+  refreshJobReservationTtlMs,
+  type RefreshTargetMutation,
+} from "../worker/config.ts";
+import { mutateRefreshTargetState } from "../worker/refresh-targets.ts";
+import {
+  BuildCoordinator,
+  buildLocksHeld,
   kvStore,
+  objectsUnavailable,
+  RefreshTargetIndex,
+  testEnv,
   testDashboard,
   testProject,
   worker,
@@ -269,26 +281,8 @@ test("worker scheduler terminalizes retryable refreshes when Queue is unavailabl
     [key]: JSON.stringify(cached),
     [`refresh:target:v1:${key}`]: JSON.stringify(target),
   });
-  let released = false;
-  const locks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async (request: Request) => {
-        const path = new URL(request.url).pathname;
-        if (path === "/job/reserve") {
-          return new Response(null, { status: 204 });
-        }
-        if (path === "/job/release") {
-          released = true;
-          return new Response(null, { status: 204 });
-        }
-        if (path === "/acquire") {
-          return new Response(null, { status: 409 });
-        }
-        return new Response(null, { status: 404 });
-      },
-    }),
-  };
+  buildLocksHeld();
+  const releases = vi.spyOn(BuildCoordinator.prototype, "releaseJob");
   const waits: Promise<unknown>[] = [];
   await (
     worker as unknown as {
@@ -302,7 +296,6 @@ test("worker scheduler terminalizes retryable refreshes when Queue is unavailabl
     { cron: "*/15 * * * *" },
     {
       DASHBOARD_CACHE: cache,
-      DASHBOARD_LOCKS: locks,
     },
     { waitUntil: (promise) => waits.push(promise) },
   );
@@ -321,153 +314,77 @@ test("worker scheduler terminalizes retryable refreshes when Queue is unavailabl
   ) as RefreshJob;
   expect(stored.status).toBe("failed");
   expect(stored.error ?? "").toMatch(/Queue continuation unavailable/);
-  expect(released).toBe(true);
+  expect(releases).toHaveBeenCalled();
 });
 
+// Runs `check` with the clock moved forward.
+async function later(ms: number, check: () => Promise<void>): Promise<void> {
+  const realNow = Date.now;
+  Date.now = () => realNow() + ms;
+  try {
+    await check();
+  } finally {
+    Date.now = realNow;
+  }
+}
+
 test("dashboard build lock only releases the matching lease token", async () => {
-  const storage = new Map<string, unknown>();
-  const lock = new DashboardBuildLock(
-    {
-      storage: {
-        async get<T>(key: string) {
-          return storage.get(key) as T | undefined;
-        },
-        async put<T>(key: string, value: T) {
-          storage.set(key, value);
-        },
-        async delete(key: string) {
-          return storage.delete(key);
-        },
-      },
-    },
-    {},
-  );
+  const coordinator = env.BUILD_COORDINATOR.getByName("lease-token");
 
-  expect(
-    (
-      await lock.fetch(
-        new Request("https://releasebar.internal/acquire", {
-          method: "POST",
-          body: JSON.stringify({ token: "first" }),
-        }),
-      )
-    ).status,
-  ).toBe(204);
-  expect(
-    (
-      await lock.fetch(
-        new Request("https://releasebar.internal/acquire", {
-          method: "POST",
-          body: JSON.stringify({ token: "second" }),
-        }),
-      )
-    ).status,
-  ).toBe(409);
+  expect(await coordinator.acquireLock("first")).toBe(true);
+  expect(await coordinator.acquireLock("second")).toBe(false);
 
-  storage.set("lock", { token: "first", expiresAt: Date.now() - 1 });
-  expect(
-    (
-      await lock.fetch(
-        new Request("https://releasebar.internal/acquire", {
-          method: "POST",
-          body: JSON.stringify({ token: "second" }),
-        }),
-      )
-    ).status,
-  ).toBe(204);
-  const secondExpiresAt = (storage.get("lock") as { expiresAt: number }).expiresAt;
-  expect(
-    (
-      await lock.fetch(
-        new Request("https://releasebar.internal/refresh", {
-          method: "POST",
-          body: JSON.stringify({ token: "first" }),
-        }),
-      )
-    ).status,
-  ).toBe(409);
-  expect(
-    (
-      await lock.fetch(
-        new Request("https://releasebar.internal/refresh", {
-          method: "POST",
-          body: JSON.stringify({ token: "second" }),
-        }),
-      )
-    ).status,
-  ).toBe(204);
-  expect((storage.get("lock") as { expiresAt: number }).expiresAt >= secondExpiresAt).toBe(true);
-  expect(
-    (
-      await lock.fetch(
-        new Request("https://releasebar.internal/release", {
-          method: "POST",
-          body: JSON.stringify({ token: "first" }),
-        }),
-      )
-    ).status,
-  ).toBe(204);
-  expect(storage.get("lock")).toStrictEqual({
-    token: "second",
-    expiresAt: (storage.get("lock") as { expiresAt: number }).expiresAt,
+  // The first lease expires unreleased.
+  await later(buildLockTtlMs + 1, async () => {
+    expect(await coordinator.acquireLock("second")).toBe(true);
+    expect(await coordinator.refreshLock("first")).toBe(false);
+    expect(await coordinator.refreshLock("second")).toBe(true);
+    await coordinator.releaseLock("first");
+    expect(await coordinator.acquireLock("third")).toBe(false);
+    await coordinator.releaseLock("second");
+    expect(await coordinator.acquireLock("third")).toBe(true);
   });
 });
 
 test("dashboard build lock reserves one refresh job per dashboard", async () => {
-  const storage = new Map<string, unknown>();
-  const lock = new DashboardBuildLock(
-    {
-      storage: {
-        async get<T>(key: string) {
-          return storage.get(key) as T | undefined;
-        },
-        async put<T>(key: string, value: T) {
-          storage.set(key, value);
-        },
-        async delete(key: string) {
-          return storage.delete(key);
-        },
-      },
-    },
-    {},
-  );
-  const request = (path: string, jobId: string) =>
-    lock.fetch(
-      new Request(`https://releasebar.internal${path}`, {
-        method: "POST",
-        body: JSON.stringify({ jobId }),
-      }),
-    );
+  const coordinator = env.BUILD_COORDINATOR.getByName("one-job");
 
-  expect((await request("/job/reserve", "first")).status).toBe(204);
-  expect((await request("/job/reserve", "second")).status).toBe(409);
-  expect((await request("/job/reserve", "first")).status).toBe(204);
-  expect((await request("/job/release", "second")).status).toBe(204);
-  expect((await request("/job/reserve", "second")).status).toBe(409);
-  expect((await request("/job/release", "first")).status).toBe(204);
-  expect((await request("/job/reserve", "second")).status).toBe(204);
+  expect(await coordinator.jobActive()).toBe(false);
+  expect(await coordinator.reserveJob("first")).toBe(true);
+  expect(await coordinator.jobActive()).toBe(true);
+  expect(await coordinator.reserveJob("second")).toBe(false);
+  expect(await coordinator.reserveJob("first")).toBe(true);
+  await coordinator.releaseJob("second", false);
+  expect(await coordinator.reserveJob("second")).toBe(false);
+  await coordinator.releaseJob("first", false);
+  expect(await coordinator.jobActive()).toBe(false);
+  expect(await coordinator.reserveJob("second")).toBe(true);
+
+  // A reservation that is never released expires.
+  await later(refreshJobReservationTtlMs + 1, async () => {
+    expect(await coordinator.jobActive()).toBe(false);
+    expect(await coordinator.reserveJob("third")).toBe(true);
+  });
+});
+
+test("a refused refresh job reservation leaves its newest dirty marker for the holder", async () => {
+  const coordinator = env.BUILD_COORDINATOR.getByName("dirty-marker");
+  const newer = { observedAt: "2026-06-11T12:02:00Z", reason: "webhook:push" };
+  const older = { observedAt: "2026-06-11T12:01:00Z", reason: "webhook:release" };
+
+  expect(await coordinator.reserveJob("first")).toBe(true);
+  expect(await coordinator.reserveJob("second", newer)).toBe(false);
+  expect(await coordinator.reserveJob("third", older)).toBe(false);
+  // Only the job that holds the reservation takes the marker, and only when it asks for it.
+  expect(await coordinator.releaseJob("second", true)).toBe(null);
+  expect(await coordinator.releaseJob("first", true)).toStrictEqual(newer);
+  expect(await coordinator.reserveJob("second")).toBe(true);
+  expect(await coordinator.releaseJob("second", true)).toBe(null);
 });
 
 test("dashboard target mutations preserve terminal backoff across stale observations", async () => {
-  const storage = new Map<string, unknown>();
   const cache = kvStore();
-  const lock = new DashboardBuildLock(
-    {
-      blockConcurrencyWhile: async (callback) => callback(),
-      storage: {
-        async get<T>(key: string) {
-          return storage.get(key) as T | undefined;
-        },
-        async put<T>(key: string, value: T) {
-          storage.set(key, value);
-        },
-        async delete(key: string) {
-          return storage.delete(key);
-        },
-      },
-    },
-    { DASHBOARD_CACHE: cache },
-  );
+  const mutationEnv = testEnv({ DASHBOARD_CACHE: cache });
   const input = {
     key: "dashboard:v6:owner=target-race",
     owner: "target-race",
@@ -477,15 +394,10 @@ test("dashboard target mutations preserve terminal backoff across stale observat
     path: "/target-race",
     priority: 100,
   };
-  const mutate = async (snapshot: RefreshTarget | null, mutation: unknown) => {
-    const response = await lock.fetch(
-      new Request("https://releasebar.internal/target/mutate", {
-        method: "POST",
-        body: JSON.stringify({ snapshot, mutation }),
-      }),
-    );
-    expect(response.status).toBe(200);
-    return (await response.json()) as RefreshTarget;
+  const mutate = async (snapshot: RefreshTarget | null, mutation: RefreshTargetMutation) => {
+    const updated = await mutateRefreshTargetState(mutationEnv, snapshot, mutation);
+    assert(updated);
+    return updated;
   };
 
   const observed = await mutate(null, {
@@ -500,6 +412,8 @@ test("dashboard target mutations preserve terminal backoff across stale observat
     message: "terminal failure",
     terminal: true,
   });
+  // The cache loses the target; the object still knows it.
+  await cache.delete(`refresh:target:v1:${input.key}`);
   const observedAgain = await mutate(null, {
     kind: "observe",
     input,
@@ -517,58 +431,63 @@ test("dashboard target mutations preserve terminal backoff across stale observat
   expect(stored.terminalBackoffUntil).toBe(failed.nextDueAt);
 });
 
+test("a refresh target the object does not know yet starts from the cached one", async () => {
+  const coordinator = env.BUILD_COORDINATOR.getByName("target-seed");
+  const target: RefreshTarget = {
+    key: "target-seed",
+    kind: "dashboard",
+    owner: "seed",
+    owners: ["seed"],
+    repos: [],
+    includeReleaseData: true,
+    path: "/seed",
+    priority: 100,
+    lastSeenAt: "2026-06-11T12:00:00Z",
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+    nextDueAt: "2026-06-11T13:00:00Z",
+    failureCount: 3,
+  };
+  const stale = { ...target, failureCount: 0 };
+  const defer: RefreshTargetMutation = {
+    kind: "defer",
+    at: "2026-06-11T12:30:00Z",
+    nextDueAt: "2026-06-11T14:00:00Z",
+    message: "deferred",
+  };
+
+  // Without state of its own the object asks for the cached target, and changes nothing.
+  expect(await coordinator.mutateTarget(stale, defer)).toBe(null);
+  const seeded = await coordinator.mutateTarget(stale, defer, { current: target });
+  expect(seeded?.failureCount).toBe(3);
+  expect(seeded?.nextDueAt).toBe("2026-06-11T14:00:00Z");
+  // From then on its own state counts, not the caller's snapshot.
+  const again = await coordinator.mutateTarget(stale, { ...defer, message: "again" });
+  expect(again?.failureCount).toBe(3);
+  expect(again?.message).toBe("again");
+});
+
 test("dashboard build lock stores strongly consistent build progress", async () => {
-  const storage = new Map<string, unknown>();
-  const lock = new DashboardBuildLock(
-    {
-      storage: {
-        async get<T>(key: string) {
-          return storage.get(key) as T | undefined;
-        },
-        async put<T>(key: string, value: T) {
-          storage.set(key, value);
-        },
-        async delete(key: string) {
-          return storage.delete(key);
-        },
-      },
-    },
-    {},
-  );
-  const request = (path: string, body?: unknown) =>
-    lock.fetch(
-      new Request(`https://releasebar.internal${path}`, {
-        method: "POST",
-        ...(body ? { body: JSON.stringify(body) } : {}),
-      }),
-    );
+  const coordinator = env.BUILD_COORDINATOR.getByName("build-progress");
   const progress = {
     scannedRepos: ["owner/repo"],
     projects: [testProject({ owner: "owner", name: "repo" })],
-    updatedAt: "2026-06-11T12:00:00Z",
+    updatedAt: new Date().toISOString(),
   };
 
-  const empty = await request("/progress/get");
-  expect(empty.status).toBe(204);
-  expect(empty.headers.get("x-releasebar-progress")).toBe("durable");
-  expect((await request("/progress/put", progress)).status).toBe(204);
-  const stored = await request("/progress/get");
-  expect(stored.status).toBe(200);
-  expect(stored.headers.get("x-releasebar-progress")).toBe("durable");
-  expect(await stored.json()).toStrictEqual(progress);
-  expect((await request("/progress/delete")).status).toBe(204);
-  expect((await request("/progress/get")).status).toBe(204);
+  expect(await coordinator.progress()).toBe(null);
+  await coordinator.putProgress(progress);
+  expect(await coordinator.progress()).toStrictEqual(progress);
+  await coordinator.deleteProgress();
+  expect(await coordinator.progress()).toBe(null);
 
-  expect(
-    (
-      await request("/progress/put", {
-        ...progress,
-        updatedAt: "2020-01-01T00:00:00Z",
-      })
-    ).status,
-  ).toBe(204);
-  expect((await request("/progress/get")).status).toBe(204);
-  expect(storage.has("build-progress")).toBe(false);
+  // Expired progress is dropped when it is read.
+  await coordinator.putProgress({ ...progress, updatedAt: "2020-01-01T00:00:00Z" });
+  expect(await coordinator.progress()).toBe(null);
+  const rows = await runInDurableObject(coordinator, (_instance, state) =>
+    state.storage.sql.exec("SELECT value FROM build_progress").toArray(),
+  );
+  expect(rows).toStrictEqual([]);
 });
 
 test("worker falls back to KV progress when the Durable Object is unavailable", async () => {
@@ -601,22 +520,12 @@ test("worker falls back to KV progress when the Durable Object is unavailable", 
     }
     throw new Error(`unexpected fetch ${path}`);
   };
+  objectsUnavailable(BuildCoordinator, RefreshTargetIndex);
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/owner"),
       {
         DASHBOARD_CACHE: cache,
-        DASHBOARD_LOCKS: {
-          idFromName: (name: string) => name,
-          get: () => ({
-            fetch: async (request: Request) => {
-              if (new URL(request.url).pathname === "/owner-metadata/read") {
-                return new Response(null, { status: 204 });
-              }
-              throw new Error("Durable Object unavailable");
-            },
-          }),
-        },
         GITHUB_TOKEN: "shared-token",
         REFRESH_QUEUE: {
           send: async () => undefined,
@@ -709,27 +618,6 @@ test("worker resumes marked KV progress after an authoritative Durable Object mi
     }),
     [`refresh:job:v1:${job.id}`]: JSON.stringify(job),
   });
-  const locks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async (request: Request) => {
-        const path = new URL(request.url).pathname;
-        if (path === "/progress/get") {
-          return new Response(null, {
-            status: 204,
-            headers: { "x-releasebar-progress": "durable" },
-          });
-        }
-        if (path === "/progress/delete" || path === "/progress/put") {
-          return new Response(null, {
-            status: 204,
-            headers: { "x-releasebar-progress": "durable" },
-          });
-        }
-        return new Response(null, { status: 204 });
-      },
-    }),
-  };
   const originalFetch = globalThis.fetch;
   const hydratedRepos: string[] = [];
   let acked = false;
@@ -790,7 +678,7 @@ test("worker resumes marked KV progress after an authoritative Durable Object mi
           },
         ],
       },
-      { DASHBOARD_CACHE: cache, DASHBOARD_LOCKS: locks },
+      { DASHBOARD_CACHE: cache },
       { waitUntil: () => undefined },
     );
   } finally {

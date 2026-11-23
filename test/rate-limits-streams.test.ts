@@ -1,7 +1,9 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { buildDashboard, dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload } from "../src/types.ts";
 import {
+  BuildCoordinator,
+  buildLocksHeld,
   kvStore,
   refreshAuditEvents,
   testDashboard,
@@ -371,26 +373,23 @@ test("worker returns rebuilding while another isolate owns the dashboard build l
     }
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
-  const busyLocks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async () => new Response(null, { status: 409 }),
-    }),
-  };
+  buildLocksHeld();
+  const waits: Promise<unknown>[] = [];
 
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/openclaw"),
       {
         DASHBOARD_CACHE: kvStore(),
-        DASHBOARD_LOCKS: busyLocks,
         GITHUB_TOKEN: "shared-token",
       },
-      { waitUntil: () => undefined },
+      { waitUntil: (promise) => waits.push(promise) },
     );
     expect(response.status).toBe(202);
     const body = (await response.json()) as DashboardPayload;
     expect(body.cache?.state).toBe("rebuilding");
+    // The background work ends while the lock is still held.
+    await Promise.allSettled(waits);
     expect(repoFetches).toBe(0);
   } finally {
     globalThis.fetch = originalFetch;
@@ -432,21 +431,11 @@ test("worker uses an in-isolate build lease when Durable Objects fail open", asy
     }
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
-  const failedLocks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async (request: Request) => {
-        const path = new URL(request.url).pathname;
-        if (path === "/acquire") {
-          return new Response(null, { status: 503 });
-        }
-        return new Response(null, { status: 204 });
-      },
-    }),
-  };
+  vi.spyOn(BuildCoordinator.prototype, "acquireLock").mockImplementation(() => {
+    throw new Error("Durable Object unavailable");
+  });
   const env = {
     DASHBOARD_CACHE: cache,
-    DASHBOARD_LOCKS: failedLocks,
     GITHUB_TOKEN: "shared-token",
     REFRESH_QUEUE: { send: async () => undefined },
   };
@@ -481,12 +470,7 @@ test("worker does not display dashboard data past the stale display window", asy
     }
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
-  const busyLocks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async () => new Response(null, { status: 409 }),
-    }),
-  };
+  buildLocksHeld();
   const key = dashboardCacheKey({ owner: "old", schemaVersion: 6 });
   const dashboard = testDashboard("old", [testProject({ owner: "old", name: "ancient" })]);
   dashboard.generatedAt = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
@@ -499,7 +483,6 @@ test("worker does not display dashboard data past the stale display window", asy
       new Request("https://release.bar/api/old"),
       {
         DASHBOARD_CACHE: kvStore({ [key]: JSON.stringify(dashboard) }),
-        DASHBOARD_LOCKS: busyLocks,
         GITHUB_TOKEN: "shared-token",
       },
       { waitUntil: () => undefined },
@@ -529,12 +512,7 @@ test("worker serves partial cached sources while combined dashboard rebuilds", a
     }
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
-  const busyLocks = {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: async () => new Response(null, { status: 409 }),
-    }),
-  };
+  buildLocksHeld();
   const alphaKey = dashboardCacheKey({ owner: "alpha", includeUnreleased: true, schemaVersion: 6 });
   const betaKey = dashboardCacheKey({ owner: "beta", includeUnreleased: true, schemaVersion: 6 });
   const now = new Date().toISOString();
@@ -564,7 +542,6 @@ test("worker serves partial cached sources while combined dashboard rebuilds", a
             projects: [alphaMetadata],
           }),
         }),
-        DASHBOARD_LOCKS: busyLocks,
         GITHUB_TOKEN: "shared-token",
       },
       { waitUntil: () => undefined },

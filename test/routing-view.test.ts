@@ -22,8 +22,8 @@ import {
   type DashboardViewState,
 } from "../src/dashboard-view.ts";
 import type { DashboardPayload, RepoDetailPayload } from "../src/types.ts";
-import { dashboardStreamSignature, dashboardStreamState } from "../worker/index.ts";
-import { testDashboard, testProject } from "./dashboard-test-harness.ts";
+import { dashboardStreamSignature, dashboardStreamState } from "../worker/dashboard-rebuild.ts";
+import { testDashboard, testProject } from "./dashboard-fixtures.ts";
 
 test("owner route parsing keeps root hot board and owners API-backed", () => {
   expect(ownerFromPath("/")).toBe(null);
