@@ -8,10 +8,10 @@ import {
   claudeJson,
   claudeText,
   crawlerRequest,
-  kvStore,
   signedIn,
   testProject,
   worker,
+  cacheWith,
 } from "./dashboard-test-harness.ts";
 
 test("worker throttles cached warming repository detail refreshes", async () => {
@@ -38,12 +38,12 @@ test("worker throttles cached warming repository detail refreshes", async () => 
     throw new Error(`unexpected fetch ${String(input)}`);
   };
   try {
+    await cacheWith({
+      "repo-detail:v4:acme/warmbar": JSON.stringify(payload),
+    });
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/warmbar"),
       {
-        DASHBOARD_CACHE: kvStore({
-          "repo-detail:v4:acme/warmbar": JSON.stringify(payload),
-        }),
         GITHUB_TOKEN: "shared-token",
       },
       { waitUntil: () => undefined },
@@ -81,12 +81,12 @@ test("worker refreshes cached warming repository detail after short grace window
     throw new Error("queued refresh");
   };
   try {
+    await cacheWith({
+      "repo-detail:v4:acme/warmbar": JSON.stringify(payload),
+    });
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/warmbar"),
       {
-        DASHBOARD_CACHE: kvStore({
-          "repo-detail:v4:acme/warmbar": JSON.stringify(payload),
-        }),
         GITHUB_TOKEN: "shared-token",
       },
       {
@@ -131,12 +131,12 @@ test("worker serves stale repository detail to crawlers without refreshing", asy
     throw new Error(`crawler should not refresh ${String(input)}`);
   };
   try {
+    await cacheWith({
+      "repo-detail:v4:acme/warmbar": JSON.stringify(payload),
+    });
     const response = await worker.fetch(
       crawlerRequest("https://release.bar/api/repos/acme/warmbar"),
       {
-        DASHBOARD_CACHE: kvStore({
-          "repo-detail:v4:acme/warmbar": JSON.stringify(payload),
-        }),
         GITHUB_TOKEN: "shared-token",
       },
       {
@@ -169,7 +169,7 @@ test("worker keeps crawler-only auxiliary API misses off GitHub", async () => {
     ]) {
       const response = await worker.fetch(
         crawlerRequest(url),
-        { DASHBOARD_CACHE: kvStore(), GITHUB_TOKEN: "shared-token" },
+        { GITHUB_TOKEN: "shared-token" },
         { waitUntil: () => undefined },
       );
       expect(response.status, url).toBe(202);
@@ -216,7 +216,7 @@ test("worker summarizes commits since release in the background", async () => {
     languages: [],
     workTrend: null,
   };
-  const cache = kvStore({
+  const cache = await cacheWith({
     "repo-detail:v4:acme/releasebar": JSON.stringify(payload),
   });
   const queued: Promise<unknown>[] = [];
@@ -257,7 +257,6 @@ test("worker summarizes commits since release in the background", async () => {
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/releasebar", { headers: user.headers }),
       {
-        DASHBOARD_CACHE: cache,
         GITHUB_TOKEN: "shared-token",
         ANTHROPIC_API_KEY: "claude-key",
         ...user.env,
@@ -287,7 +286,7 @@ test("worker summarizes commits since release in the background", async () => {
 });
 
 test("worker summarizes recent repository activity in the background", async () => {
-  const cache = kvStore();
+  const cache = await cacheWith();
   const queued: Promise<unknown>[] = [];
   const originalFetch = globalThis.fetch;
   const now = new Date().toISOString();
@@ -369,7 +368,6 @@ test("worker summarizes recent repository activity in the background", async () 
         headers: user.headers,
       }),
       {
-        DASHBOARD_CACHE: cache,
         GITHUB_TOKEN: "shared-token",
         ANTHROPIC_API_KEY: "claude-key",
         ...user.env,
@@ -396,7 +394,7 @@ test("worker summarizes recent repository activity in the background", async () 
 });
 
 test("worker hides activity from forks of repositories owned by the profile", async () => {
-  const cache = kvStore();
+  const cache = await cacheWith();
   const originalFetch = globalThis.fetch;
   const generatedAt = new Date().toISOString();
   let graphqlCalls = 0;
@@ -482,7 +480,7 @@ test("worker hides activity from forks of repositories owned by the profile", as
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
     expect(response.status).toBe(200);
@@ -501,7 +499,7 @@ test("worker hides activity from forks of repositories owned by the profile", as
 });
 
 test("worker summarizes public owner activity in the background", async () => {
-  const cache = kvStore();
+  const cache = await cacheWith();
   const queued: Promise<unknown>[] = [];
   const originalFetch = globalThis.fetch;
   const generatedAt = new Date().toISOString();
@@ -647,7 +645,6 @@ test("worker summarizes public owner activity in the background", async () => {
     const response = await worker.fetch(
       new Request("https://release.bar/api/acme/activity?range=week", { headers: user.headers }),
       {
-        DASHBOARD_CACHE: cache,
         GITHUB_TOKEN: "shared-token",
         ANTHROPIC_API_KEY: "claude-key",
         ...user.env,

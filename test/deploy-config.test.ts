@@ -1,4 +1,5 @@
-import { expect, test } from "vitest";
+import { env as runtimeEnv } from "cloudflare:workers";
+import { expect, test, vi } from "vitest";
 
 import { claudeText, testEnv } from "./dashboard-test-harness.ts";
 import {
@@ -165,39 +166,51 @@ test("Claude summaries go to ANTHROPIC_BASE_URL when it is set", async () => {
 });
 
 // Namespaces that record the jurisdiction they are scoped to: the local runtime has none.
-function jurisdictionEnv(calls: string[], settings: { RELEASEBAR_DO_JURISDICTION?: string }): Env {
-  const namespace = (binding: string, scope = "") => ({
-    idFromName: (name: string) => `${scope}${binding}:${name}`,
-    jurisdiction: (jurisdiction: string) => {
+// Records which jurisdiction each Durable Object binding of the runtime is asked for. The local
+// runtime has no jurisdictions and throws when asked for one, so the call answers with the
+// binding itself: locally, every object is in the one place there is.
+function observedJurisdictions(): string[] {
+  const calls: string[] = [];
+  for (const binding of durableObjectBindings) {
+    const namespace: DurableObjectNamespace = runtimeEnv[binding];
+    vi.spyOn(namespace, "jurisdiction").mockImplementation((jurisdiction) => {
       calls.push(`${binding}:${jurisdiction}`);
-      return namespace(binding, `${jurisdiction}:`);
-    },
-  });
-  return {
-    ...Object.fromEntries(durableObjectBindings.map((binding) => [binding, namespace(binding)])),
-    ...settings,
-  } as unknown as Env;
+      return namespace;
+    });
+  }
+  return calls;
 }
 
 test("lock jurisdiction leaves the bindings alone when unset", () => {
-  const env = jurisdictionEnv([], {});
+  const calls = observedJurisdictions();
+  const env = testEnv({});
   expect(withLockJurisdiction(env)).toBe(env);
+  expect(calls).toStrictEqual([]);
 });
 
-test("lock jurisdiction scopes every Durable Object to the configured jurisdiction", () => {
-  const calls: string[] = [];
-  const env = jurisdictionEnv(calls, { RELEASEBAR_DO_JURISDICTION: "eu" });
+test("lock jurisdiction scopes every Durable Object to the configured jurisdiction", async () => {
+  const calls = observedJurisdictions();
+  const env = testEnv({ RELEASEBAR_DO_JURISDICTION: "eu" });
   const scoped = withLockJurisdiction(env);
-  for (const binding of durableObjectBindings) {
-    expect(scoped[binding].idFromName("lock")).toBe(`eu:${binding}:lock`);
-  }
+  expect(scoped).not.toBe(env);
+  expect(calls).toStrictEqual(durableObjectBindings.map((binding) => `${binding}:eu`));
   // Scoped once for an env, however often it is asked for.
   expect(withLockJurisdiction(env)).toBe(scoped);
-  expect(calls).toStrictEqual(durableObjectBindings.map((binding) => `${binding}:eu`));
+  expect(calls.length).toBe(durableObjectBindings.length);
+  // The scoped bindings are what the namespaces answered, and reach working objects.
+  expect(await scoped.RATE_LIMITER.getByName("lock").reached("client", 1, 1)).toBe(false);
+  expect(await scoped.RATE_LIMITER.getByName("lock").reached("client", 1, 1)).toBe(true);
 });
 
 test("lock jurisdiction fails loudly on a binding without jurisdictions", () => {
-  const env = jurisdictionEnv([], { RELEASEBAR_DO_JURISDICTION: "eu" });
-  Object.assign(env, { SUMMARY_QUOTA: { idFromName: (name: string) => name } });
+  observedJurisdictions();
+  // The real binding, as a runtime without the method would give it.
+  const withoutJurisdictions: DurableObjectNamespace = Object.create(runtimeEnv.SUMMARY_QUOTA, {
+    jurisdiction: { value: undefined },
+  });
+  const env = testEnv({
+    RELEASEBAR_DO_JURISDICTION: "eu",
+    SUMMARY_QUOTA: withoutJurisdictions as Env["SUMMARY_QUOTA"],
+  });
   expect(() => withLockJurisdiction(env)).toThrow("SUMMARY_QUOTA has no jurisdictions");
 });

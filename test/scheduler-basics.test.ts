@@ -3,7 +3,6 @@ import { expect, test } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { RefreshJob, RefreshTarget, SchedulerAdminPayload } from "../src/types.ts";
 import {
-  kvStore,
   signedJson,
   storedRefreshJob,
   storeRefreshJob,
@@ -12,6 +11,8 @@ import {
   worker,
   seedInstallation,
   storedInstallationJson,
+  cacheWith,
+  holdQueue,
 } from "./dashboard-test-harness.ts";
 
 test("worker queue skips jobs from obsolete dashboard schemas", async () => {
@@ -45,25 +46,11 @@ test("worker queue skips jobs from obsolete dashboard schemas", async () => {
     attempts: 0,
     durationMs: null,
   };
-  const cache = kvStore({});
+  await cacheWith({});
   await storeRefreshJob(job);
   let acked = false;
 
-  await (
-    worker as unknown as {
-      queue(
-        batch: {
-          messages: Array<{
-            body: RefreshJob;
-            ack(): void;
-            retry(options?: { delaySeconds?: number }): void;
-          }>;
-        },
-        env: unknown,
-        context: unknown,
-      ): Promise<void>;
-    }
-  ).queue(
+  await worker.queue(
     {
       messages: [
         {
@@ -77,7 +64,7 @@ test("worker queue skips jobs from obsolete dashboard schemas", async () => {
         },
       ],
     },
-    { DASHBOARD_CACHE: cache },
+    {},
     { waitUntil: () => undefined },
   );
 
@@ -108,7 +95,7 @@ test("worker admin installation sync removes stale registry entries", async () =
       updatedAt: "2026-05-15T12:00:00Z",
     }),
   );
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -125,7 +112,6 @@ test("worker admin installation sync removes stale registry entries", async () =
   const env = {
     ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: cache,
     GITHUB_APP_ID: "123",
     GITHUB_APP_PRIVATE_KEY: privateKey,
   };
@@ -193,7 +179,7 @@ test("worker admin installation sync keeps registry when GitHub listing fails", 
       updatedAt: "2026-05-15T12:00:00Z",
     }),
   );
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -210,7 +196,6 @@ test("worker admin installation sync keeps registry when GitHub listing fails", 
   const env = {
     ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: cache,
     GITHUB_APP_ID: "123",
     GITHUB_APP_PRIVATE_KEY: privateKey,
   };
@@ -259,7 +244,7 @@ test("worker admin installation sync keeps selected repos when repository listin
       updatedAt: "2026-05-15T12:00:00Z",
     }),
   );
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -276,7 +261,6 @@ test("worker admin installation sync keeps selected repos when repository listin
   const env = {
     ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: cache,
     GITHUB_APP_ID: "123",
     GITHUB_APP_PRIVATE_KEY: privateKey,
   };
@@ -346,7 +330,7 @@ test("worker admin scheduler counts missing caches as due even before nextDueAt"
     nextDueAt: "2999-01-01T00:00:00Z",
     failureCount: 0,
   };
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -369,7 +353,6 @@ test("worker admin scheduler counts missing caches as due even before nextDueAt"
     {
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
-      DASHBOARD_CACHE: cache,
     },
     { waitUntil: () => undefined },
   );
@@ -399,7 +382,7 @@ test("worker admin scheduler respects transient failure retry delay", async () =
     failureCount: 1,
     terminalBackoffUntil: null,
   };
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -422,7 +405,6 @@ test("worker admin scheduler respects transient failure retry delay", async () =
     {
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
-      DASHBOARD_CACHE: cache,
     },
     { waitUntil: () => undefined },
   );
@@ -451,7 +433,7 @@ test("worker scheduler skips shared cold targets while GraphQL is backed off", a
     nextDueAt: "2000-01-01T00:00:00Z",
     failureCount: 0,
   };
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -474,16 +456,13 @@ test("worker scheduler skips shared cold targets while GraphQL is backed off", a
   });
   await storeRefreshTarget(target);
   const sentJobs: RefreshJob[] = [];
+  holdQueue(async (job: RefreshJob) => {
+    sentJobs.push(job);
+  });
   const env = {
     ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: cache,
     GITHUB_TOKEN: "shared-token",
-    REFRESH_QUEUE: {
-      async send(job: RefreshJob) {
-        sentJobs.push(job);
-      },
-    },
   };
 
   const response = await worker.fetch(
@@ -521,7 +500,7 @@ test("worker scheduler keeps repo-only targets runnable during RepoDetails backo
     nextDueAt: "2000-01-01T00:00:00Z",
     failureCount: 0,
   };
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -545,6 +524,9 @@ test("worker scheduler keeps repo-only targets runnable during RepoDetails backo
   await storeRefreshTarget(target);
   const sentJobs: RefreshJob[] = [];
 
+  holdQueue(async (job: RefreshJob) => {
+    sentJobs.push(job);
+  });
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler/run", {
       method: "POST",
@@ -553,13 +535,7 @@ test("worker scheduler keeps repo-only targets runnable during RepoDetails backo
     {
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
-      DASHBOARD_CACHE: cache,
       GITHUB_TOKEN: "shared-token",
-      REFRESH_QUEUE: {
-        async send(job: RefreshJob) {
-          sentJobs.push(job);
-        },
-      },
     },
     { waitUntil: () => undefined },
   );
@@ -599,7 +575,7 @@ test("worker scheduler keeps dormant shared targets on weekly cadence after succ
     nextDueAt: "2000-01-01T00:00:00Z",
     failureCount: 0,
   };
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -617,6 +593,9 @@ test("worker scheduler keeps dormant shared targets on weekly cadence after succ
   await storeRefreshTarget(target);
   const sentJobs: RefreshJob[] = [];
 
+  holdQueue(async (job: RefreshJob) => {
+    sentJobs.push(job);
+  });
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler/run", {
       method: "POST",
@@ -625,13 +604,7 @@ test("worker scheduler keeps dormant shared targets on weekly cadence after succ
     {
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
-      DASHBOARD_CACHE: cache,
       GITHUB_TOKEN: "shared-token",
-      REFRESH_QUEUE: {
-        async send(job: RefreshJob) {
-          sentJobs.push(job);
-        },
-      },
     },
     { waitUntil: () => undefined },
   );
@@ -663,7 +636,7 @@ test("worker scheduler still rebuilds missing dormant shared caches", async () =
     nextDueAt: "2999-01-01T00:00:00Z",
     failureCount: 0,
   };
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -680,6 +653,9 @@ test("worker scheduler still rebuilds missing dormant shared caches", async () =
   await storeRefreshTarget(target);
   const sentJobs: RefreshJob[] = [];
 
+  holdQueue(async (job: RefreshJob) => {
+    sentJobs.push(job);
+  });
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler/run", {
       method: "POST",
@@ -688,13 +664,7 @@ test("worker scheduler still rebuilds missing dormant shared caches", async () =
     {
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
-      DASHBOARD_CACHE: cache,
       GITHUB_TOKEN: "shared-token",
-      REFRESH_QUEUE: {
-        async send(job: RefreshJob) {
-          sentJobs.push(job);
-        },
-      },
     },
     { waitUntil: () => undefined },
   );

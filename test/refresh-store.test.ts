@@ -17,7 +17,6 @@ import {
 } from "../worker/store/refresh-targets.ts";
 import {
   indexedTargets,
-  kvStore,
   observedDatabase,
   refreshAuditEvents,
   storedProfileSnapshot,
@@ -34,6 +33,8 @@ import {
   storeRefreshTargets,
   testDashboard,
   worker,
+  cacheWith,
+  holdQueue,
 } from "./dashboard-test-harness.ts";
 
 const day = 24 * 60 * 60 * 1000;
@@ -119,11 +120,10 @@ test("a scheduler tick deletes the refresh data that is past its lifetime", asyn
     .bind(Date.now() - storageLifetime - day, oldSnapshot)
     .run();
 
-  await tick({
-    DASHBOARD_CACHE: kvStore({
-      "dashboard:v6:fresh": JSON.stringify(testDashboard("fresh", [])),
-    }),
+  await cacheWith({
+    "dashboard:v6:fresh": JSON.stringify(testDashboard("fresh", [])),
   });
+  await tick({});
 
   expect((await storedRefreshTarget("dashboard:v6:fresh"))?.owner).toBe("fresh");
   expect(await storedRefreshTarget("dashboard:v6:unseen")).toBe(null);
@@ -223,10 +223,10 @@ test("a scheduler tick sends D1 a bounded number of statements", async () => {
   await storeRefreshTargets(targets);
   const { database, counts } = observedDatabase();
   const sent: unknown[] = [];
+  await cacheWith(entries);
+  holdQueue(async (message: never) => void sent.push(message));
   const testEnv = {
-    DASHBOARD_CACHE: kvStore(entries),
     DB: database,
-    REFRESH_QUEUE: { send: async (message: never) => void sent.push(message) },
   };
   const measured = async () => {
     counts.statements = 0;
@@ -281,17 +281,14 @@ test("a tick stores a job the queue did not take as failed and enqueues the othe
   );
   const sent: RefreshJob[] = [];
   let queueDown = true;
-  const testEnv = {
-    DASHBOARD_CACHE: kvStore(entries),
-    REFRESH_QUEUE: {
-      send: async (message: RefreshJob) => {
-        if (queueDown && message.targetKey === "dashboard:v6:due-b") {
-          throw new Error("queue unavailable");
-        }
-        sent.push(message);
-      },
-    },
-  };
+  await cacheWith(entries);
+  holdQueue(async (message: RefreshJob) => {
+    if (queueDown && message.targetKey === "dashboard:v6:due-b") {
+      throw new Error("queue unavailable");
+    }
+    sent.push(message);
+  });
+  const testEnv = {};
 
   await expect(tick(testEnv)).rejects.toThrow("queue unavailable");
 
@@ -325,6 +322,7 @@ test("a webhook fan-out page stores its jobs in batches and audits them in one",
   const waits: Promise<unknown>[] = [];
   let acknowledged = false;
 
+  holdQueue(async (message: never) => void sent.push(message));
   await worker.queue(
     {
       messages: [
@@ -352,9 +350,7 @@ test("a webhook fan-out page stores its jobs in batches and audits them in one",
       ],
     },
     {
-      DASHBOARD_CACHE: kvStore(),
       DB: database,
-      REFRESH_QUEUE: { send: async (message: never) => void sent.push(message) },
     },
     { waitUntil: (promise) => void waits.push(promise) },
   );
@@ -396,7 +392,7 @@ test("a job whose snapshot is gone is retried, not run without its target", asyn
         },
       ],
     },
-    { DASHBOARD_CACHE: kvStore(), DB: database },
+    { DB: database },
     { waitUntil: (promise) => void waits.push(promise) },
   );
   await Promise.all(waits);

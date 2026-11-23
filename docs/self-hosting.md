@@ -186,7 +186,7 @@ Pushes to `main` are built and deployed by Cloudflare's GitHub app (Workers Buil
 
 Pull requests are gated by the org's Test TypeScript check, which runs the `typecheck`, `lint`, `format:check`, `build` and `test` scripts, and by `.github/workflows/cloudflare.yml`, which dry-runs the Wrangler deployment of the generic `wrangler.jsonc` without credentials. `npm run build` is the offline build; `npm run build:data` also fetches dashboard data from GitHub.
 
-`npm test` runs the tests with [Vitest](https://vitest.dev/) and needs no build first. Most test files run inside the Workers runtime through Cloudflare's Vitest integration, with the local bindings of `wrangler.jsonc`; the files listed in `vitest.config.ts` run on Node.js. The run writes a coverage report to `coverage/`, which the org's coverage workflow picks up. `npm run test:watch` re-runs the tests of changed files.
+`npm test` runs the tests with [Vitest](https://vitest.dev/) and needs no build first. Most test files run inside the Workers runtime through Cloudflare's Vitest integration, on the local KV namespace, D1 database, queue and Durable Objects that `wrangler.jsonc` binds, with nothing faked; the files listed in `vitest.config.ts` run on Node.js. The run writes a coverage report to `coverage/`, which the org's coverage workflow picks up. `npm run test:watch` re-runs the tests of changed files.
 
 ## Admin
 

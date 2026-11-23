@@ -1,7 +1,7 @@
-// These tests use the bindings the Workers runtime provides from wrangler.jsonc, not the fakes of
-// dashboard-test-harness.ts: the fetch handler, the Durable Objects, the KV namespace and the queue
-// are the local ones Miniflare runs. Storage is separate for each test file, and reset-storage.ts
-// empties it after each test.
+// The bindings the Workers runtime provides from wrangler.jsonc, used directly: the fetch
+// handler, a Durable Object, the KV namespace and the queue, which here delivers to the Worker's
+// queue handler by itself. Storage is separate for each test file, and reset-storage.ts empties
+// it after each test.
 import { env, exports } from "cloudflare:workers";
 import { expect, test, vi } from "vitest";
 import type { RefreshJob } from "../src/types.ts";

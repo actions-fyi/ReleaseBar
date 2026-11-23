@@ -2,9 +2,7 @@ import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, Project, RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
-  kvStore,
   ownerMetadataMutator,
-  type TestEnv,
   testDashboard,
   testProject,
   webhookSignature,
@@ -12,6 +10,8 @@ import {
   seedOwnerMetadata,
   storedOwnerMetadataJson,
   storeRefreshJob,
+  cacheWith,
+  holdQueue,
 } from "./dashboard-test-harness.ts";
 
 test("older owner count refreshes cannot replace newer snapshots", async () => {
@@ -20,11 +20,8 @@ test("older owner count refreshes cannot replace newer snapshots", async () => {
   const newerAt = "2026-06-11T04:00:00Z";
   const repo = testProject({ owner: "owner", name: "repo", openIssues: 1 });
   const sibling = testProject({ owner: "owner", name: "sibling", openIssues: 2 });
-  const cache = kvStore();
-  const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
-  };
-  const mutate = ownerMetadataMutator(env, "owner");
+  await cacheWith();
+  const mutate = ownerMetadataMutator("owner");
 
   await mutate({
     kind: "merge",
@@ -101,11 +98,8 @@ test("older complete count scans preserve newer repository metadata", async () =
   const countsAt = "2026-06-11T03:00:00Z";
   const metadataAt = "2026-06-11T04:00:00Z";
   const project = testProject({ owner: "owner", name: "repo", updatedAt: metadataAt });
-  const cache = kvStore();
-  const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
-  };
-  const mutate = ownerMetadataMutator(env, "owner");
+  await cacheWith();
+  const mutate = ownerMetadataMutator("owner");
 
   await mutate({
     kind: "merge",
@@ -147,11 +141,8 @@ test("newer metadata merges preserve counts without restoring stale repository s
     pushedAt: countsAt,
     updatedAt: countsAt,
   });
-  const cache = kvStore();
-  const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
-  };
-  const mutate = ownerMetadataMutator(env, "owner");
+  const cache = await cacheWith();
+  const mutate = ownerMetadataMutator("owner");
 
   await mutate({
     kind: "merge",
@@ -218,9 +209,13 @@ test("newer metadata merges preserve counts without restoring stale repository s
       },
     } satisfies DashboardPayload),
   );
-  const dashboard = await worker.fetch(new Request("https://release.bar/api/owner"), env, {
-    waitUntil: () => undefined,
-  });
+  const dashboard = await worker.fetch(
+    new Request("https://release.bar/api/owner"),
+    {},
+    {
+      waitUntil: () => undefined,
+    },
+  );
   expect(dashboard.status).toBe(200);
   expect(((await dashboard.json()) as DashboardPayload).projects.length).toBe(0);
 });
@@ -229,11 +224,8 @@ test("older dashboard builds cannot restore repositories removed by newer counts
   const buildStartedAt = "2026-06-11T02:00:00Z";
   const countsUpdatedAt = "2026-06-11T03:00:00Z";
   const project = testProject({ owner: "owner", name: "repo" });
-  const cache = kvStore();
-  const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
-  };
-  const mutate = ownerMetadataMutator(env, "owner");
+  await cacheWith();
+  const mutate = ownerMetadataMutator("owner");
 
   await mutate({
     kind: "merge",
@@ -301,7 +293,7 @@ test("complete metadata scans tombstone absent repositories across cached varian
       projects: [repo, sibling],
     }),
   );
-  const cache = kvStore({
+  await cacheWith({
     [key]: JSON.stringify({
       ...testDashboard("owner", [repo, sibling]),
       generatedAt: initialAt,
@@ -315,10 +307,7 @@ test("complete metadata scans tombstone absent repositories across cached varian
       },
     } satisfies DashboardPayload),
   });
-  const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
-  };
-  const mutate = ownerMetadataMutator(env, "owner");
+  const mutate = ownerMetadataMutator("owner");
 
   await mutate({
     kind: "merge",
@@ -352,9 +341,13 @@ test("complete metadata scans tombstone absent repositories across cached varian
   expect(snapshot.removedRepos?.["owner/repo"]).toBe(removedAt);
   expect(snapshot.projects?.some((project) => project.fullName === "owner/repo")).toBe(false);
 
-  const response = await worker.fetch(new Request("https://release.bar/api/owner"), env, {
-    waitUntil: () => undefined,
-  });
+  const response = await worker.fetch(
+    new Request("https://release.bar/api/owner"),
+    {},
+    {
+      waitUntil: () => undefined,
+    },
+  );
   expect(response.status).toBe(200);
   const body = (await response.json()) as DashboardPayload;
   expect(body.projects.map((project) => project.fullName)).toStrictEqual(["owner/sibling"]);
@@ -368,11 +361,8 @@ test("stale repository removals cannot hide newer public metadata", async () => 
     name: "repo",
     updatedAt: publicAt,
   });
-  const cache = kvStore();
-  const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
-  };
-  const mutate = ownerMetadataMutator(env, "owner");
+  await cacheWith();
+  const mutate = ownerMetadataMutator("owner");
 
   await mutate({
     kind: "merge",
@@ -401,11 +391,8 @@ test("newer owner metadata merges cannot clear privacy tombstones", async () => 
   const removedAt = "2026-06-11T03:00:00Z";
   const observedAt = "2026-06-11T04:00:00Z";
   const project = testProject({ owner: "owner", name: "repo" });
-  const cache = kvStore();
-  const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
-  };
-  const mutate = ownerMetadataMutator(env, "owner");
+  await cacheWith();
+  const mutate = ownerMetadataMutator("owner");
 
   await mutate({ kind: "remove", fullName: "owner/repo", observedAt: removedAt });
   await mutate({
@@ -443,7 +430,7 @@ test("worker persists archived observations without showing archived repositorie
     archived: false,
     updatedAt: generatedAt,
   });
-  const cache = kvStore({
+  const cache = await cacheWith({
     [`owner:v1:${owner}`]: JSON.stringify({ type: "user", login: owner }),
     [`progress:v1:${key}`]: JSON.stringify({
       scannedRepos: [],
@@ -525,7 +512,7 @@ test("worker persists archived observations without showing archived repositorie
           },
         ],
       },
-      { DASHBOARD_CACHE: cache },
+      {},
       { waitUntil: () => undefined },
     );
     expect(acknowledged).toBe(true);
@@ -574,7 +561,7 @@ test("worker preserves field freshness when resuming an older progress checkpoin
       projects: [],
     }),
   );
-  const cache = kvStore({
+  const cache = await cacheWith({
     [`owner:v1:${owner}`]: JSON.stringify({ type: "user", login: owner }),
     [`progress:v1:${key}`]: JSON.stringify({
       scannedRepos: [project.fullName.toLowerCase()],
@@ -614,14 +601,10 @@ test("worker preserves field freshness when resuming an older progress checkpoin
     throw new Error(`unexpected fetch ${path}`);
   };
   try {
-    const env = {
-      DASHBOARD_CACHE: cache,
-      REFRESH_QUEUE: {
-        async send(job: RefreshJob) {
-          sentJobs.push(job);
-        },
-      },
-    };
+    holdQueue(async (job: RefreshJob) => {
+      sentJobs.push(job);
+    });
+    const env = {};
     const response = await worker.fetch(new Request(`https://release.bar/api/${owner}`), env, {
       waitUntil: (promise) => waits.push(promise),
     });

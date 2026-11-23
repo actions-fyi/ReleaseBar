@@ -3,11 +3,12 @@ import { dashboardCacheKey } from "../shared/dashboard.ts";
 import { attentionReasons, needsAttention, releaseDebtText } from "../src/dashboard-view.ts";
 import type { DashboardPayload } from "../src/types.ts";
 import {
-  kvStore,
   testDashboard,
   testProject,
   worker,
   seedOwnerMetadata,
+  cacheWith,
+  serveAssets,
 } from "./dashboard-test-harness.ts";
 
 test("need attention explains release debt, stale releases, CI, and open work", () => {
@@ -119,82 +120,81 @@ test("worker builds root hot dashboard from cached dashboards", async () => {
       ],
     }),
   );
-  const env = {
-    DASHBOARD_CACHE: kvStore({
-      "hot:index:v3": JSON.stringify([alphaKey, legacyKey]),
-      [alphaKey]: JSON.stringify(
-        testDashboard("alpha", [
-          testProject({
-            owner: "alpha",
-            name: "hot",
-            commitsSinceRelease: 100,
-            freshness: "hot",
-          }),
-          testProject({ owner: "alpha", name: "second", commitsSinceRelease: 80 }),
-          testProject({ owner: "alpha", name: "third", commitsSinceRelease: 60 }),
-          testProject({ owner: "alpha", name: "fourth", commitsSinceRelease: 40 }),
-          testProject({
-            owner: "alpha",
-            name: "archived",
-            archived: true,
-            commitsSinceRelease: 120,
-          }),
-        ]),
-      ),
-      [betaKey]: JSON.stringify(
-        testDashboard("beta", [
-          testProject({
-            owner: "beta",
-            name: "popular",
-            stars: 500,
-            commitsSinceRelease: 20,
-          }),
-          testProject({
-            owner: "beta",
-            name: "unreleased",
-            releaseDate: null,
-            commitsSinceRelease: null,
-          }),
-        ]),
-      ),
-      [forksKey]: JSON.stringify({
-        ...testDashboard("forks", [
-          testProject({
-            owner: "forks",
-            name: "cached-fork",
-            commitsSinceRelease: 500,
-            freshness: "hot",
-          }),
-        ]),
-        options: {
-          includeForks: true,
-          includeArchived: false,
-          includeUnreleased: false,
-          repoLimit: 200,
-        },
-      }),
-      [legacyKey]: JSON.stringify(
-        testDashboard("legacy", [
-          testProject({
-            owner: "legacy",
-            name: "estimated-counts",
-            stars: 10_000,
-            openIssues: 500,
-            openPullRequests: 100,
-          }),
-        ]),
-      ),
-      [dashboardCacheKey({ owner: "gamma", schemaVersion: 6 })]: JSON.stringify(
-        testDashboard("gamma", [
-          testProject({
-            owner: "gamma",
-            name: "from-list",
-            commitsSinceRelease: 30,
-          }),
-        ]),
-      ),
+  await cacheWith({
+    "hot:index:v3": JSON.stringify([alphaKey, legacyKey]),
+    [alphaKey]: JSON.stringify(
+      testDashboard("alpha", [
+        testProject({
+          owner: "alpha",
+          name: "hot",
+          commitsSinceRelease: 100,
+          freshness: "hot",
+        }),
+        testProject({ owner: "alpha", name: "second", commitsSinceRelease: 80 }),
+        testProject({ owner: "alpha", name: "third", commitsSinceRelease: 60 }),
+        testProject({ owner: "alpha", name: "fourth", commitsSinceRelease: 40 }),
+        testProject({
+          owner: "alpha",
+          name: "archived",
+          archived: true,
+          commitsSinceRelease: 120,
+        }),
+      ]),
+    ),
+    [betaKey]: JSON.stringify(
+      testDashboard("beta", [
+        testProject({
+          owner: "beta",
+          name: "popular",
+          stars: 500,
+          commitsSinceRelease: 20,
+        }),
+        testProject({
+          owner: "beta",
+          name: "unreleased",
+          releaseDate: null,
+          commitsSinceRelease: null,
+        }),
+      ]),
+    ),
+    [forksKey]: JSON.stringify({
+      ...testDashboard("forks", [
+        testProject({
+          owner: "forks",
+          name: "cached-fork",
+          commitsSinceRelease: 500,
+          freshness: "hot",
+        }),
+      ]),
+      options: {
+        includeForks: true,
+        includeArchived: false,
+        includeUnreleased: false,
+        repoLimit: 200,
+      },
     }),
-  };
+    [legacyKey]: JSON.stringify(
+      testDashboard("legacy", [
+        testProject({
+          owner: "legacy",
+          name: "estimated-counts",
+          stars: 10_000,
+          openIssues: 500,
+          openPullRequests: 100,
+        }),
+      ]),
+    ),
+    [dashboardCacheKey({ owner: "gamma", schemaVersion: 6 })]: JSON.stringify(
+      testDashboard("gamma", [
+        testProject({
+          owner: "gamma",
+          name: "from-list",
+          commitsSinceRelease: 30,
+        }),
+      ]),
+    ),
+  });
+  const env = {};
 
   const response = await worker.fetch(new Request("https://release.bar/api/_hot"), env, {
     waitUntil: () => undefined,
@@ -243,7 +243,7 @@ test("worker serves stale hot dashboards while one background rebuild refreshes 
       generatedAt: staleAt,
     },
   };
-  const cache = kvStore({
+  const cache = await cacheWith({
     "hot:v3": JSON.stringify(staleHot),
     "hot:v3:invalidated-at": staleAt,
     "hot:index:v3": JSON.stringify([alphaKey]),
@@ -257,7 +257,7 @@ test("worker serves stale hot dashboards while one background rebuild refreshes 
 
   const response = await worker.fetch(
     new Request("https://release.bar/api/_hot"),
-    { DASHBOARD_CACHE: cache },
+    {},
     { waitUntil: (promise) => waits.push(promise) },
   );
   const body = (await response.json()) as DashboardPayload;
@@ -289,7 +289,7 @@ test("worker keeps hot owner route distinct from root hot API", async () => {
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/hot"),
-      { DASHBOARD_CACHE: kvStore() },
+      {},
       { waitUntil: (promise) => waits.push(promise) },
     );
     const body = (await response.json()) as DashboardPayload;
@@ -303,20 +303,17 @@ test("worker keeps hot owner route distinct from root hot API", async () => {
 });
 
 test("worker serves escaped dotted repository detail paths as app shell", async () => {
+  serveAssets(async (request: Request) => {
+    const url = new URL(request.url);
+    expect(url.pathname).toBe("/index.html");
+    return new Response(
+      '<title>ReleaseBar</title><meta property="og:title" content="ReleaseBar" /><meta property="og:url" content="https://release.bar/" /><meta property="og:image" content="https://release.bar/og/ReleaseBar.svg" /><meta name="twitter:title" content="ReleaseBar" /><meta name="twitter:image" content="https://release.bar/og/ReleaseBar.svg" />',
+      { headers: { "content-type": "text/html" } },
+    );
+  });
   const response = await worker.fetch(
     new Request("https://release.bar/-/openclaw/react.dev"),
-    {
-      ASSETS: {
-        fetch: async (request: Request) => {
-          const url = new URL(request.url);
-          expect(url.pathname).toBe("/index.html");
-          return new Response(
-            '<title>ReleaseBar</title><meta property="og:title" content="ReleaseBar" /><meta property="og:url" content="https://release.bar/" /><meta property="og:image" content="https://release.bar/og/ReleaseBar.svg" /><meta name="twitter:title" content="ReleaseBar" /><meta name="twitter:image" content="https://release.bar/og/ReleaseBar.svg" />',
-            { headers: { "content-type": "text/html" } },
-          );
-        },
-      },
-    },
+    {},
     { waitUntil: () => undefined },
   );
 
@@ -332,20 +329,16 @@ test("worker serves escaped dotted repository detail paths as app shell", async 
 });
 
 test("worker reserves owner activity pages while escaped activity repositories remain available", async () => {
+  serveAssets(async (request: Request) => {
+    expect(new URL(request.url).pathname).toBe("/index.html");
+    return new Response(
+      '<title>ReleaseBar</title><meta property="og:title" content="ReleaseBar" /><meta property="og:url" content="https://release.bar/" /><meta property="og:image" content="https://release.bar/og/ReleaseBar.svg" /><meta name="twitter:title" content="ReleaseBar" /><meta name="twitter:image" content="https://release.bar/og/ReleaseBar.svg" /><script type="module" src="/assets/index.js"></script>',
+      { headers: { "content-type": "text/html" } },
+    );
+  });
   const response = await worker.fetch(
     new Request("https://release.bar/acme/activity"),
-    {
-      ASSETS: {
-        fetch: async (request: Request) => {
-          expect(new URL(request.url).pathname).toBe("/index.html");
-          return new Response(
-            '<title>ReleaseBar</title><meta property="og:title" content="ReleaseBar" /><meta property="og:url" content="https://release.bar/" /><meta property="og:image" content="https://release.bar/og/ReleaseBar.svg" /><meta name="twitter:title" content="ReleaseBar" /><meta name="twitter:image" content="https://release.bar/og/ReleaseBar.svg" /><script type="module" src="/assets/index.js"></script>',
-            { headers: { "content-type": "text/html" } },
-          );
-        },
-      },
-      DASHBOARD_CACHE: kvStore(),
-    },
+    {},
     { waitUntil: () => undefined },
   );
 
@@ -354,38 +347,32 @@ test("worker reserves owner activity pages while escaped activity repositories r
   expect(html).toMatch(/@acme activity/);
   expect(html).not.toMatch(/id="releasebar-initial-data"/);
 
+  serveAssets(
+    async () =>
+      new Response(
+        '<title>ReleaseBar</title><meta property="og:title" content="ReleaseBar" /><meta property="og:url" content="https://release.bar/" /><meta property="og:image" content="https://release.bar/og/ReleaseBar.svg" /><meta name="twitter:title" content="ReleaseBar" /><meta name="twitter:image" content="https://release.bar/og/ReleaseBar.svg" />',
+        { headers: { "content-type": "text/html" } },
+      ),
+  );
   const escaped = await worker.fetch(
     new Request("https://release.bar/-/acme/activity"),
-    {
-      ASSETS: {
-        fetch: async () =>
-          new Response(
-            '<title>ReleaseBar</title><meta property="og:title" content="ReleaseBar" /><meta property="og:url" content="https://release.bar/" /><meta property="og:image" content="https://release.bar/og/ReleaseBar.svg" /><meta name="twitter:title" content="ReleaseBar" /><meta name="twitter:image" content="https://release.bar/og/ReleaseBar.svg" />',
-            { headers: { "content-type": "text/html" } },
-          ),
-      },
-      DASHBOARD_CACHE: kvStore(),
-    },
+    {},
     { waitUntil: () => undefined },
   );
   expect(escaped.status).toBe(200);
   expect(await escaped.text()).toMatch(/acme\/activity/);
 
   for (const owner of ["api", "og"]) {
+    serveAssets(async (request: Request) => {
+      expect(new URL(request.url).pathname).toBe("/index.html");
+      return new Response(
+        '<title>ReleaseBar</title><meta property="og:title" content="ReleaseBar" /><meta property="og:url" content="https://release.bar/" /><meta property="og:image" content="https://release.bar/og/ReleaseBar.svg" /><meta name="twitter:title" content="ReleaseBar" /><meta name="twitter:image" content="https://release.bar/og/ReleaseBar.svg" />',
+        { headers: { "content-type": "text/html" } },
+      );
+    });
     const reserved = await worker.fetch(
       new Request(`https://release.bar/-/owners/${owner}/activity`),
-      {
-        ASSETS: {
-          fetch: async (request: Request) => {
-            expect(new URL(request.url).pathname).toBe("/index.html");
-            return new Response(
-              '<title>ReleaseBar</title><meta property="og:title" content="ReleaseBar" /><meta property="og:url" content="https://release.bar/" /><meta property="og:image" content="https://release.bar/og/ReleaseBar.svg" /><meta name="twitter:title" content="ReleaseBar" /><meta name="twitter:image" content="https://release.bar/og/ReleaseBar.svg" />',
-              { headers: { "content-type": "text/html" } },
-            );
-          },
-        },
-        DASHBOARD_CACHE: kvStore(),
-      },
+      {},
       { waitUntil: () => undefined },
     );
     expect(reserved.status).toBe(200);
@@ -407,16 +394,13 @@ test("worker preserves API and social namespaces beside escaped reserved-owner a
     includeReleaseData: true,
     schemaVersion: 6,
   });
+  serveAssets(async () => {
+    throw new Error("API namespace must not reach app assets");
+  });
+  await cacheWith({ [key]: JSON.stringify(dashboard) });
   const apiResponse = await worker.fetch(
     new Request("https://release.bar/api/activity"),
-    {
-      ASSETS: {
-        fetch: async () => {
-          throw new Error("API namespace must not reach app assets");
-        },
-      },
-      DASHBOARD_CACHE: kvStore({ [key]: JSON.stringify(dashboard) }),
-    },
+    {},
     { waitUntil: () => undefined },
   );
   expect(apiResponse.status).toBe(200);
@@ -428,7 +412,7 @@ test("worker preserves API and social namespaces beside escaped reserved-owner a
   try {
     const socialResponse = await worker.fetch(
       new Request("https://release.bar/og/activity"),
-      { DASHBOARD_CACHE: kvStore() },
+      {},
       { waitUntil: () => undefined },
     );
     expect(socialResponse.status).toBe(200);
@@ -441,22 +425,19 @@ test("worker preserves API and social namespaces beside escaped reserved-owner a
 
 test("worker embeds cached public dashboard data in the app shell", async () => {
   const payload = testDashboard("hot", [testProject({ owner: "acme", name: "releasebar" })]);
+  serveAssets(async (request: Request) => {
+    expect(new URL(request.url).pathname).toBe("/index.html");
+    return new Response(
+      '<title>ReleaseBar</title><meta property="og:title" content="ReleaseBar" /><meta property="og:url" content="https://release.bar/" /><meta property="og:image" content="https://release.bar/og/ReleaseBar.svg" /><meta name="twitter:title" content="ReleaseBar" /><meta name="twitter:image" content="https://release.bar/og/ReleaseBar.svg" /><script type="module" src="/assets/index.js"></script>',
+      { headers: { "content-type": "text/html" } },
+    );
+  });
+  await cacheWith({
+    "discover:v4:week:all": JSON.stringify(payload),
+  });
   const response = await worker.fetch(
     new Request("https://release.bar/"),
-    {
-      ASSETS: {
-        fetch: async (request: Request) => {
-          expect(new URL(request.url).pathname).toBe("/index.html");
-          return new Response(
-            '<title>ReleaseBar</title><meta property="og:title" content="ReleaseBar" /><meta property="og:url" content="https://release.bar/" /><meta property="og:image" content="https://release.bar/og/ReleaseBar.svg" /><meta name="twitter:title" content="ReleaseBar" /><meta name="twitter:image" content="https://release.bar/og/ReleaseBar.svg" /><script type="module" src="/assets/index.js"></script>',
-            { headers: { "content-type": "text/html" } },
-          );
-        },
-      },
-      DASHBOARD_CACHE: kvStore({
-        "discover:v4:week:all": JSON.stringify(payload),
-      }),
-    },
+    {},
     { waitUntil: () => undefined },
   );
 
@@ -515,22 +496,20 @@ test("worker embeds cached metadata-only owner dashboard data in the app shell",
       }),
     ],
   } satisfies DashboardPayload;
+  serveAssets(async (request: Request) => {
+    expect(new URL(request.url).pathname).toBe("/index.html");
+    return new Response(
+      '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
+      { headers: { "content-type": "text/html" } },
+    );
+  });
+  await cacheWith({
+    [metadataKey]: JSON.stringify(payload),
+    [releaseKey]: JSON.stringify(releasePayload),
+  });
   const response = await worker.fetch(
     new Request("https://release.bar/owner", { headers: { cookie: "rd_session=bogus" } }),
     {
-      ASSETS: {
-        fetch: async (request: Request) => {
-          expect(new URL(request.url).pathname).toBe("/index.html");
-          return new Response(
-            '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
-            { headers: { "content-type": "text/html" } },
-          );
-        },
-      },
-      DASHBOARD_CACHE: kvStore({
-        [metadataKey]: JSON.stringify(payload),
-        [releaseKey]: JSON.stringify(releasePayload),
-      }),
       GITHUB_APP_ID: "123",
       GITHUB_APP_PRIVATE_KEY: "not-a-private-key",
     },
@@ -562,19 +541,19 @@ test("worker does not embed a release-only cache for an unsynced owner dashboard
       releaseName: "hydrated release cache",
     }),
   ]);
+  serveAssets(
+    async () =>
+      new Response(
+        '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
+        { headers: { "content-type": "text/html" } },
+      ),
+  );
+  await cacheWith({
+    [releaseKey]: JSON.stringify(releasePayload),
+  });
   const response = await worker.fetch(
     new Request("https://release.bar/owner", { headers: { cookie: "rd_session=bogus" } }),
     {
-      ASSETS: {
-        fetch: async () =>
-          new Response(
-            '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
-            { headers: { "content-type": "text/html" } },
-          ),
-      },
-      DASHBOARD_CACHE: kvStore({
-        [releaseKey]: JSON.stringify(releasePayload),
-      }),
       GITHUB_APP_ID: "123",
       GITHUB_APP_PRIVATE_KEY: "not-a-private-key",
     },

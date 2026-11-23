@@ -4,7 +4,6 @@ import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { RefreshJob } from "../src/types.ts";
 import {
   authFunnelEventCount,
-  kvStore,
   signedJson,
   storedRefreshJobSnapshot,
   testDashboard,
@@ -12,6 +11,8 @@ import {
   worker,
   seedProfile,
   storedInstallationJson,
+  cacheWith,
+  holdQueue,
 } from "./dashboard-test-harness.ts";
 
 test("worker rejects oversized custom source requests", async () => {
@@ -29,7 +30,6 @@ test("worker rejects oversized custom source requests", async () => {
 test("worker exposes GitHub App auth endpoints", async () => {
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: kvStore(),
     GITHUB_APP_CLIENT_ID: "Iv123",
     GITHUB_APP_CLIENT_SECRET: "client-secret",
     GITHUB_APP_SLUG: "releasebar-app",
@@ -88,7 +88,6 @@ test("worker binds OAuth callbacks to the initiating browser", async () => {
   const returnTo = "/openclaw?owners=steipete";
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: kvStore(),
     GITHUB_APP_CLIENT_ID: "Iv123",
     GITHUB_APP_CLIENT_SECRET: "client-secret",
     GITHUB_APP_SLUG: "releasebar-app",
@@ -189,23 +188,20 @@ test("worker queues shared cache warming after login discovers an installation",
   assert.ok(staleDashboard.cache);
   staleDashboard.cache.generatedAt = staleAt;
   await seedProfile(JSON.stringify(profile));
-  const cache = kvStore({
+  await cacheWith({
     [cacheKey]: JSON.stringify(staleDashboard),
   });
   const sentJobs: RefreshJob[] = [];
   const waits: Promise<unknown>[] = [];
+  holdQueue(async (job: RefreshJob) => {
+    sentJobs.push(job);
+  });
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: cache,
     GITHUB_APP_CLIENT_ID: "Iv123",
     GITHUB_APP_CLIENT_SECRET: "client-secret",
     GITHUB_APP_ID: "123",
     GITHUB_APP_PRIVATE_KEY: "private-key",
-    REFRESH_QUEUE: {
-      async send(job: RefreshJob) {
-        sentJobs.push(job);
-      },
-    },
   };
   const context = { waitUntil: (promise: Promise<unknown>) => waits.push(promise) };
   const login = await worker.fetch(
@@ -291,20 +287,17 @@ test("worker remembers GitHub App installs without OAuth session", async () => {
     iat: Math.floor(Date.now() / 1000),
     nonce: "install-nonce",
   });
-  const cache = kvStore();
+  await cacheWith();
   const sentJobs: RefreshJob[] = [];
   const waits: Promise<unknown>[] = [];
+  holdQueue(async (job: RefreshJob) => {
+    sentJobs.push(job);
+  });
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: cache,
     GITHUB_APP_ID: "123",
     GITHUB_APP_PRIVATE_KEY: privateKey,
     GITHUB_APP_SLUG: "releasebar-app",
-    REFRESH_QUEUE: {
-      async send(job: RefreshJob) {
-        sentJobs.push(job);
-      },
-    },
   };
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
@@ -354,22 +347,22 @@ test("worker reports GitHub App installation coverage for signed-in users", asyn
   const sessionId = "session-1";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
+  await cacheWith({
+    [`auth:session:${sessionId}`]: JSON.stringify({
+      user: {
+        id: 1,
+        login: "octocat",
+        name: null,
+        avatarUrl: "https://avatars.githubusercontent.com/u/1",
+        url: "https://github.com/octocat",
+      },
+      accessToken: "user-token",
+      iat: exp - 600,
+      exp,
+    }),
+  });
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: kvStore({
-      [`auth:session:${sessionId}`]: JSON.stringify({
-        user: {
-          id: 1,
-          login: "octocat",
-          name: null,
-          avatarUrl: "https://avatars.githubusercontent.com/u/1",
-          url: "https://github.com/octocat",
-        },
-        accessToken: "user-token",
-        iat: exp - 600,
-        exp,
-      }),
-    }),
     GITHUB_APP_CLIENT_ID: "Iv123",
     GITHUB_APP_CLIENT_SECRET: "client-secret",
     GITHUB_APP_ID: "123",
@@ -428,22 +421,22 @@ test("worker detects the signed-in user's GitHub App install with app auth fallb
   const sessionId = "session-app-fallback";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
+  await cacheWith({
+    [`auth:session:${sessionId}`]: JSON.stringify({
+      user: {
+        id: 1,
+        login: "steipete",
+        name: null,
+        avatarUrl: "https://avatars.githubusercontent.com/u/1",
+        url: "https://github.com/steipete",
+      },
+      accessToken: "user-token",
+      iat: exp - 600,
+      exp,
+    }),
+  });
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: kvStore({
-      [`auth:session:${sessionId}`]: JSON.stringify({
-        user: {
-          id: 1,
-          login: "steipete",
-          name: null,
-          avatarUrl: "https://avatars.githubusercontent.com/u/1",
-          url: "https://github.com/steipete",
-        },
-        accessToken: "user-token",
-        iat: exp - 600,
-        exp,
-      }),
-    }),
     GITHUB_APP_CLIENT_ID: "Iv123",
     GITHUB_APP_CLIENT_SECRET: "client-secret",
     GITHUB_APP_ID: "123",
@@ -512,22 +505,22 @@ test("worker does not prompt signed-in users to install the app for third-party 
   const sessionId = "session-third-party";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
+  await cacheWith({
+    [`auth:session:${sessionId}`]: JSON.stringify({
+      user: {
+        id: 1,
+        login: "steipete",
+        name: null,
+        avatarUrl: "https://avatars.githubusercontent.com/u/1",
+        url: "https://github.com/steipete",
+      },
+      accessToken: "user-token",
+      iat: exp - 600,
+      exp,
+    }),
+  });
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: kvStore({
-      [`auth:session:${sessionId}`]: JSON.stringify({
-        user: {
-          id: 1,
-          login: "steipete",
-          name: null,
-          avatarUrl: "https://avatars.githubusercontent.com/u/1",
-          url: "https://github.com/steipete",
-        },
-        accessToken: "user-token",
-        iat: exp - 600,
-        exp,
-      }),
-    }),
     GITHUB_APP_CLIENT_ID: "Iv123",
     GITHUB_APP_CLIENT_SECRET: "client-secret",
     GITHUB_APP_ID: "123",
@@ -566,22 +559,22 @@ test("worker still prompts signed-in users to install the app for owner dashboar
   const sessionId = "session-owner-install";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
+  await cacheWith({
+    [`auth:session:${sessionId}`]: JSON.stringify({
+      user: {
+        id: 1,
+        login: "steipete",
+        name: null,
+        avatarUrl: "https://avatars.githubusercontent.com/u/1",
+        url: "https://github.com/steipete",
+      },
+      accessToken: "user-token",
+      iat: exp - 600,
+      exp,
+    }),
+  });
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: kvStore({
-      [`auth:session:${sessionId}`]: JSON.stringify({
-        user: {
-          id: 1,
-          login: "steipete",
-          name: null,
-          avatarUrl: "https://avatars.githubusercontent.com/u/1",
-          url: "https://github.com/steipete",
-        },
-        accessToken: "user-token",
-        iat: exp - 600,
-        exp,
-      }),
-    }),
     GITHUB_APP_CLIENT_ID: "Iv123",
     GITHUB_APP_CLIENT_SECRET: "client-secret",
     GITHUB_APP_ID: "123",
@@ -630,7 +623,7 @@ test("worker remembers a just-completed GitHub App install while GitHub catches 
     iat: Math.floor(Date.now() / 1000),
     nonce: "install-nonce",
   });
-  const cache = kvStore({
+  const cache = await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -646,7 +639,6 @@ test("worker remembers a just-completed GitHub App install while GitHub catches 
   });
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: cache,
     GITHUB_APP_CLIENT_ID: "Iv123",
     GITHUB_APP_CLIENT_SECRET: "client-secret",
     GITHUB_APP_ID: "123",
@@ -738,7 +730,7 @@ test("worker ignores install callback acknowledgements without signed return sta
   const sessionId = "session-install-forged";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
-  const cache = kvStore({
+  const cache = await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -754,7 +746,6 @@ test("worker ignores install callback acknowledgements without signed return sta
   });
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: cache,
   };
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
@@ -783,10 +774,9 @@ test("worker records server-verified install callbacks without signed return sta
     privateKeyEncoding: { type: "pkcs1", format: "pem" },
     publicKeyEncoding: { type: "spki", format: "pem" },
   });
-  const cache = kvStore();
+  await cacheWith();
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: cache,
     GITHUB_APP_ID: "123",
     GITHUB_APP_PRIVATE_KEY: privateKey,
     GITHUB_APP_SLUG: "releasebar-app",

@@ -4,11 +4,12 @@ import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, RepoDetailPayload } from "../src/types.ts";
 import {
   crawlerRequest,
-  kvStore,
   signedJson,
   testDashboard,
   testProject,
   worker,
+  serveAssets,
+  cacheWith,
 } from "./dashboard-test-harness.ts";
 
 test("signed-in mixed-account fast paths preserve release dashboards", async () => {
@@ -46,31 +47,31 @@ test("signed-in mixed-account fast paths preserve release dashboards", async () 
   releasePayload.generatedAt = generatedAt;
   assert.ok(releasePayload.cache);
   releasePayload.cache = { ...releasePayload.cache, generatedAt };
+  serveAssets(
+    async () =>
+      new Response(
+        '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
+        { headers: { "content-type": "text/html" } },
+      ),
+  );
+  await cacheWith({
+    [`auth:session:${sessionId}`]: JSON.stringify({
+      user: {
+        id: 1,
+        login: "octocat",
+        name: null,
+        avatarUrl: "https://avatars.githubusercontent.com/u/1",
+        url: "https://github.com/octocat",
+      },
+      accessToken: "user-token",
+      iat: exp - 600,
+      exp,
+    }),
+    [metadataKey]: JSON.stringify(metadataPayload),
+    [releaseKey]: JSON.stringify(releasePayload),
+  });
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    ASSETS: {
-      fetch: async () =>
-        new Response(
-          '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
-          { headers: { "content-type": "text/html" } },
-        ),
-    },
-    DASHBOARD_CACHE: kvStore({
-      [`auth:session:${sessionId}`]: JSON.stringify({
-        user: {
-          id: 1,
-          login: "octocat",
-          name: null,
-          avatarUrl: "https://avatars.githubusercontent.com/u/1",
-          url: "https://github.com/octocat",
-        },
-        accessToken: "user-token",
-        iat: exp - 600,
-        exp,
-      }),
-      [metadataKey]: JSON.stringify(metadataPayload),
-      [releaseKey]: JSON.stringify(releasePayload),
-    }),
     GITHUB_APP_ID: "123",
     GITHUB_APP_PRIVATE_KEY: "private-key",
   };
@@ -124,21 +125,19 @@ test("worker embeds cached crawler dashboard shells without discovering app inst
     throw new Error(`crawler shell should not call GitHub ${String(input)}`);
   };
   try {
+    serveAssets(async (request: Request) => {
+      expect(new URL(request.url).pathname).toBe("/index.html");
+      return new Response(
+        '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
+        { headers: { "content-type": "text/html" } },
+      );
+    });
+    await cacheWith({
+      [key]: JSON.stringify(payload),
+    });
     const response = await worker.fetch(
       crawlerRequest("https://release.bar/owner", "Googlebot/2.1", null),
       {
-        ASSETS: {
-          fetch: async (request: Request) => {
-            expect(new URL(request.url).pathname).toBe("/index.html");
-            return new Response(
-              '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
-              { headers: { "content-type": "text/html" } },
-            );
-          },
-        },
-        DASHBOARD_CACHE: kvStore({
-          [key]: JSON.stringify(payload),
-        }),
         GITHUB_APP_ID: "123",
         GITHUB_APP_PRIVATE_KEY: privateKey,
       },
@@ -160,23 +159,20 @@ test("worker embeds cached language-filtered discover data in the app shell", as
   const languagePayload = testDashboard("typescript", [
     testProject({ owner: "acme", name: "typedbar", language: "TypeScript" }),
   ]);
+  serveAssets(async (request: Request) => {
+    expect(new URL(request.url).pathname).toBe("/index.html");
+    return new Response(
+      '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
+      { headers: { "content-type": "text/html" } },
+    );
+  });
+  await cacheWith({
+    "discover:v4:day:all": JSON.stringify(allPayload),
+    "discover:v4:day:typescript": JSON.stringify(languagePayload),
+  });
   const response = await worker.fetch(
     new Request("https://release.bar/?period=day&hotLang=TypeScript"),
-    {
-      ASSETS: {
-        fetch: async (request: Request) => {
-          expect(new URL(request.url).pathname).toBe("/index.html");
-          return new Response(
-            '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
-            { headers: { "content-type": "text/html" } },
-          );
-        },
-      },
-      DASHBOARD_CACHE: kvStore({
-        "discover:v4:day:all": JSON.stringify(allPayload),
-        "discover:v4:day:typescript": JSON.stringify(languagePayload),
-      }),
-    },
+    {},
     { waitUntil: () => undefined },
   );
 
@@ -206,22 +202,19 @@ test("worker preserves partial discover state in embedded app shell data", async
     generatedAt: payload.generatedAt,
     progress: { scanned: 0, limit: 1, done: false },
   };
+  serveAssets(async (request: Request) => {
+    expect(new URL(request.url).pathname).toBe("/index.html");
+    return new Response(
+      '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
+      { headers: { "content-type": "text/html" } },
+    );
+  });
+  await cacheWith({
+    "discover:v4:week:all": JSON.stringify(payload),
+  });
   const response = await worker.fetch(
     new Request("https://release.bar/"),
-    {
-      ASSETS: {
-        fetch: async (request: Request) => {
-          expect(new URL(request.url).pathname).toBe("/index.html");
-          return new Response(
-            '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
-            { headers: { "content-type": "text/html" } },
-          );
-        },
-      },
-      DASHBOARD_CACHE: kvStore({
-        "discover:v4:week:all": JSON.stringify(payload),
-      }),
-    },
+    {},
     { waitUntil: () => undefined },
   );
 
@@ -237,23 +230,20 @@ test("worker does not treat view language filters as discover cache selectors", 
   const languagePayload = testDashboard("typescript", [
     testProject({ owner: "acme", name: "typedbar", language: "TypeScript" }),
   ]);
+  serveAssets(async (request: Request) => {
+    expect(new URL(request.url).pathname).toBe("/index.html");
+    return new Response(
+      '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
+      { headers: { "content-type": "text/html" } },
+    );
+  });
+  await cacheWith({
+    "discover:v4:day:all": JSON.stringify(allPayload),
+    "discover:v4:day:typescript": JSON.stringify(languagePayload),
+  });
   const response = await worker.fetch(
     new Request("https://release.bar/?period=day&lang=TypeScript"),
-    {
-      ASSETS: {
-        fetch: async (request: Request) => {
-          expect(new URL(request.url).pathname).toBe("/index.html");
-          return new Response(
-            '<title>ReleaseBar</title><script type="module" src="/assets/index.js"></script>',
-            { headers: { "content-type": "text/html" } },
-          );
-        },
-      },
-      DASHBOARD_CACHE: kvStore({
-        "discover:v4:day:all": JSON.stringify(allPayload),
-        "discover:v4:day:typescript": JSON.stringify(languagePayload),
-      }),
-    },
+    {},
     { waitUntil: () => undefined },
   );
 
@@ -282,22 +272,19 @@ test("worker embeds cached public repository detail data in the app shell", asyn
     languages: [],
     workTrend: null,
   };
+  serveAssets(async (request: Request) => {
+    expect(new URL(request.url).pathname).toBe("/index.html");
+    return new Response(
+      '<title>ReleaseBar</title><meta property="og:title" content="ReleaseBar" /><meta property="og:url" content="https://release.bar/" /><meta property="og:image" content="https://release.bar/og/ReleaseBar.svg" /><meta name="twitter:title" content="ReleaseBar" /><meta name="twitter:image" content="https://release.bar/og/ReleaseBar.svg" /><script type="module" src="/assets/index.js"></script>',
+      { headers: { "content-type": "text/html" } },
+    );
+  });
+  await cacheWith({
+    "repo-detail:v4:acme/releasebar": JSON.stringify(payload),
+  });
   const response = await worker.fetch(
     new Request("https://release.bar/acme/releasebar"),
-    {
-      ASSETS: {
-        fetch: async (request: Request) => {
-          expect(new URL(request.url).pathname).toBe("/index.html");
-          return new Response(
-            '<title>ReleaseBar</title><meta property="og:title" content="ReleaseBar" /><meta property="og:url" content="https://release.bar/" /><meta property="og:image" content="https://release.bar/og/ReleaseBar.svg" /><meta name="twitter:title" content="ReleaseBar" /><meta name="twitter:image" content="https://release.bar/og/ReleaseBar.svg" /><script type="module" src="/assets/index.js"></script>',
-            { headers: { "content-type": "text/html" } },
-          );
-        },
-      },
-      DASHBOARD_CACHE: kvStore({
-        "repo-detail:v4:acme/releasebar": JSON.stringify(payload),
-      }),
-    },
+    {},
     { waitUntil: () => undefined },
   );
 
@@ -387,7 +374,6 @@ test("worker serves cached GitHub discovery dashboards from repository search", 
     },
   };
   const env = {
-    DASHBOARD_CACHE: kvStore(),
     GITHUB_TOKEN: "shared-token",
   };
   try {
@@ -463,27 +449,26 @@ test("worker does not rehydrate completed GitHub discovery cache", async () => {
       commitsSinceRelease: 2,
     }),
   ]);
-  const env = {
-    DASHBOARD_CACHE: kvStore({
-      "discover:v4:week:all": JSON.stringify({
-        ...cached,
-        title: "GitHub Hot",
-        owners: [],
+  await cacheWith({
+    "discover:v4:week:all": JSON.stringify({
+      ...cached,
+      title: "GitHub Hot",
+      owners: [],
+      generatedAt: new Date().toISOString(),
+      cache: {
+        ...(cached.cache ?? {
+          capped: false,
+          repoLimit: 40,
+          generatedAt: cached.generatedAt,
+        }),
+        state: "fresh",
+        stale: false,
         generatedAt: new Date().toISOString(),
-        cache: {
-          ...(cached.cache ?? {
-            capped: false,
-            repoLimit: 40,
-            generatedAt: cached.generatedAt,
-          }),
-          state: "fresh",
-          stale: false,
-          generatedAt: new Date().toISOString(),
-          progress: { scanned: 1, limit: 1, done: true },
-        },
-      }),
+        progress: { scanned: 1, limit: 1, done: true },
+      },
     }),
-  };
+  });
+  const env = {};
   globalThis.fetch = async () => {
     throw new Error("discovery cache should not fetch");
   };
@@ -514,27 +499,26 @@ test("worker serves stale discovery caches to crawlers without searching GitHub"
     }),
   ]);
   const waits: Array<Promise<unknown>> = [];
-  const env = {
-    DASHBOARD_CACHE: kvStore({
-      "discover:v4:week:all": JSON.stringify({
-        ...cached,
-        title: "GitHub Hot",
-        owners: [],
+  await cacheWith({
+    "discover:v4:week:all": JSON.stringify({
+      ...cached,
+      title: "GitHub Hot",
+      owners: [],
+      generatedAt: "2026-05-15T12:00:00Z",
+      cache: {
+        ...(cached.cache ?? {
+          capped: false,
+          repoLimit: 40,
+          generatedAt: cached.generatedAt,
+        }),
+        state: "fresh",
+        stale: false,
         generatedAt: "2026-05-15T12:00:00Z",
-        cache: {
-          ...(cached.cache ?? {
-            capped: false,
-            repoLimit: 40,
-            generatedAt: cached.generatedAt,
-          }),
-          state: "fresh",
-          stale: false,
-          generatedAt: "2026-05-15T12:00:00Z",
-          progress: { scanned: 1, limit: 1, done: true },
-        },
-      }),
+        progress: { scanned: 1, limit: 1, done: true },
+      },
     }),
-  };
+  });
+  const env = {};
   globalThis.fetch = async (input) => {
     throw new Error(`crawler should not refresh discovery ${String(input)}`);
   };

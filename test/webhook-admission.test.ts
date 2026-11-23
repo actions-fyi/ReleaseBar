@@ -9,7 +9,6 @@ import {
   deleteStoredRefreshTarget,
   fillTargetSource,
   indexedTargets,
-  kvStore,
   storedRefreshTarget,
   storeRefreshTarget,
   storeRefreshTargets,
@@ -20,6 +19,8 @@ import {
   webhookSignature,
   worker,
   seedOwnerMetadata,
+  cacheWith,
+  holdQueue,
 } from "./dashboard-test-harness.ts";
 
 test("GitHub push webhooks prioritize recent targets beyond one page of the target index", async () => {
@@ -103,7 +104,7 @@ test("GitHub push webhooks prioritize recent targets beyond one page of the targ
       failureCount: 0,
     } satisfies RefreshTarget;
   });
-  const cache = kvStore({
+  const cache = await cacheWith({
     ...Object.fromEntries(
       targets.map((target) => [target.key, JSON.stringify(testDashboard(owner, [project]))]),
     ),
@@ -112,14 +113,11 @@ test("GitHub push webhooks prioritize recent targets beyond one page of the targ
   await storeRefreshTarget(degradedRepoTarget);
   await storeRefreshTargets(targets);
   const queued: Array<RefreshJob | QueuedWebhook | QueuedFanout> = [];
+  holdQueue(async (message) => {
+    queued.push(message);
+  });
   const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
     GITHUB_WEBHOOK_SECRET: secret,
-    REFRESH_QUEUE: {
-      send: async (message) => {
-        queued.push(message);
-      },
-    },
   };
   const payload = {
     ref: "refs/heads/main",
@@ -369,18 +367,16 @@ test("repo-only refresh targets do not consume a shared custom-owner index", asy
     nextDueAt: "2999-01-01T00:00:00Z",
     failureCount: 0,
   };
-  const cache = kvStore({
+  await cacheWith({
     [target.key]: JSON.stringify(
       testDashboard("custom", [testProject({ owner: "owner", name: "repo" })]),
     ),
   });
   await storeRefreshTarget(target);
-  const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
-  };
+  const env: TestEnv = {};
   const waits: Promise<unknown>[] = [];
 
-  await worker.scheduled({ cron: "0 * * * *" } as never, env, {
+  await worker.scheduled({ cron: "0 * * * *" }, env, {
     waitUntil: (promise) => waits.push(promise),
   });
   await Promise.all(waits);
@@ -472,19 +468,15 @@ test("rejected target admission does not persist or queue the target", async () 
       ciUpdatedAt: generatedAt,
     },
   } satisfies DashboardPayload;
-  const cache = kvStore({
+  await cacheWith({
     [key]: JSON.stringify(cached),
     [`owner:v1:${owner}`]: JSON.stringify({ type: "user", login: owner }),
   });
   const queued: unknown[] = [];
-  const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
-    REFRESH_QUEUE: {
-      async send(message) {
-        queued.push(message);
-      },
-    },
-  };
+  holdQueue(async (message) => {
+    queued.push(message);
+  });
+  const env: TestEnv = {};
   await fillTargetSource("owner", owner);
   const waits: Promise<unknown>[] = [];
   const response = await worker.fetch(new Request(`https://release.bar/api/${owner}`), env, {
@@ -534,22 +526,19 @@ test("archive webhooks invalidate caches when owner snapshots omit the repositor
       projects: [testProject({ owner, name: "sibling" })],
     }),
   );
-  const cache = kvStore({
+  const cache = await cacheWith({
     [key]: JSON.stringify(dashboard),
     [`repo-detail:aux:v2:${encodeURIComponent(`${owner}/repo`)}:repository:${encodeURIComponent(`/repos/${owner}/repo`)}`]:
       JSON.stringify({ generatedAt: now, data: { name: "repo" } }),
   });
   await storeRefreshTarget(target);
   const queued: unknown[] = [];
+  holdQueue(async (message) => {
+    queued.push(message);
+  });
   const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
     GITHUB_WEBHOOK_SECRET: secret,
     GITHUB_TOKEN: "shared-token",
-    REFRESH_QUEUE: {
-      send: async (message) => {
-        queued.push(message);
-      },
-    },
   };
   const payload = {
     action: "archived",

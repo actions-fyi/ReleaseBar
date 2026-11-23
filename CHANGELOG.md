@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The tests run on the real local bindings of the Workers runtime: the KV namespace, the D1 database, the queue, the assets and the Durable Objects. The fake KV namespace, the fake queue and the hook that gave each Durable Object the calling test's env are gone; a test sets its variables on the runtime's env and observes or fails a binding with a spy on the real one.
 - The stack migration is finished. The readers of records nothing writes any more are gone: a session cookie that holds the whole session, a build-progress tombstone under the progress key, build progress in KV without the mark of an outage, and a queue message that carries its refresh target. A job whose snapshot can't be read is retried, not run from the message.
 - D1 now checks the shape of the registry's JSON columns when a row is written (`migrations/0004_checks.sql`): the four lists of a dashboard profile and an installation's repository list must be JSON arrays, an owner's metadata snapshot a JSON object. The migration rebuilds the three tables with the same columns and indexes; the deploy log lists it as applied once.
 - When the `RateLimiter` Durable Object can't be reached, the client timing endpoint drops the sample and answers 202, and an install callback that arrives without fresh state answers 503 with `Retry-After: 30` and asks GitHub nothing. Both answered 500 before.

@@ -2,13 +2,14 @@ import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { DashboardPayload, RefreshJob } from "../src/types.ts";
 import {
-  kvStore,
   ownerMetadataMutator,
   type TestEnv,
   testDashboard,
   testQueue,
   testProject,
   worker,
+  cacheWith,
+  holdQueue,
 } from "./dashboard-test-harness.ts";
 
 test("worker manual dashboard refresh returns metadata before release hydration", async () => {
@@ -89,7 +90,7 @@ test("worker manual dashboard refresh returns metadata before release hydration"
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
   const queue = testQueue();
-  const env = { DASHBOARD_CACHE: kvStore(), GITHUB_TOKEN: "shared-token", REFRESH_QUEUE: queue };
+  const env = { GITHUB_TOKEN: "shared-token" };
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/owner", { method: "POST" }),
@@ -133,11 +134,10 @@ test("worker manual dashboard refresh returns metadata before release hydration"
 
 test("manual refreshes merge owner removals observed during the build before caching", async () => {
   const originalFetch = globalThis.fetch;
-  const cache = kvStore();
+  const cache = await cacheWith();
+  holdQueue(async () => undefined);
   const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
     GITHUB_TOKEN: "shared-token",
-    REFRESH_QUEUE: { send: async () => undefined },
   };
   let removalRecorded = false;
   globalThis.fetch = async (input) => {
@@ -148,10 +148,7 @@ test("manual refreshes merge owner removals observed during the build before cac
     if (url.pathname === "/graphql") {
       if (!removalRecorded) {
         await new Promise((resolve) => setTimeout(resolve, 2));
-        const removed = await ownerMetadataMutator(
-          env,
-          "owner",
-        )({
+        const removed = await ownerMetadataMutator("owner")({
           kind: "remove",
           fullName: "owner/repo",
           observedAt: new Date().toISOString(),
@@ -278,16 +275,13 @@ test("worker manual dashboard refresh preserves repository cap metadata", async 
   };
 
   try {
+    holdQueue(async (job: RefreshJob) => {
+      sentJobs.push(job);
+    });
     const response = await worker.fetch(
       new Request("https://release.bar/api/wide", { method: "POST" }),
       {
-        DASHBOARD_CACHE: kvStore(),
         GITHUB_TOKEN: "shared-token",
-        REFRESH_QUEUE: {
-          async send(job: RefreshJob) {
-            sentJobs.push(job);
-          },
-        },
       },
       { waitUntil: (promise) => waits.push(promise) },
     );
@@ -360,16 +354,13 @@ test("worker limits cold metadata to one small page before queue hydration", asy
   };
 
   try {
+    holdQueue(async (job: RefreshJob) => {
+      sentJobs.push(job);
+    });
     const response = await worker.fetch(
       new Request("https://release.bar/api/wide"),
       {
-        DASHBOARD_CACHE: kvStore(),
         GITHUB_TOKEN: "shared-token",
-        REFRESH_QUEUE: {
-          async send(job: RefreshJob) {
-            sentJobs.push(job);
-          },
-        },
       },
       { waitUntil: (promise) => waits.push(promise) },
     );
@@ -415,7 +406,7 @@ test("worker manual dashboard refresh returns structured GitHub errors", async (
     }
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
-  const env = { DASHBOARD_CACHE: kvStore(), GITHUB_TOKEN: "shared-token" };
+  const env = { GITHUB_TOKEN: "shared-token" };
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/owner", { method: "POST" }),
@@ -435,10 +426,10 @@ test("worker manual dashboard refresh returns structured GitHub errors", async (
       dashboard.cache.generatedAt = dashboard.generatedAt;
       dashboard.options.includeUnreleased = true;
     }
-    const cache = kvStore({ [key]: JSON.stringify(dashboard) });
+    const cache = await cacheWith({ [key]: JSON.stringify(dashboard) });
     const cachedResponse = await worker.fetch(
       new Request("https://release.bar/api/owner", { method: "POST" }),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
     expect(cachedResponse.status).toBe(429);
@@ -466,7 +457,7 @@ test("worker GraphQL backoff does not fall through to shared REST scans", async 
     }
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
-  const cache = kvStore({
+  await cacheWith({
     "github:backoff:v2:graphql:shared:_:ReleaseBarOwnerRepos.metadata": JSON.stringify({
       active: true,
       status: 502,
@@ -478,7 +469,7 @@ test("worker GraphQL backoff does not fall through to shared REST scans", async 
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/owner"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
     expect(response.status).toBe(429);
@@ -520,11 +511,11 @@ test("worker GraphQL upstream failure does not fall through to shared REST scans
     }
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
-  const cache = kvStore();
+  const cache = await cacheWith();
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/owner"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
     expect(response.status).toBe(429);
@@ -611,10 +602,9 @@ test("worker manual dashboard refresh preserves released-only cache while rebuil
     dashboard.cache.generatedAt = dashboard.generatedAt;
   }
   const queue = testQueue();
+  await cacheWith({ [key]: JSON.stringify(dashboard) });
   const env = {
-    DASHBOARD_CACHE: kvStore({ [key]: JSON.stringify(dashboard) }),
     GITHUB_TOKEN: "shared-token",
-    REFRESH_QUEUE: queue,
   };
   try {
     const response = await worker.fetch(

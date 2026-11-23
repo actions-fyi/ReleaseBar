@@ -2,7 +2,6 @@ import { expect, test } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
-  kvStore,
   objectsUnavailable,
   observedDatabase,
   signedJson,
@@ -14,6 +13,8 @@ import {
   testProject,
   worker,
   seedInstallation,
+  cacheWith,
+  holdQueue,
 } from "./dashboard-test-harness.ts";
 
 test("worker scheduler preserves queued backlog jobs until reservation expiry", async () => {
@@ -50,7 +51,7 @@ test("worker scheduler preserves queued backlog jobs until reservation expiry", 
     durationMs: null,
     error: "dashboard incomplete",
   };
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -68,15 +69,12 @@ test("worker scheduler preserves queued backlog jobs until reservation expiry", 
   await storeRefreshJob(queuedJob);
   const sentJobs: RefreshJob[] = [];
 
+  holdQueue(async (job: RefreshJob) => {
+    sentJobs.push(job);
+  });
   const env = {
     ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: cache,
-    REFRESH_QUEUE: {
-      async send(job: RefreshJob) {
-        sentJobs.push(job);
-      },
-    },
   };
   const request = () =>
     new Request("https://release.bar/api/admin/scheduler/run", {
@@ -127,7 +125,7 @@ test("worker clears fallback reservations after active-job scans fail", async ()
     nextDueAt: "2000-01-01T00:00:00Z",
     failureCount: 0,
   };
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -154,16 +152,13 @@ test("worker clears fallback reservations after active-job scans fail", async ()
   });
   objectsUnavailable();
   const sentJobs: RefreshJob[] = [];
+  holdQueue(async (job: RefreshJob) => {
+    sentJobs.push(job);
+  });
   const env = {
     ADMIN_LOGINS: "steipete",
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: cache,
     DB: database,
-    REFRESH_QUEUE: {
-      async send(job: RefreshJob) {
-        sentJobs.push(job);
-      },
-    },
   };
   const request = () =>
     new Request("https://release.bar/api/admin/scheduler/run", {
@@ -203,7 +198,7 @@ test("worker scheduler falls back when the reservation Durable Object is unavail
     nextDueAt: "2000-01-01T00:00:00Z",
     failureCount: 0,
   };
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -221,6 +216,9 @@ test("worker scheduler falls back when the reservation Durable Object is unavail
   const sentJobs: RefreshJob[] = [];
   objectsUnavailable();
 
+  holdQueue(async (job: RefreshJob) => {
+    sentJobs.push(job);
+  });
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler/run", {
       method: "POST",
@@ -229,12 +227,6 @@ test("worker scheduler falls back when the reservation Durable Object is unavail
     {
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
-      DASHBOARD_CACHE: cache,
-      REFRESH_QUEUE: {
-        async send(job: RefreshJob) {
-          sentJobs.push(job);
-        },
-      },
     },
     { waitUntil: () => undefined },
   );
@@ -250,7 +242,7 @@ test("worker admin GitHub access ignores expired shared quota cooldowns", async 
   const sessionId = "session-admin-expired-cooldown";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
-  const cache = kvStore({
+  const cache = await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -288,7 +280,6 @@ test("worker admin GitHub access ignores expired shared quota cooldowns", async 
     {
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
-      DASHBOARD_CACHE: cache,
     },
     { waitUntil: () => undefined },
   );
@@ -303,7 +294,7 @@ test("worker admin GitHub access keeps longest active shared quota cooldown", as
   const sessionId = "session-admin-longest-cooldown";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -341,7 +332,6 @@ test("worker admin GitHub access keeps longest active shared quota cooldown", as
     {
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
-      DASHBOARD_CACHE: cache,
     },
     { waitUntil: () => undefined },
   );
@@ -372,7 +362,7 @@ test("worker admin scheduler defers shared quota paused targets even with missin
     message: "shared GitHub quota paused until 2999-01-01T00:00:00Z",
   };
   const sentJobs: RefreshJob[] = [];
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -388,6 +378,9 @@ test("worker admin scheduler defers shared quota paused targets even with missin
   });
   await storeRefreshTarget(target);
 
+  holdQueue(async (job: RefreshJob) => {
+    sentJobs.push(job);
+  });
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler/run", {
       method: "POST",
@@ -396,12 +389,6 @@ test("worker admin scheduler defers shared quota paused targets even with missin
     {
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
-      DASHBOARD_CACHE: cache,
-      REFRESH_QUEUE: {
-        async send(job: RefreshJob) {
-          sentJobs.push(job);
-        },
-      },
     },
     { waitUntil: () => undefined },
   );
@@ -446,7 +433,7 @@ test("worker admin scheduler lets app-token targets bypass shared quota pauses",
       updatedAt: new Date().toISOString(),
     }),
   );
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -463,6 +450,9 @@ test("worker admin scheduler lets app-token targets bypass shared quota pauses",
   });
   await storeRefreshTarget(target);
 
+  holdQueue(async (job: RefreshJob) => {
+    sentJobs.push(job);
+  });
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler/run", {
       method: "POST",
@@ -471,14 +461,8 @@ test("worker admin scheduler lets app-token targets bypass shared quota pauses",
     {
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
-      DASHBOARD_CACHE: cache,
       GITHUB_APP_ID: "123",
       GITHUB_APP_PRIVATE_KEY: "private-key",
-      REFRESH_QUEUE: {
-        async send(job: RefreshJob) {
-          sentJobs.push(job);
-        },
-      },
     },
     { waitUntil: () => undefined },
   );
@@ -523,7 +507,7 @@ test("worker admin scheduler uses app registry coverage without minting tokens",
       updatedAt: new Date().toISOString(),
     }),
   );
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -539,6 +523,9 @@ test("worker admin scheduler uses app registry coverage without minting tokens",
   });
   await storeRefreshTarget(target);
 
+  holdQueue(async (job: RefreshJob) => {
+    sentJobs.push(job);
+  });
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler/run", {
       method: "POST",
@@ -547,14 +534,8 @@ test("worker admin scheduler uses app registry coverage without minting tokens",
     {
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
-      DASHBOARD_CACHE: cache,
       GITHUB_APP_ID: "123",
       GITHUB_APP_PRIVATE_KEY: "not-a-private-key",
-      REFRESH_QUEUE: {
-        async send(job: RefreshJob) {
-          sentJobs.push(job);
-        },
-      },
     },
     { waitUntil: () => undefined },
   );
@@ -605,7 +586,7 @@ test("worker admin scheduler bypasses shared quota defer time with app coverage"
       updatedAt: new Date().toISOString(),
     }),
   );
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -624,6 +605,9 @@ test("worker admin scheduler bypasses shared quota defer time with app coverage"
   });
   await storeRefreshTarget(target);
 
+  holdQueue(async (job: RefreshJob) => {
+    sentJobs.push(job);
+  });
   const response = await worker.fetch(
     new Request("https://release.bar/api/admin/scheduler/run", {
       method: "POST",
@@ -632,14 +616,8 @@ test("worker admin scheduler bypasses shared quota defer time with app coverage"
     {
       ADMIN_LOGINS: "steipete",
       AUTH_COOKIE_SECRET: "test-secret",
-      DASHBOARD_CACHE: cache,
       GITHUB_APP_ID: "123",
       GITHUB_APP_PRIVATE_KEY: "not-a-private-key",
-      REFRESH_QUEUE: {
-        async send(job: RefreshJob) {
-          sentJobs.push(job);
-        },
-      },
     },
     { waitUntil: () => undefined },
   );
@@ -670,7 +648,7 @@ test("worker scheduler marks jobs failed when queue delivery fails", async () =>
     nextDueAt: "2026-05-15T13:00:00Z",
     failureCount: 0,
   };
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -686,6 +664,9 @@ test("worker scheduler marks jobs failed when queue delivery fails", async () =>
   });
   await storeRefreshTarget(target);
 
+  holdQueue(async () => {
+    throw new Error("queue unavailable");
+  });
   await expect(
     worker.fetch(
       new Request("https://release.bar/api/admin/scheduler/run", {
@@ -695,12 +676,6 @@ test("worker scheduler marks jobs failed when queue delivery fails", async () =>
       {
         ADMIN_LOGINS: "steipete",
         AUTH_COOKIE_SECRET: "test-secret",
-        DASHBOARD_CACHE: cache,
-        REFRESH_QUEUE: {
-          async send() {
-            throw new Error("queue unavailable");
-          },
-        },
       },
       { waitUntil: () => undefined },
     ),

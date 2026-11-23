@@ -1,7 +1,7 @@
 import { generateKeyPairSync } from "node:crypto";
 import { assert, expect, test } from "vitest";
 import type { AudienceRange, RepoAudiencePayload } from "../src/types.ts";
-import { crawlerRequest, kvStore, signedJson, worker } from "./dashboard-test-harness.ts";
+import { crawlerRequest, signedJson, worker, cacheWith } from "./dashboard-test-harness.ts";
 
 test("worker builds cached repository audience from public stargazers", async () => {
   const originalFetch = globalThis.fetch;
@@ -259,17 +259,17 @@ test("worker builds cached repository audience from public stargazers", async ()
     }
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
-  const env = {
-    DASHBOARD_CACHE: kvStore({
-      "trust-profile:v4:principal": JSON.stringify({
-        login: "principal",
-        profileKind: "user_trust",
-        scoreLabel: "trust score",
-        score: 88,
-        tier: "high",
-        generatedAt: "2026-05-16T12:00:00Z",
-      }),
+  await cacheWith({
+    "trust-profile:v4:principal": JSON.stringify({
+      login: "principal",
+      profileKind: "user_trust",
+      scoreLabel: "trust score",
+      score: 88,
+      tier: "high",
+      generatedAt: "2026-05-16T12:00:00Z",
     }),
+  });
+  const env = {
     GITHUB_TOKEN: "shared-token",
   };
   try {
@@ -409,7 +409,7 @@ test("worker REST stargazer fallback samples newest stargazers", async () => {
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/restbar/audience"),
-      { DASHBOARD_CACHE: kvStore() },
+      {},
       { waitUntil: () => undefined },
     );
     expect(response.status).toBe(200);
@@ -424,7 +424,7 @@ test("worker REST stargazer fallback samples newest stargazers", async () => {
 
 test("worker serves stale repository audience caches to crawlers without refreshing", async () => {
   const generatedAt = new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString();
-  const cache = kvStore({
+  await cacheWith({
     "repo-audience:v5:acme/releasebar:month": JSON.stringify({
       fullName: "acme/releasebar",
       range: "month",
@@ -456,7 +456,7 @@ test("worker serves stale repository audience caches to crawlers without refresh
   try {
     const response = await worker.fetch(
       crawlerRequest("https://release.bar/api/repos/acme/releasebar/audience"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
     expect(response.status).toBe(200);
@@ -470,7 +470,7 @@ test("worker serves stale repository audience caches to crawlers without refresh
 });
 
 test("worker serves OpenAPI spec aliases for Swagger tooling", async () => {
-  const env = { DASHBOARD_CACHE: kvStore() };
+  const env = {};
   for (const path of ["/openapi.json", "/api/openapi.json", "/api/swagger.json"]) {
     const response = await worker.fetch(new Request(`https://release.bar${path}`), env, {
       waitUntil: () => undefined,
@@ -509,7 +509,7 @@ test("worker rejects malformed nested owner API paths", async () => {
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/openclaw/openclaw/audience"),
-      { DASHBOARD_CACHE: kvStore() },
+      {},
       { waitUntil: () => undefined },
     );
     expect(response.status).toBe(404);
@@ -529,7 +529,6 @@ test("worker keeps unsynced app-configured audience GETs off shared quota", asyn
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/releasebar/audience"),
       {
-        DASHBOARD_CACHE: kvStore(),
         GITHUB_APP_ID: "123",
         GITHUB_APP_PRIVATE_KEY: "private-key",
         GITHUB_TOKEN: "shared-token",
@@ -555,7 +554,7 @@ test("worker only backfills repository audience caches with GitHub App quota", a
       new Request("https://release.bar/api/repos/acme/releasebar/audience/backfill", {
         method: "POST",
       }),
-      { DASHBOARD_CACHE: kvStore(), GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
     expect(denied.status).toBe(403);
@@ -571,7 +570,7 @@ test("worker only backfills repository audience caches with GitHub App quota", a
   const sessionId = "audience-backfill";
   const exp = Math.floor(Date.now() / 1000) + 600;
   const authCookie = await signedJson("test-secret", { id: sessionId, exp });
-  const cache = kvStore({
+  await cacheWith({
     [`auth:session:${sessionId}`]: JSON.stringify({
       user: {
         id: 1,
@@ -587,7 +586,6 @@ test("worker only backfills repository audience caches with GitHub App quota", a
   });
   const env = {
     AUTH_COOKIE_SECRET: "test-secret",
-    DASHBOARD_CACHE: cache,
     GITHUB_APP_CLIENT_ID: "Iv123",
     GITHUB_APP_CLIENT_SECRET: "client-secret",
     GITHUB_APP_ID: "123",

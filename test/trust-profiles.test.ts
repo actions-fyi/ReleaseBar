@@ -1,6 +1,6 @@
 import { assert, expect, test } from "vitest";
 import type { TrustProfilePayload } from "../src/types.ts";
-import { kvStore, worker, seedInstallation } from "./dashboard-test-harness.ts";
+import { worker, seedInstallation, cacheWith } from "./dashboard-test-harness.ts";
 
 test("worker builds bounded trust profiles for people pages", async () => {
   const originalFetch = globalThis.fetch;
@@ -70,7 +70,6 @@ test("worker builds bounded trust profiles for people pages", async () => {
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
   const env = {
-    DASHBOARD_CACHE: kvStore(),
     GITHUB_TOKEN: "shared-token",
   };
   try {
@@ -154,7 +153,6 @@ test("worker preserves bot tier for typed trust profiles", async () => {
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
   const env = {
-    DASHBOARD_CACHE: kvStore(),
     GITHUB_TOKEN: "shared-token",
   };
   try {
@@ -187,7 +185,7 @@ test("worker uses registered app quota for anonymous trust profiles", async () =
       updatedAt: new Date().toISOString(),
     }),
   );
-  const cache = kvStore({
+  await cacheWith({
     "auth:installation-token:42": "installation-token",
   });
   const originalFetch = globalThis.fetch;
@@ -227,7 +225,6 @@ test("worker uses registered app quota for anonymous trust profiles", async () =
     const response = await worker.fetch(
       new Request("https://release.bar/api/users/principal/trust"),
       {
-        DASHBOARD_CACHE: cache,
         GITHUB_APP_ID: "123",
         GITHUB_APP_PRIVATE_KEY: "unused",
         GITHUB_TOKEN: "shared-token",
@@ -307,7 +304,6 @@ test("worker returns org signal profiles for organization accounts", async () =>
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
   const env = {
-    DASHBOARD_CACHE: kvStore(),
     GITHUB_TOKEN: "shared-token",
   };
   try {
@@ -381,7 +377,7 @@ test("worker refreshes stale trust profiles in the background", async () => {
       message: "bounded public GitHub profile signals",
     },
   };
-  const cache = kvStore({
+  const cache = await cacheWith({
     "trust-profile:v4:principal": JSON.stringify(staleProfile),
   });
   const queued: Promise<unknown>[] = [];
@@ -440,7 +436,6 @@ test("worker refreshes stale trust profiles in the background", async () => {
     const response = await worker.fetch(
       new Request("https://release.bar/api/users/principal/trust"),
       {
-        DASHBOARD_CACHE: cache,
         GITHUB_TOKEN: "shared-token",
       },
       { waitUntil: (promise) => queued.push(promise) },

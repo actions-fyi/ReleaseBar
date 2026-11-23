@@ -6,7 +6,6 @@ import type { DashboardPayload, RefreshTarget } from "../src/types.ts";
 import type { StoredWebhookPending } from "../worker/runtime.ts";
 import { webhookProcessorObjectName } from "../worker/runtime.ts";
 import {
-  kvStore,
   objectsUnavailable,
   observedDatabase,
   storeRefreshTarget,
@@ -17,6 +16,8 @@ import {
   WebhookAdmission,
   WebhookProcessor,
   worker,
+  cacheWith,
+  holdQueue,
 } from "./dashboard-test-harness.ts";
 
 test("push webhooks bypass terminal target backoff before invalidating caches", async () => {
@@ -44,7 +45,7 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
     failureCount: 11,
     terminalBackoffUntil: "2999-01-01T00:00:00Z",
   };
-  const cache = kvStore({
+  const cache = await cacheWith({
     [key]: JSON.stringify(testDashboard(owner, [testProject({ owner, name: "repo" })])),
     "hot:v3": JSON.stringify(
       testDashboard("hot", [testProject({ owner, name: "repo", commitsSinceRelease: 5 })]),
@@ -54,22 +55,18 @@ test("push webhooks bypass terminal target backoff before invalidating caches", 
   const queued: unknown[] = [];
   const queuedDelays: Array<number | undefined> = [];
   const dashboardCacheAtEnqueue: Array<string | null> = [];
-  const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
-    REFRESH_QUEUE: {
-      send: async (message, options) => {
-        queued.push(message);
-        queuedDelays.push(options?.delaySeconds);
-        if (
-          message &&
-          typeof message === "object" &&
-          (message as { kind?: unknown }).kind === "dashboard"
-        ) {
-          dashboardCacheAtEnqueue.push(await cache.get(key));
-        }
-      },
-    },
-  };
+  holdQueue(async (message, options) => {
+    queued.push(message);
+    queuedDelays.push(options?.delaySeconds);
+    if (
+      message &&
+      typeof message === "object" &&
+      (message as { kind?: unknown }).kind === "dashboard"
+    ) {
+      dashboardCacheAtEnqueue.push(await cache.get(key));
+    }
+  });
+  const env: TestEnv = {};
 
   await worker.queue(
     {
@@ -195,21 +192,17 @@ test("reserved webhook refreshes queue one follow-up after the active job", asyn
     nextDueAt: "2999-01-01T00:00:00Z",
     failureCount: 0,
   };
-  const cache = kvStore({
+  const cache = await cacheWith({
     [key]: JSON.stringify(testDashboard(owner, [testProject({ owner, name: "sibling" })])),
   });
   await storeRefreshTarget(target);
   const queued: unknown[] = [];
   const delays: Array<number | undefined> = [];
-  const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
-    REFRESH_QUEUE: {
-      send: async (message, options) => {
-        queued.push(message);
-        delays.push(options?.delaySeconds);
-      },
-    },
-  };
+  holdQueue(async (message, options) => {
+    queued.push(message);
+    delays.push(options?.delaySeconds);
+  });
+  const env: TestEnv = {};
   const coordinator = testEnv(env).BUILD_COORDINATOR.getByName(key);
   expect(await coordinator.reserveJob("existing-job")).toBe(true);
 
@@ -315,22 +308,7 @@ test("worker acknowledges webhook jobs after the durable requeue limit", async (
   const admissionAbandons = vi.spyOn(WebhookAdmission.prototype, "abandon");
   const processorAbandons = vi.spyOn(WebhookProcessor.prototype, "abandon");
 
-  await (
-    worker as unknown as {
-      queue(
-        batch: {
-          messages: Array<{
-            body: unknown;
-            attempts?: number;
-            ack(): void;
-            retry(options?: { delaySeconds?: number }): void;
-          }>;
-        },
-        env: unknown,
-        context: unknown,
-      ): Promise<void>;
-    }
-  ).queue(
+  await worker.queue(
     {
       messages: [
         {
@@ -391,7 +369,7 @@ test("processed webhook retries take over followers behind a stale matching leas
     deliveries: ["delivery-follower"],
   };
   const objectName = webhookProcessorObjectName("owner");
-  const processor = testEnv({ DASHBOARD_CACHE: kvStore() }).WEBHOOK_PROCESSOR.getByName(objectName);
+  const processor = testEnv({}).WEBHOOK_PROCESSOR.getByName(objectName);
   // The same object, as the runtime's own stub: only that one opens its storage to a test.
   const storage = runtimeEnv.WEBHOOK_PROCESSOR.getByName(objectName);
   // The leader's delivery is processed, but its earlier attempt still holds the lease, and a
@@ -498,22 +476,13 @@ test("worker quickly requeues busy webhook jobs without consuming their failure 
   let queuedJob: { attempts?: number; delivery?: string } | undefined;
   vi.spyOn(WebhookProcessor.prototype, "process").mockResolvedValue({ state: "busy" });
 
-  await (
-    worker as unknown as {
-      queue(
-        batch: {
-          messages: Array<{
-            body: unknown;
-            attempts?: number;
-            ack(): void;
-            retry(options?: { delaySeconds?: number }): void;
-          }>;
-        },
-        env: unknown,
-        context: unknown,
-      ): Promise<void>;
-    }
-  ).queue(
+  holdQueue(
+    async (job: { attempts?: number; delivery?: string }, options?: { delaySeconds?: number }) => {
+      queuedJob = job;
+      queuedDelaySeconds = options?.delaySeconds;
+    },
+  );
+  await worker.queue(
     {
       messages: [
         {
@@ -542,17 +511,7 @@ test("worker quickly requeues busy webhook jobs without consuming their failure 
         },
       ],
     },
-    {
-      REFRESH_QUEUE: {
-        async send(
-          job: { attempts?: number; delivery?: string },
-          options?: { delaySeconds?: number },
-        ) {
-          queuedJob = job;
-          queuedDelaySeconds = options?.delaySeconds;
-        },
-      },
-    },
+    {},
     { waitUntil: () => undefined },
   );
 
@@ -568,8 +527,11 @@ test("terminal webhook fanout clears admission and processing deduplication", as
   const admissionAbandons = vi.spyOn(WebhookAdmission.prototype, "abandon");
   const processorAbandons = vi.spyOn(WebhookProcessor.prototype, "abandon");
   const objectName = (object: unknown) => (object as { ctx: DurableObjectState }).ctx.id.name;
-  const cache = kvStore();
+  await cacheWith();
 
+  holdQueue(async () => {
+    throw new Error("queue send failed");
+  });
   await worker.queue(
     {
       messages: [
@@ -604,15 +566,7 @@ test("terminal webhook fanout clears admission and processing deduplication", as
         } as never,
       ],
     },
-    {
-      DASHBOARD_CACHE: cache,
-      // The fanout fails when it sends the job for its next page.
-      REFRESH_QUEUE: {
-        async send() {
-          throw new Error("queue send failed");
-        },
-      },
-    },
+    {},
     { waitUntil: () => undefined },
   );
 
@@ -630,7 +584,7 @@ test("terminal webhook fanout retries when durable abandonment fails", async () 
   let acknowledged = false;
   let retried = false;
   objectsUnavailable();
-  const cache = kvStore();
+  await cacheWith();
   // The page of the target index can't be read.
   const { database } = observedDatabase((sql) => sql.includes("FROM refresh_target_sources"));
 
@@ -669,7 +623,6 @@ test("terminal webhook fanout retries when durable abandonment fails", async () 
       ],
     },
     {
-      DASHBOARD_CACHE: cache,
       DB: database,
     },
     { waitUntil: () => undefined },

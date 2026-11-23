@@ -14,10 +14,10 @@ import { summaryFailedMessage, summaryRetryDue } from "../worker/release-summary
 import {
   claudeJson,
   claudeText,
-  kvStore,
   signedIn,
   testProject,
   worker,
+  cacheWith,
 } from "./dashboard-test-harness.ts";
 
 const httpOk = 200;
@@ -123,7 +123,7 @@ async function captureErrors(run: () => Promise<void>): Promise<readonly string[
 
 // A request from a signed-in user, who may start summaries.
 async function fetchSignedIn(
-  cache: ReturnType<typeof kvStore>,
+  cache: KVNamespace,
   url: string,
   queued: Promise<unknown>[],
 ): Promise<Response> {
@@ -131,7 +131,6 @@ async function fetchSignedIn(
   return worker.fetch(
     new Request(url, { headers: user.headers }),
     {
-      DASHBOARD_CACHE: cache,
       GITHUB_TOKEN: "shared-token",
       ANTHROPIC_API_KEY: "claude-key",
       ...user.env,
@@ -161,7 +160,7 @@ test("summary retry backoff doubles per failure and stops at the maximum", () =>
 });
 
 test("worker logs a failed owner activity summary and stores a generic message", async () => {
-  const cache = kvStore({
+  const cache = await cacheWith({
     [ownerActivityKey]: JSON.stringify(
       ownerActivity({
         state: "warming",
@@ -209,7 +208,7 @@ test("worker logs a failed owner activity summary and stores a generic message",
 
 test("worker waits out the backoff before retrying a failed owner activity summary", async () => {
   const payload = ownerActivity(failedSummary(oneMinuteMs));
-  const cache = kvStore({ [ownerActivityKey]: JSON.stringify(payload) });
+  const cache = await cacheWith({ [ownerActivityKey]: JSON.stringify(payload) });
   const queued: Promise<unknown>[] = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
@@ -231,7 +230,7 @@ test("worker waits out the backoff before retrying a failed owner activity summa
 });
 
 test("worker retries a failed owner activity summary once the backoff has passed", async () => {
-  const cache = kvStore({
+  const cache = await cacheWith({
     [ownerActivityKey]: JSON.stringify(ownerActivity(failedSummary(backoffMs(1) + oneMinuteMs))),
   });
   const queued: Promise<unknown>[] = [];
@@ -303,7 +302,7 @@ test("worker counts consecutive release summary failures and retries after the b
     languages: [],
     workTrend: null,
   };
-  const cache = kvStore({ [repoDetailKey]: JSON.stringify(payload) });
+  const cache = await cacheWith({ [repoDetailKey]: JSON.stringify(payload) });
   const queued: Promise<unknown>[] = [];
   // The first summary request fails, the retry succeeds.
   const claudeResponses = [

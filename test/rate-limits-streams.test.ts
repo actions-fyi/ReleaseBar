@@ -4,12 +4,13 @@ import type { DashboardPayload } from "../src/types.ts";
 import {
   BuildCoordinator,
   buildLocksHeld,
-  kvStore,
   refreshAuditEvents,
   testDashboard,
   testProject,
   worker,
   seedOwnerMetadata,
+  cacheWith,
+  holdQueue,
 } from "./dashboard-test-harness.ts";
 
 test("worker rejects POST to reserved read-only owner-like APIs", async () => {
@@ -54,7 +55,7 @@ test("worker marks GitHub discovery hydration complete when release scan is rate
     return Response.json({ message: "API rate limit exceeded" }, { status: 403 });
   };
   const waitUntil: Promise<unknown>[] = [];
-  const env = { DASHBOARD_CACHE: kvStore() };
+  const env = {};
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/_discover?period=week"),
@@ -83,7 +84,7 @@ test("worker marks GitHub discovery hydration complete when release scan is rate
 });
 
 test("worker pauses shared quota after discovery secondary rate limits", async () => {
-  const cache = kvStore();
+  const cache = await cacheWith();
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>
     Response.json(
@@ -100,7 +101,7 @@ test("worker pauses shared quota after discovery secondary rate limits", async (
   try {
     const response = await worker.fetch(
       new Request("https://release.bar/api/_discover?period=week"),
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: () => undefined },
     );
     expect(response.status).toBe(429);
@@ -122,16 +123,15 @@ test("worker pauses shared quota after discovery secondary rate limits", async (
 test("worker falls back to stale discovery cache when GitHub search is rate limited", async () => {
   const originalFetch = globalThis.fetch;
   const cached = testDashboard("cached", [testProject({ owner: "cached", name: "repo" })]);
-  const env = {
-    DASHBOARD_CACHE: kvStore({
-      "discover:v4:week:all": JSON.stringify({
-        ...cached,
-        title: "GitHub Hot",
-        owners: [],
-        generatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-      }),
+  await cacheWith({
+    "discover:v4:week:all": JSON.stringify({
+      ...cached,
+      title: "GitHub Hot",
+      owners: [],
+      generatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
     }),
-  };
+  });
+  const env = {};
   globalThis.fetch = async () =>
     Response.json({ message: "API rate limit exceeded" }, { status: 403 });
   try {
@@ -149,7 +149,7 @@ test("worker falls back to stale discovery cache when GitHub search is rate limi
 
     const coldResponse = await worker.fetch(
       new Request("https://release.bar/api/_discover?period=month"),
-      { DASHBOARD_CACHE: kvStore() },
+      {},
       { waitUntil: () => undefined },
     );
     expect(coldResponse.status).toBe(429);
@@ -179,7 +179,6 @@ test("worker returns dashboard-shaped rate-limit errors without raw GitHub JSON"
     return Response.json({ message: "API rate limit exceeded" }, { status: 403 });
   };
   const env = {
-    DASHBOARD_CACHE: kvStore(),
     GITHUB_TOKEN: "shared-token",
   };
   const waits: Array<Promise<unknown>> = [];
@@ -277,9 +276,10 @@ test("worker preserves cached quota metadata on fresh responses", async () => {
     };
   }
 
+  await cacheWith({ [key]: JSON.stringify(dashboard) });
   const response = await worker.fetch(
     new Request("https://release.bar/api/owner"),
-    { DASHBOARD_CACHE: kvStore({ [key]: JSON.stringify(dashboard) }) },
+    {},
     { waitUntil: () => undefined },
   );
 
@@ -301,9 +301,10 @@ test("worker streams cached dashboard snapshots over owner events", async () => 
     dashboard.cache.generatedAt = dashboard.generatedAt;
   }
 
+  await cacheWith({ [key]: JSON.stringify(dashboard) });
   const response = await worker.fetch(
     new Request("https://release.bar/api/owner/events"),
-    { DASHBOARD_CACHE: kvStore({ [key]: JSON.stringify(dashboard) }) },
+    {},
     { waitUntil: () => undefined },
   );
 
@@ -321,11 +322,11 @@ test("worker records dashboard stream sync audits", async () => {
   if (dashboard.cache) {
     dashboard.cache.generatedAt = dashboard.generatedAt;
   }
-  const cache = kvStore({ [key]: JSON.stringify(dashboard) });
+  await cacheWith({ [key]: JSON.stringify(dashboard) });
 
   const response = await worker.fetch(
     new Request("https://release.bar/api/owner/events"),
-    { DASHBOARD_CACHE: cache },
+    {},
     { waitUntil: () => undefined },
   );
 
@@ -348,9 +349,10 @@ test("worker keeps owner events working for the repos owner slug", async () => {
     dashboard.cache.generatedAt = dashboard.generatedAt;
   }
 
+  await cacheWith({ [key]: JSON.stringify(dashboard) });
   const response = await worker.fetch(
     new Request("https://release.bar/api/repos/events"),
-    { DASHBOARD_CACHE: kvStore({ [key]: JSON.stringify(dashboard) }) },
+    {},
     { waitUntil: () => undefined },
   );
 
@@ -381,7 +383,6 @@ test("worker returns rebuilding while another isolate owns the dashboard build l
     const response = await worker.fetch(
       new Request("https://release.bar/api/openclaw"),
       {
-        DASHBOARD_CACHE: kvStore(),
         GITHUB_TOKEN: "shared-token",
       },
       { waitUntil: (promise) => waits.push(promise) },
@@ -399,7 +400,7 @@ test("worker returns rebuilding while another isolate owns the dashboard build l
 
 test("worker uses an in-isolate build lease when Durable Objects fail open", async () => {
   const originalFetch = globalThis.fetch;
-  const cache = kvStore();
+  await cacheWith();
   let graphqlCalls = 0;
   let markGraphqlStarted: (() => void) | undefined;
   let releaseGraphql: (() => void) | undefined;
@@ -435,10 +436,9 @@ test("worker uses an in-isolate build lease when Durable Objects fail open", asy
   vi.spyOn(BuildCoordinator.prototype, "acquireLock").mockImplementation(() => {
     throw new Error("Durable Object unavailable");
   });
+  holdQueue(async () => undefined);
   const env = {
-    DASHBOARD_CACHE: cache,
     GITHUB_TOKEN: "shared-token",
-    REFRESH_QUEUE: { send: async () => undefined },
   };
 
   try {
@@ -480,10 +480,10 @@ test("worker does not display dashboard data past the stale display window", asy
   }
 
   try {
+    await cacheWith({ [key]: JSON.stringify(dashboard) });
     const response = await worker.fetch(
       new Request("https://release.bar/api/old"),
       {
-        DASHBOARD_CACHE: kvStore({ [key]: JSON.stringify(dashboard) }),
         GITHUB_TOKEN: "shared-token",
       },
       { waitUntil: () => undefined },
@@ -537,15 +537,15 @@ test("worker serves partial cached sources while combined dashboard rebuilds", a
         projects: [alphaMetadata],
       }),
     );
+    await cacheWith({
+      [alphaKey]: JSON.stringify(testDashboard("alpha", [alphaSource])),
+      [betaKey]: JSON.stringify(
+        testDashboard("beta", [testProject({ owner: "beta", name: "two" })]),
+      ),
+    });
     const response = await worker.fetch(
       new Request("https://release.bar/api/alpha?owners=beta"),
       {
-        DASHBOARD_CACHE: kvStore({
-          [alphaKey]: JSON.stringify(testDashboard("alpha", [alphaSource])),
-          [betaKey]: JSON.stringify(
-            testDashboard("beta", [testProject({ owner: "beta", name: "two" })]),
-          ),
-        }),
         GITHUB_TOKEN: "shared-token",
       },
       { waitUntil: () => undefined },

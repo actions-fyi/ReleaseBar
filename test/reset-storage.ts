@@ -10,6 +10,7 @@ import { applyD1Migrations, reset } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, vi } from "vitest";
 import { localRefreshDirtyMarkers, localRefreshJobReservations } from "../worker/config.ts";
+import { resetTestEnv } from "./runtime-env.ts";
 
 beforeEach(async () => {
   await applyD1Migrations(env.DB, env.TEST_D1_MIGRATIONS);
@@ -17,6 +18,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  resetTestEnv();
   localRefreshJobReservations.clear();
   localRefreshDirtyMarkers.clear();
   await reset();

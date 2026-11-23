@@ -2,9 +2,10 @@ import { assert, expect, test } from "vitest";
 import type { RepoDetailPayload } from "../src/types.ts";
 import {
   githubAccessRouteRecords,
-  kvStore,
   worker,
   seedInstallation,
+  cacheWith,
+  testCache,
 } from "./dashboard-test-harness.ts";
 
 test("worker builds cached repository detail with releases and stats", async () => {
@@ -141,17 +142,17 @@ test("worker builds cached repository detail with releases and stats", async () 
     }
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
-  const env = {
-    DASHBOARD_CACHE: kvStore({
-      "trust-profile:v4:octo": JSON.stringify({
-        login: "octo",
-        profileKind: "user_trust",
-        scoreLabel: "trust score",
-        score: 73,
-        tier: "high",
-        generatedAt: "2026-05-16T12:00:00Z",
-      }),
+  await cacheWith({
+    "trust-profile:v4:octo": JSON.stringify({
+      login: "octo",
+      profileKind: "user_trust",
+      scoreLabel: "trust score",
+      score: 73,
+      tier: "high",
+      generatedAt: "2026-05-16T12:00:00Z",
     }),
+  });
+  const env = {
     GITHUB_TOKEN: "shared-token",
   };
   try {
@@ -191,9 +192,9 @@ test("worker builds cached repository detail with releases and stats", async () 
           record.status === 200,
       ),
     );
-    expect(await env.DASHBOARD_CACHE.get("github:budget:v1:shared:core")).toBe(null);
+    expect(await testCache.get("github:budget:v1:shared:core")).toBe(null);
 
-    await env.DASHBOARD_CACHE.put(
+    await testCache.put(
       "trust-profile:v4:octo",
       JSON.stringify({
         login: "octo",
@@ -223,31 +224,31 @@ test("worker revalidates stale repository metadata with ETags", async () => {
   const fullName = "acme/etag";
   const repoPath = "/repos/acme/etag";
   const auxKey = `repo-detail:aux:v2:${encodeURIComponent(fullName)}:repository:${encodeURIComponent(repoPath)}`;
-  const env = {
-    DASHBOARD_CACHE: kvStore({
-      [auxKey]: JSON.stringify({
-        generatedAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
-        etag: '"repo-etag"',
-        data: {
-          owner: { login: "acme" },
-          name: "etag",
-          full_name: fullName,
-          private: false,
-          fork: false,
-          archived: false,
-          html_url: `https://github.com/${fullName}`,
-          description: "ETag repository",
-          default_branch: "main",
-          language: "TypeScript",
-          topics: [],
-          stargazers_count: 10,
-          forks_count: 1,
-          open_issues_count: 0,
-          pushed_at: "2026-06-12T12:00:00Z",
-          updated_at: "2026-06-12T12:00:00Z",
-        },
-      }),
+  await cacheWith({
+    [auxKey]: JSON.stringify({
+      generatedAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+      etag: '"repo-etag"',
+      data: {
+        owner: { login: "acme" },
+        name: "etag",
+        full_name: fullName,
+        private: false,
+        fork: false,
+        archived: false,
+        html_url: `https://github.com/${fullName}`,
+        description: "ETag repository",
+        default_branch: "main",
+        language: "TypeScript",
+        topics: [],
+        stargazers_count: 10,
+        forks_count: 1,
+        open_issues_count: 0,
+        pushed_at: "2026-06-12T12:00:00Z",
+        updated_at: "2026-06-12T12:00:00Z",
+      },
     }),
+  });
+  const env = {
     GITHUB_TOKEN: "shared-token",
   };
   const originalFetch = globalThis.fetch;
@@ -291,7 +292,7 @@ test("worker revalidates stale repository metadata with ETags", async () => {
     const body = (await response.json()) as RepoDetailPayload;
     expect(body.project.description).toBe("ETag repository");
     expect(repositoryCalls).toBe(1);
-    const refreshed = JSON.parse((await env.DASHBOARD_CACHE.get(auxKey)) ?? "{}") as {
+    const refreshed = JSON.parse((await testCache.get(auxKey)) ?? "{}") as {
       generatedAt?: string;
       etag?: string;
     };
@@ -316,10 +317,10 @@ test("worker bundles App-backed repository core data through GraphQL", async () 
       updatedAt: new Date().toISOString(),
     }),
   );
+  await cacheWith({
+    "auth:installation-token:1": "installation-token",
+  });
   const env = {
-    DASHBOARD_CACHE: kvStore({
-      "auth:installation-token:1": "installation-token",
-    }),
     GITHUB_APP_ID: "123",
     GITHUB_APP_PRIVATE_KEY: "unused",
   };
@@ -459,7 +460,7 @@ test("worker does not cache private App-backed repository core data", async () =
       updatedAt: new Date().toISOString(),
     }),
   );
-  const cache = kvStore({
+  const cache = await cacheWith({
     "auth:installation-token:1": "installation-token",
   });
   const originalFetch = globalThis.fetch;
@@ -498,7 +499,6 @@ test("worker does not cache private App-backed repository core data", async () =
     const response = await worker.fetch(
       new Request("https://release.bar/api/repos/acme/private"),
       {
-        DASHBOARD_CACHE: cache,
         GITHUB_APP_ID: "123",
         GITHUB_APP_PRIVATE_KEY: "unused",
       },
@@ -569,7 +569,6 @@ test("worker coalesces concurrent cold repository detail builds", async () => {
     throw new Error(`unexpected fetch ${url.pathname}`);
   };
   const env = {
-    DASHBOARD_CACHE: kvStore(),
     GITHUB_TOKEN: "shared-token",
   };
   try {

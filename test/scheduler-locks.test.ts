@@ -12,7 +12,6 @@ import { mutateRefreshTargetState } from "../worker/refresh-targets.ts";
 import {
   BuildCoordinator,
   deleteStoredRefreshTarget,
-  kvStore,
   objectsUnavailable,
   storedOwnerCountCursor,
   storedProfileSnapshot,
@@ -27,6 +26,8 @@ import {
   testProject,
   worker,
   seedOwnerMetadata,
+  cacheWith,
+  holdQueue,
 } from "./dashboard-test-harness.ts";
 
 test("worker Queue messages stay bounded when profile filters are large", async () => {
@@ -65,29 +66,17 @@ test("worker Queue messages stay bounded when profile filters are large", async 
     nextDueAt: "2000-01-01T00:00:00Z",
     failureCount: 0,
   };
-  const cache = kvStore();
+  await cacheWith();
   await storeRefreshTarget(target);
   const sentJobs: RefreshJob[] = [];
   const waits: Promise<unknown>[] = [];
 
-  await (
-    worker as unknown as {
-      scheduled(
-        event: { cron: string },
-        env: unknown,
-        context: { waitUntil(promise: Promise<unknown>): void },
-      ): Promise<void>;
-    }
-  ).scheduled(
+  holdQueue(async (job: RefreshJob) => {
+    sentJobs.push(job);
+  });
+  await worker.scheduled(
     { cron: "*/15 * * * *" },
-    {
-      DASHBOARD_CACHE: cache,
-      REFRESH_QUEUE: {
-        async send(job: RefreshJob) {
-          sentJobs.push(job);
-        },
-      },
-    },
+    {},
     { waitUntil: (promise) => waits.push(promise) },
   );
   await Promise.all(waits);
@@ -151,21 +140,13 @@ test("owner count scheduling rotates beyond a deferred owner cap", async () => {
       projects: [project],
     });
   }
-  const cache = kvStore(entries);
+  await cacheWith(entries);
   await storeRefreshTargets(targets);
   const run = async () => {
     const waits: Promise<unknown>[] = [];
-    await (
-      worker as unknown as {
-        scheduled(
-          event: { cron: string },
-          env: unknown,
-          context: { waitUntil(promise: Promise<unknown>): void },
-        ): Promise<void>;
-      }
-    ).scheduled(
+    await worker.scheduled(
       { cron: "*/15 * * * *" },
-      { DASHBOARD_CACHE: cache },
+      {},
       { waitUntil: (promise) => waits.push(promise) },
     );
     await Promise.all(waits);
@@ -218,7 +199,7 @@ test("owner count scheduling throttles recent incomplete scans", async () => {
       projects: [project],
     }),
   );
-  const cache = kvStore({
+  await cacheWith({
     [key]: JSON.stringify(testDashboard("large-owner", [project])),
   });
   await storeRefreshTarget(target);
@@ -231,8 +212,8 @@ test("owner count scheduling throttles recent incomplete scans", async () => {
   try {
     const waits: Promise<unknown>[] = [];
     await worker.scheduled(
-      { cron: "*/15 * * * *" } as never,
-      { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "shared-token" },
+      { cron: "*/15 * * * *" },
+      { GITHUB_TOKEN: "shared-token" },
       { waitUntil: (promise) => waits.push(promise) },
     );
     await Promise.all(waits);
@@ -309,8 +290,8 @@ test("a refused refresh job reservation leaves its newest dirty marker for the h
 });
 
 test("dashboard target mutations preserve terminal backoff across stale observations", async () => {
-  const cache = kvStore();
-  const mutationEnv = testEnv({ DASHBOARD_CACHE: cache });
+  await cacheWith();
+  const mutationEnv = testEnv({});
   const input = {
     key: "dashboard:v6:owner=target-race",
     owner: "target-race",
@@ -415,7 +396,7 @@ test("dashboard build lock stores strongly consistent build progress", async () 
 });
 
 test("worker falls back to KV progress when the Durable Object is unavailable", async () => {
-  const cache = kvStore();
+  const cache = await cacheWith();
   const waits: Array<Promise<unknown>> = [];
   const originalFetch = globalThis.fetch;
   const key = dashboardCacheKey({
@@ -446,14 +427,11 @@ test("worker falls back to KV progress when the Durable Object is unavailable", 
   };
   objectsUnavailable(BuildCoordinator);
   try {
+    holdQueue(async () => undefined);
     const response = await worker.fetch(
       new Request("https://release.bar/api/owner"),
       {
-        DASHBOARD_CACHE: cache,
         GITHUB_TOKEN: "shared-token",
-        REFRESH_QUEUE: {
-          send: async () => undefined,
-        },
       },
       { waitUntil: (promise) => waits.push(promise) },
     );
@@ -534,7 +512,7 @@ test("worker resumes marked KV progress after an authoritative Durable Object mi
       latestCommitDate: repo.updated_at,
     }),
   );
-  const cache = kvStore({
+  const cache = await cacheWith({
     [`progress:v1:${key}`]: JSON.stringify({
       scannedRepos: progressProjects.map((project) => project.fullName.toLowerCase()),
       projects: progressProjects,
@@ -572,22 +550,7 @@ test("worker resumes marked KV progress after an authoritative Durable Object mi
       }
       throw new Error(`unexpected fetch ${path}`);
     };
-    await (
-      worker as unknown as {
-        queue(
-          batch: {
-            messages: Array<{
-              body: RefreshJob;
-              attempts?: number;
-              ack(): void;
-              retry(options?: { delaySeconds?: number }): void;
-            }>;
-          },
-          env: unknown,
-          context: unknown,
-        ): Promise<void>;
-      }
-    ).queue(
+    await worker.queue(
       {
         messages: [
           {
@@ -602,7 +565,7 @@ test("worker resumes marked KV progress after an authoritative Durable Object mi
           },
         ],
       },
-      { DASHBOARD_CACHE: cache },
+      {},
       { waitUntil: () => undefined },
     );
   } finally {

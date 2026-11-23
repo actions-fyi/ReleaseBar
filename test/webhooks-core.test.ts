@@ -10,7 +10,6 @@ import type {
 import {
   BuildCoordinator,
   indexedTargets,
-  kvStore,
   storeRefreshTarget,
   storeRefreshTargets,
   testDashboard,
@@ -25,6 +24,8 @@ import {
   storedOwnerMetadataJson,
   deleteStoredOwnerMetadata,
   ownerMetadataMutator,
+  cacheWith,
+  holdQueue,
 } from "./dashboard-test-harness.ts";
 
 test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes", async () => {
@@ -178,7 +179,7 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       projects: [testProject({ owner: "other", name: "repo" })],
     }),
   );
-  const cache = kvStore({
+  const cache = await cacheWith({
     "owner:v1:owner": JSON.stringify({ type: "user", login: "owner" }),
     [key]: JSON.stringify(dashboard),
     [combinedKey]: JSON.stringify({
@@ -214,41 +215,38 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
   let delivery7ImmediateCaptured = false;
   const queuedWebhooks: Array<Record<string, unknown>> = [];
   const queuedWebhookDelays: Array<number | undefined> = [];
+  holdQueue(async (message, options) => {
+    queued.push(message);
+    if (
+      message &&
+      typeof message === "object" &&
+      (message as { kind?: unknown }).kind === "dashboard" &&
+      typeof (message as { targetKey?: unknown }).targetKey === "string"
+    ) {
+      queuedDashboardTargets.push((message as { targetKey: string }).targetKey);
+    }
+    if (
+      message &&
+      typeof message === "object" &&
+      (message as { kind?: unknown }).kind === "github-webhook"
+    ) {
+      queuedWebhooks.push(message as Record<string, unknown>);
+      queuedWebhookDelays.push(options?.delaySeconds);
+    }
+    if (
+      !delivery7ImmediateCaptured &&
+      message &&
+      typeof message === "object" &&
+      (message as { kind?: unknown }).kind === "github-webhook-fanout" &&
+      (message as { delivery?: unknown }).delivery === "delivery-7"
+    ) {
+      delivery7ImmediateTargets = [...queuedDashboardTargets];
+      delivery7ImmediateCaptured = true;
+    }
+  });
   const env: TestEnv = {
-    DASHBOARD_CACHE: cache,
     GITHUB_WEBHOOK_SECRET: secret,
     GITHUB_TOKEN: "shared-token",
-    REFRESH_QUEUE: {
-      send: async (message, options) => {
-        queued.push(message);
-        if (
-          message &&
-          typeof message === "object" &&
-          (message as { kind?: unknown }).kind === "dashboard" &&
-          typeof (message as { targetKey?: unknown }).targetKey === "string"
-        ) {
-          queuedDashboardTargets.push((message as { targetKey: string }).targetKey);
-        }
-        if (
-          message &&
-          typeof message === "object" &&
-          (message as { kind?: unknown }).kind === "github-webhook"
-        ) {
-          queuedWebhooks.push(message as Record<string, unknown>);
-          queuedWebhookDelays.push(options?.delaySeconds);
-        }
-        if (
-          !delivery7ImmediateCaptured &&
-          message &&
-          typeof message === "object" &&
-          (message as { kind?: unknown }).kind === "github-webhook-fanout" &&
-          (message as { delivery?: unknown }).delivery === "delivery-7"
-        ) {
-          delivery7ImmediateTargets = [...queuedDashboardTargets];
-          delivery7ImmediateCaptured = true;
-        }
-      },
-    },
   };
   const admissions = vi.spyOn(WebhookAdmission.prototype, "enqueue");
   const processing = vi.spyOn(WebhookProcessor.prototype, "process");
@@ -751,10 +749,7 @@ test("signed GitHub webhooks coalesce bursts and enqueue authoritative refreshes
       cache.put(key, JSON.stringify(dashboard)),
       // A build that saw the repository while it was public stores what it has: it must not
       // undo the privatization.
-      ownerMetadataMutator(
-        env,
-        "owner",
-      )({
+      ownerMetadataMutator("owner")({
         kind: "merge",
         generatedAt: now,
         observedAt: now,

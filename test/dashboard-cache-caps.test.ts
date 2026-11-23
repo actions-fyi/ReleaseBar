@@ -1,9 +1,9 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { buildDashboard } from "../shared/dashboard.ts";
-import { kvStore } from "./dashboard-test-harness.ts";
+import { cacheWith } from "./dashboard-test-harness.ts";
 
 test("dashboard cached hydration keeps fresh owner issue and PR totals", async () => {
-  const cache = kvStore();
+  const cache = await cacheWith();
   let openIssues = 1;
   let openPullRequests = 1;
   const repoNode = () => ({
@@ -78,15 +78,9 @@ test("dashboard cached hydration keeps fresh owner issue and PR totals", async (
 });
 
 test("dashboard build reuses cached repo fragments when metadata is unchanged", async () => {
-  const backingCache = kvStore();
-  const writtenKeys: string[] = [];
-  const cache = {
-    ...backingCache,
-    async put(key: string, value: string) {
-      writtenKeys.push(key);
-      await backingCache.put(key, value);
-    },
-  };
+  const cache = await cacheWith();
+  // Observes the writes; they still reach the namespace.
+  const put = vi.spyOn(cache, "put");
   let fanoutCalls = 0;
   const build = () =>
     buildDashboard({
@@ -169,7 +163,7 @@ test("dashboard build reuses cached repo fragments when metadata is unchanged", 
   expect((await build()).totals.repos).toBe(1);
   expect((await build()).totals.repos).toBe(1);
   expect(fanoutCalls).toBe(3);
-  expect(writtenKeys.some((key) => key.startsWith("repo:v2:owner/repo:"))).toBe(true);
+  expect(put.mock.calls.some(([key]) => key.startsWith("repo:v2:owner/repo:"))).toBe(true);
 });
 
 test("dashboard build ignores explicit private repositories", async () => {

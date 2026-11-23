@@ -2,7 +2,7 @@
 // 50 per invocation on the Workers free plan, and a batch counts as one (docs/data-model.md,
 // "D1 queries per invocation"). The registry is read and written for all of them at once.
 import { generateKeyPairSync } from "node:crypto";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { RefreshJob, RefreshTarget } from "../src/types.ts";
 import {
@@ -18,7 +18,6 @@ import {
 import { syncGithubAppInstallations } from "../worker/auth-oauth.ts";
 import { writeStoredInstallations } from "../worker/store/installations.ts";
 import {
-  kvStore,
   observedDatabase,
   seedInstallation,
   seedOwnerMetadata,
@@ -33,6 +32,9 @@ import {
   testEnv,
   testProject,
   worker,
+  holdQueue,
+  cacheWith,
+  testCache,
 } from "./dashboard-test-harness.ts";
 
 // The ceiling of every invocation here: clear headroom under the 50 queries of the free plan.
@@ -50,41 +52,36 @@ const appVars = {
   GITHUB_APP_SLUG: "releasebar-app",
 };
 
-// A KV namespace that counts its operations, and a queue that counts its sends: what an
-// invocation spends of its subrequests besides the D1 queries.
-function countedBindings(initial: Record<string, string> = {}) {
-  const store = kvStore(initial);
+// Counts the KV operations and the queue sends of an invocation: what it spends of its
+// subrequests besides the D1 queries. The KV namespace is the real one, seeded with `initial`;
+// the queue is held, and `sent` has its messages.
+async function countedBindings(initial: Record<string, string> = {}) {
+  await cacheWith(initial);
   const used = { kvReads: 0, kvWrites: 0, queueSends: 0 };
   const sent: RefreshJob[] = [];
-  return {
-    used,
-    sent,
-    store,
-    DASHBOARD_CACHE: {
-      get: (key: string) => {
-        used.kvReads += 1;
-        return store.get(key);
-      },
-      put: (key: string, value: string) => {
-        used.kvWrites += 1;
-        return store.put(key, value);
-      },
-      delete: (key: string) => {
-        used.kvWrites += 1;
-        return store.delete(key);
-      },
-      list: (options?: { prefix?: string; limit?: number; cursor?: string }) => {
-        used.kvReads += 1;
-        return store.list(options);
-      },
-    },
-    REFRESH_QUEUE: {
-      send: async (job: RefreshJob) => {
-        used.queueSends += 1;
-        sent.push(job);
-      },
-    },
+  const kv = Object.getPrototypeOf(testCache) as Record<
+    string,
+    (...parameters: unknown[]) => unknown
+  >;
+  const counted = (operation: "get" | "list" | "put" | "delete", count: () => void): void => {
+    vi.spyOn(testCache, operation).mockImplementation(((...parameters: unknown[]) => {
+      count();
+      return Reflect.apply(
+        kv[operation] as (...parameters: unknown[]) => unknown,
+        testCache,
+        parameters,
+      );
+    }) as never);
   };
+  counted("get", () => (used.kvReads += 1));
+  counted("list", () => (used.kvReads += 1));
+  counted("put", () => (used.kvWrites += 1));
+  counted("delete", () => (used.kvWrites += 1));
+  holdQueue((job: RefreshJob) => {
+    used.queueSends += 1;
+    sent.push(job);
+  });
+  return { used, sent, store: testCache };
 }
 
 function target(owner: string, overrides: Partial<RefreshTarget> = {}): RefreshTarget {
@@ -199,7 +196,7 @@ test("a scheduler tick over many owners sends D1 a bounded number of queries", a
     await seedInstallation(appInstallation(index + 1, owner));
     entries[`auth:installation-token:${index + 1}`] = `token-${owner}`;
   }
-  const bindings = countedBindings(entries);
+  const bindings = await countedBindings(entries);
   const { database, counts } = observedDatabase();
   const counted: string[] = [];
   const originalFetch = globalThis.fetch;
@@ -220,9 +217,7 @@ test("a scheduler tick over many owners sends D1 a bounded number of queries", a
       { cron: "*/15 * * * *", scheduledTime: Date.now() },
       {
         ...appVars,
-        DASHBOARD_CACHE: bindings.DASHBOARD_CACHE,
         DB: database,
-        REFRESH_QUEUE: bindings.REFRESH_QUEUE,
       },
       { waitUntil: (promise) => void waits.push(promise) },
     );
@@ -301,7 +296,7 @@ test("a dashboard build showing many owners sends D1 a bounded number of queries
   await storeRefreshJob(queued);
   const staleAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   for (const owner of owners) await seedOwnerMetadata(owner, ownerSnapshot(owner, staleAt));
-  const bindings = countedBindings();
+  const bindings = await countedBindings();
   const { database, counts } = observedDatabase();
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
@@ -344,10 +339,8 @@ test("a dashboard build showing many owners sends D1 a bounded number of queries
         ],
       },
       {
-        DASHBOARD_CACHE: bindings.DASHBOARD_CACHE,
         DB: database,
         GITHUB_TOKEN: "shared-token",
-        REFRESH_QUEUE: bindings.REFRESH_QUEUE,
       },
       { waitUntil: (promise) => void waits.push(promise) },
     );
@@ -380,7 +373,7 @@ test("a dashboard build showing many owners sends D1 a bounded number of queries
 });
 
 test("an install callback for an account with all repositories sends D1 a bounded number of queries", async () => {
-  const bindings = countedBindings();
+  const bindings = await countedBindings();
   const { database, counts } = observedDatabase();
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
@@ -408,9 +401,7 @@ test("an install callback for an account with all repositories sends D1 a bounde
       {
         ...appVars,
         AUTH_COOKIE_SECRET: "test-secret",
-        DASHBOARD_CACHE: bindings.DASHBOARD_CACHE,
         DB: database,
-        REFRESH_QUEUE: bindings.REFRESH_QUEUE,
       },
       { waitUntil: (promise) => void waits.push(promise) },
     );
@@ -447,13 +438,11 @@ test("the installations of many accounts are stored with a bounded number of que
   // is written, each account's dashboard becomes a refresh target, and its cache is warmed.
   const accounts = Array.from({ length: 30 }, (_, index) => `account${index}`);
   const installations = accounts.map((account, index) => appInstallation(index + 1, account));
-  const bindings = countedBindings();
+  const bindings = await countedBindings();
   const { database, counts } = observedDatabase();
   const env = testEnv({
     ...appVars,
-    DASHBOARD_CACHE: bindings.DASHBOARD_CACHE,
     DB: database,
-    REFRESH_QUEUE: bindings.REFRESH_QUEUE,
   });
   const waits: Promise<unknown>[] = [];
   const context = { waitUntil: (promise: Promise<unknown>) => void waits.push(promise) };
@@ -513,12 +502,10 @@ test("the installation sync of as many installations as GitHub lists stays withi
   );
   await writeStoredInstallations(testEnv({}), gone);
   const { database, counts } = observedDatabase();
-  const bindings = countedBindings();
+  await countedBindings();
   const env = testEnv({
     ...appVars,
-    DASHBOARD_CACHE: bindings.DASHBOARD_CACHE,
     DB: database,
-    REFRESH_QUEUE: bindings.REFRESH_QUEUE,
   });
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
@@ -569,7 +556,7 @@ test("a dashboard request sends D1 a bounded number of queries", async () => {
   });
   const request = async (cached: Record<string, string>) => {
     const { database, counts } = observedDatabase();
-    const bindings = countedBindings({
+    const bindings = await countedBindings({
       [`owner:v1:${owner}`]: JSON.stringify({ type: "user", login: owner }),
       ...cached,
     });
@@ -577,9 +564,7 @@ test("a dashboard request sends D1 a bounded number of queries", async () => {
     const response = await worker.fetch(
       new Request(`https://release.bar/api/${owner}`),
       {
-        DASHBOARD_CACHE: bindings.DASHBOARD_CACHE,
         DB: database,
-        REFRESH_QUEUE: bindings.REFRESH_QUEUE,
       },
       { waitUntil: (promise) => void waits.push(promise) },
     );
