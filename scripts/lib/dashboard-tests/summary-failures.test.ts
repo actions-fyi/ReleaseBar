@@ -13,7 +13,13 @@ import {
 } from "../../../worker/config.js";
 import worker from "../../../worker/index.js";
 import { summaryFailedMessage, summaryRetryDue } from "../../../worker/release-summary.js";
-import { claudeJson, claudeText, kvStore, testProject } from "../dashboard-test-harness.js";
+import {
+  claudeJson,
+  claudeText,
+  kvStore,
+  signedIn,
+  testProject,
+} from "../dashboard-test-harness.js";
 
 const httpOk = 200;
 const httpAccepted = 202;
@@ -116,11 +122,24 @@ async function captureErrors(run: () => Promise<void>): Promise<readonly string[
   }
 }
 
-const env = (cache: ReturnType<typeof kvStore>) => ({
-  DASHBOARD_CACHE: cache,
-  GITHUB_TOKEN: "shared-token",
-  ANTHROPIC_API_KEY: "claude-key",
-});
+// A request from a signed-in user, who may start summaries.
+async function fetchSignedIn(
+  cache: ReturnType<typeof kvStore>,
+  url: string,
+  queued: Promise<unknown>[],
+): Promise<Response> {
+  const user = await signedIn(cache);
+  return worker.fetch(
+    new Request(url, { headers: user.headers }),
+    {
+      DASHBOARD_CACHE: cache,
+      GITHUB_TOKEN: "shared-token",
+      ANTHROPIC_API_KEY: "claude-key",
+      ...user.env,
+    },
+    { waitUntil: (promise) => queued.push(promise) },
+  );
+}
 
 test("summary retry backoff doubles per failure and stops at the maximum", () => {
   const now = Date.parse("2026-11-22T12:00:00Z");
@@ -167,10 +186,10 @@ test("worker logs a failed owner activity summary and stores a generic message",
   };
   try {
     const logged = await captureErrors(async () => {
-      const response = await worker.fetch(
-        new Request("https://release.bar/api/acme/activity?range=week"),
-        env(cache),
-        { waitUntil: (promise) => queued.push(promise) },
+      const response = await fetchSignedIn(
+        cache,
+        "https://release.bar/api/acme/activity?range=week",
+        queued,
       );
       assert.equal(response.status, httpAccepted);
       await Promise.all(queued);
@@ -199,10 +218,10 @@ test("worker waits out the backoff before retrying a failed owner activity summa
     throw new Error(`unexpected fetch ${String(input)}`);
   };
   try {
-    const response = await worker.fetch(
-      new Request("https://release.bar/api/acme/activity?range=week"),
-      env(cache),
-      { waitUntil: (promise) => queued.push(promise) },
+    const response = await fetchSignedIn(
+      cache,
+      "https://release.bar/api/acme/activity?range=week",
+      queued,
     );
     assert.equal(response.status, httpOk);
     assert.equal(queued.length, 0);
@@ -237,10 +256,10 @@ test("worker retries a failed owner activity summary once the backoff has passed
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   try {
-    const response = await worker.fetch(
-      new Request("https://release.bar/api/acme/activity?range=week"),
-      env(cache),
-      { waitUntil: (promise) => queued.push(promise) },
+    const response = await fetchSignedIn(
+      cache,
+      "https://release.bar/api/acme/activity?range=week",
+      queued,
     );
     assert.equal(response.status, httpAccepted);
     await Promise.all(queued);
@@ -313,9 +332,7 @@ test("worker counts consecutive release summary failures and retries after the b
     throw new Error(`unexpected fetch ${url.toString()}`);
   };
   const request = () =>
-    worker.fetch(new Request("https://release.bar/api/repos/acme/releasebar"), env(cache), {
-      waitUntil: (promise) => queued.push(promise),
-    });
+    fetchSignedIn(cache, "https://release.bar/api/repos/acme/releasebar", queued);
   const cachedSummary = async () =>
     (JSON.parse((await cache.get(repoDetailKey)) ?? "{}") as RepoDetailPayload).releaseSummary;
   try {

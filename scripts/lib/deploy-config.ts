@@ -1,6 +1,8 @@
 // Builds the Wrangler config a deployment uses from the generic wrangler.toml and the deployment's
 // own settings, so no host, account resource or login has to be committed to the repository.
 
+import { parseWholeNumber, summaryLimitSettings } from "../../worker/summary-limits.js";
+
 export type WranglerRoute = { readonly pattern: string; readonly custom_domain?: boolean };
 
 export type WranglerKvNamespace = { readonly binding: string; readonly id?: string };
@@ -21,6 +23,10 @@ export const deploySettingNames = [
   "RELEASEBAR_ADMIN_LOGINS",
   "RELEASEBAR_WORKERS_DEV",
   "RELEASEBAR_ANTHROPIC_BASE_URL",
+  "RELEASEBAR_SUMMARY_INPUT_CHARS",
+  "RELEASEBAR_SUMMARY_TITLE_CHARS",
+  "RELEASEBAR_SUMMARY_USER_HOURLY_LIMIT",
+  "RELEASEBAR_SUMMARY_GLOBAL_DAILY_LIMIT",
 ] as const;
 
 // A bare host name: matches "releasebar.example.com", rejects "https://releasebar.example.com/".
@@ -55,6 +61,22 @@ function isHttpsUrl(value: string): boolean {
   return URL.canParse(value) && new URL(value).protocol === "https:";
 }
 
+// The Worker vars for the summary limits whose build variables are set, checked against
+// their bounds.
+function summaryLimitVars(settings: DeploySettings): Record<string, string> {
+  const vars: Record<string, string> = {};
+  for (const { variable, buildVariable, min, max } of summaryLimitSettings) {
+    const raw = settings[buildVariable]?.trim() ?? "";
+    if (!raw) continue;
+    const value = parseWholeNumber(raw);
+    if (value === null || value < min || value > max) {
+      throw new Error(`${buildVariable} must be a whole number from ${min} to ${max}`);
+    }
+    vars[variable] = String(value);
+  }
+  return vars;
+}
+
 export function deployConfig(base: RawWranglerConfig, settings: DeploySettings): RawWranglerConfig {
   const domain = setting(settings, "RELEASEBAR_DOMAIN").toLowerCase();
   const kvId = setting(settings, "RELEASEBAR_KV_NAMESPACE_ID").toLowerCase();
@@ -75,6 +97,7 @@ export function deployConfig(base: RawWranglerConfig, settings: DeploySettings):
   if (anthropicBaseUrl && !isHttpsUrl(anthropicBaseUrl)) {
     throw new Error("RELEASEBAR_ANTHROPIC_BASE_URL must be an https:// URL");
   }
+  const summaryLimits = summaryLimitVars(settings);
   const anySetting = deploySettingNames.some((name) => setting(settings, name));
   if (!anySetting && settings.RELEASEBAR_ALLOW_GENERIC?.trim() !== "true") {
     throw new Error(
@@ -97,6 +120,7 @@ export function deployConfig(base: RawWranglerConfig, settings: DeploySettings):
     ...(admins ? { ADMIN_LOGINS: admins } : {}),
     ...(jurisdiction ? { RELEASEBAR_DO_JURISDICTION: jurisdiction } : {}),
     ...(anthropicBaseUrl ? { ANTHROPIC_BASE_URL: anthropicBaseUrl } : {}),
+    ...summaryLimits,
   };
   const kvNamespaces = (base.kv_namespaces ?? []).map((namespace) =>
     kvId && namespace.binding === "DASHBOARD_CACHE" ? { ...namespace, id: kvId } : namespace,

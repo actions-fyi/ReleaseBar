@@ -53,6 +53,25 @@ test("deploy config applies the deployment's domain, KV namespace, jurisdiction 
   });
 });
 
+test("deploy config sets the release summary limits from their build variables", () => {
+  const config = deployConfig(base, {
+    RELEASEBAR_SUMMARY_INPUT_CHARS: " 20000 ",
+    RELEASEBAR_SUMMARY_TITLE_CHARS: "80",
+  });
+  assert.deepEqual(config.vars, {
+    ANTHROPIC_SUMMARY_MODEL: "claude-haiku-5-5",
+    RELEASE_SUMMARY_INPUT_CHARS: "20000",
+    RELEASE_SUMMARY_TITLE_CHARS: "80",
+  });
+  for (const value of ["999", "400001", "48,000", "-1", "4.8e4"]) {
+    assert.throws(
+      () => deployConfig(base, { RELEASEBAR_SUMMARY_INPUT_CHARS: value }),
+      (error) => error instanceof Error && error.message.includes("from 1000 to 400000"),
+      value,
+    );
+  }
+});
+
 test("deploy config refuses a jurisdiction without a pre-created KV namespace", () => {
   assert.throws(
     () => deployConfig(base, { RELEASEBAR_DO_JURISDICTION: "eu" }),
@@ -80,13 +99,14 @@ test("Claude summaries go to ANTHROPIC_BASE_URL when it is set", async () => {
   const maxTokens = 100;
   const request = { model: "claude-haiku-5-5", maxTokens, system: "s", user: "u" };
   try {
-    await claudeSummaryText({ ANTHROPIC_API_KEY: "claude-key" }, request);
+    await claudeSummaryText({ ANTHROPIC_API_KEY: "claude-key" }, request, async () => undefined);
     await claudeSummaryText(
       {
         ANTHROPIC_API_KEY: "claude-key",
         ANTHROPIC_BASE_URL: "https://gateway.example.com/anthropic",
       },
       request,
+      async () => undefined,
     );
   } finally {
     globalThis.fetch = originalFetch;
