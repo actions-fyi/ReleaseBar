@@ -30,8 +30,8 @@ export type RefreshTargetPage = {
 
 type ValueRow = { value: string };
 
-// D1 takes 100 bound parameters per statement. A source takes two in a count and three in an
-// insert.
+// D1 takes 100 bound parameters per statement. A source takes two in a count, which binds
+// three more, and three in an insert.
 const sourcesPerCount = 45;
 const sourcesPerInsert = 30;
 
@@ -75,30 +75,45 @@ export async function readStoredRefreshTarget(
   return row ? tryJsonParse<RefreshTarget>(row.value, `refresh target ${key}`) : null;
 }
 
-// The sources among `sources` that hold `refreshTargetSourceLimit` other targets already.
+// Counts the sources among `sources`, at most `sourcesPerCount`, that list
+// `refreshTargetSourceLimit` other targets already. A target past its lifetime that is not
+// deleted yet takes no place: no listing returns it, and the next tick deletes it.
+function fullSourceCount(
+  env: Env,
+  sources: RefreshTargetSource[],
+  targetKey: string,
+  cutoff: number,
+): D1PreparedStatement {
+  return env.DB.prepare(
+    `SELECT COUNT(*) AS found FROM (
+       SELECT 1 FROM refresh_target_sources AS source
+       JOIN refresh_targets AS target ON target.key = source.target_key
+       WHERE (source.kind, source.value) IN (VALUES ${sources.map(() => "(?, ?)").join(", ")})
+         AND source.target_key <> ?
+         AND target.last_seen_at >= ?
+       GROUP BY source.kind, source.value
+       HAVING COUNT(*) >= ?
+     )`,
+  ).bind(
+    ...sources.flatMap((source) => [source.kind, source.value]),
+    targetKey,
+    cutoff,
+    refreshTargetSourceLimit,
+  );
+}
+
+// How many of `sources` are full for a new target (`fullSourceCount`).
 async function fullSources(
   env: Env,
   sources: RefreshTargetSource[],
   targetKey: string,
 ): Promise<number> {
   if (sources.length === 0) return 0;
-  const statements = chunks(sources, sourcesPerCount).map((chunk) =>
-    env.DB.prepare(
-      `SELECT COUNT(*) AS full FROM (
-         SELECT 1 FROM refresh_target_sources
-         WHERE (kind, value) IN (VALUES ${chunk.map(() => "(?, ?)").join(", ")})
-           AND target_key <> ?
-         GROUP BY kind, value
-         HAVING COUNT(*) >= ?
-       )`,
-    ).bind(
-      ...chunk.flatMap((source) => [source.kind, source.value]),
-      targetKey,
-      refreshTargetSourceLimit,
-    ),
+  const cutoff = seenCutoff();
+  const results = await env.DB.batch<{ found: number }>(
+    chunks(sources, sourcesPerCount).map((chunk) => fullSourceCount(env, chunk, targetKey, cutoff)),
   );
-  const results = await env.DB.batch<{ full: number }>(statements);
-  return results.reduce((total, result) => total + (result.results[0]?.full ?? 0), 0);
+  return results.reduce((total, result) => total + (result.results[0]?.found ?? 0), 0);
 }
 
 // Stores the target and lists it under each of its sources, in one transaction. The limits are
@@ -185,25 +200,14 @@ export async function writeRefreshTargets(
   // Which of the targets are stored already, and for each how many of its sources are full: a
   // statement per target, and the statements of `fullSources` after them.
   const checks: Array<{ index: number; statement: D1PreparedStatement }> = [];
+  const cutoff = seenCutoff();
   for (const index of sized) {
     const entry = entries[index];
     if (!entry) continue;
     for (const chunk of chunks(entry.sources, sourcesPerCount)) {
       checks.push({
         index,
-        statement: env.DB.prepare(
-          `SELECT COUNT(*) AS found FROM (
-             SELECT 1 FROM refresh_target_sources
-             WHERE (kind, value) IN (VALUES ${chunk.map(() => "(?, ?)").join(", ")})
-               AND target_key <> ?
-             GROUP BY kind, value
-             HAVING COUNT(*) >= ?
-           )`,
-        ).bind(
-          ...chunk.flatMap((source) => [source.kind, source.value]),
-          entry.target.key,
-          refreshTargetSourceLimit,
-        ),
+        statement: fullSourceCount(env, chunk, entry.target.key, cutoff),
       });
     }
   }

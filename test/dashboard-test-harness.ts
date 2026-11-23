@@ -285,16 +285,26 @@ export function storedOwnerCountCursor(): Promise<string | null> {
   return readOwnerCountCursor(databaseEnv);
 }
 
-// Lists as many targets under a source as it takes, so that the store refuses the next new one.
-export async function fillTargetSource(kind: "owner" | "repo", value: string): Promise<void> {
+// Stores as many targets under a source as it takes, so that the store refuses the next new one.
+// `lastSeenAt` is when the targets were last seen, in milliseconds: now, unless a test wants
+// targets that are past their lifetime.
+export async function fillTargetSource(
+  kind: "owner" | "repo",
+  value: string,
+  lastSeenAt = Date.now(),
+): Promise<void> {
   const database = databaseEnv.DB;
-  const insert = database.prepare(
+  const target = database.prepare(
+    "INSERT INTO refresh_targets (key, next_due_at, last_seen_at, value) VALUES (?, ?, ?, '{}')",
+  );
+  const source = database.prepare(
     "INSERT INTO refresh_target_sources (kind, value, target_key) VALUES (?, ?, ?)",
   );
   await database.batch(
-    Array.from({ length: refreshTargetSourceLimit }, (_, count) =>
-      insert.bind(kind, value, `filler:${kind}:${value}:${count}`),
-    ),
+    Array.from({ length: refreshTargetSourceLimit }, (_, count) => {
+      const key = `filler:${kind}:${value}:${count}`;
+      return [target.bind(key, lastSeenAt, lastSeenAt), source.bind(kind, value, key)];
+    }).flat(),
   );
 }
 
