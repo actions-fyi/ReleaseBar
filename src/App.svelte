@@ -639,7 +639,6 @@
     savePublicDefault,
     resetPublicDefault,
     openOwner,
-    openSignedInUserDashboard,
     toggleOwner,
     toggleRepo,
     resetHidden,
@@ -812,7 +811,7 @@
     {adminRoute}
     {ownerAvatarUrl}
     {projectOwnerAvatarUrl}
-    {openSignedInUserDashboard}
+    {openOwner}
     {installApp}
     {logout}
     {primaryAuthAction}

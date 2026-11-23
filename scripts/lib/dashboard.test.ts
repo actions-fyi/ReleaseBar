@@ -38,3 +38,4 @@ import "./dashboard-tests/stale-mutations.test.js";
 import "./dashboard-tests/webhooks-core.test.js";
 import "./dashboard-tests/webhook-admission.test.js";
 import "./dashboard-tests/webhook-retries.test.js";
+import "./dashboard-tests/user-dashboards.test.js";
