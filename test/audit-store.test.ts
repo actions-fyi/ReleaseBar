@@ -13,7 +13,13 @@ import {
 import { countGitHubAccess, listGitHubAccessCounts } from "../worker/store/github-access.ts";
 import { rateLimitReached } from "../worker/store/rate-limits.ts";
 import { appendRefreshAuditEvent, listRefreshAuditEvents } from "../worker/store/refresh-audit.ts";
-import { kvStore, testEnv, worker } from "./dashboard-test-harness.ts";
+import {
+  kvStore,
+  objectsUnavailable,
+  RateLimiter,
+  testEnv,
+  worker,
+} from "./dashboard-test-harness.ts";
 
 const dayMs = 24 * 60 * 60 * 1000;
 
@@ -54,6 +60,60 @@ test("the rate limiter loses no count under concurrent calls", async () => {
   expect(await rateLimitReached(env, "install-callback", "client-a", minute, 1)).toBe(false);
   expect(await rateLimitReached(env, "install-callback", "client-a", minute, 1)).toBe(true);
   expect(await rateLimitReached(env, "client-timing", "client-a", minute + 1, 30)).toBe(false);
+});
+
+test("the client timing endpoint drops the timing and answers as usual when the rate limiter is unreachable", async () => {
+  objectsUnavailable(RateLimiter);
+  const waits: Array<Promise<unknown>> = [];
+
+  const response = await worker.fetch(
+    new Request("https://release.bar/api/_client-timing", {
+      method: "POST",
+      headers: { "cf-connecting-ip": "203.0.113.7" },
+      body: JSON.stringify({ source: "fetch", path: "/owner", totalMs: 12 }),
+    }),
+    { DASHBOARD_CACHE: kvStore() },
+    { waitUntil: (promise) => waits.push(promise) },
+  );
+  await Promise.all(waits);
+
+  expect(response.status).toBe(202);
+  expect(await response.json()).toStrictEqual({ ok: true });
+  expect(await rowCount("refresh_audit_events")).toBe(0);
+});
+
+test("an install callback without fresh state answers 503 and asks GitHub nothing when the rate limiter is unreachable", async () => {
+  objectsUnavailable(RateLimiter);
+  const fetched: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    fetched.push(String(input instanceof Request ? input.url : input));
+    return new Response("{}", { status: 500 });
+  };
+
+  try {
+    const response = await worker.fetch(
+      new Request("https://release.bar/api/auth/install?installation_id=101&setup_action=install", {
+        headers: { "cf-connecting-ip": "203.0.113.7" },
+      }),
+      {
+        AUTH_COOKIE_SECRET: "test-secret",
+        GITHUB_APP_ID: "1",
+        GITHUB_APP_PRIVATE_KEY: "unused",
+        DASHBOARD_CACHE: kvStore(),
+      },
+      { waitUntil: () => undefined },
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("30");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(fetched).toStrictEqual([]);
+    expect(await rowCount("auth_funnel_events")).toBe(0);
+    expect(await rowCount("installations")).toBe(0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("the client timing endpoint stores 30 timings a minute for a client sending 40 at once", async () => {

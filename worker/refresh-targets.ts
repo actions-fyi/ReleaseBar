@@ -40,6 +40,7 @@ import {
 import { mutateCoordinatedTarget } from "./store/build-coordinator.ts";
 import { cacheIdentity } from "./store/cache.ts";
 import { rateLimitReached } from "./store/rate-limits.ts";
+import type { RateLimitedEndpoint } from "./runtime.ts";
 import { appendRefreshAuditEvent, listRefreshAuditEvents } from "./store/refresh-audit.ts";
 import { mapConcurrent } from "./concurrency.ts";
 import {
@@ -651,7 +652,15 @@ export function timingDetail(input: Record<string, unknown>): string {
     .join(" ");
 }
 
-export async function clientTimingRateLimited(request: Request, env: Env): Promise<boolean> {
+// Counts the request against the endpoint's limit per client and minute. True when the client
+// reached the limit already. Rejects when the limiter can't be reached: each endpoint decides
+// what that means for it.
+export async function clientRateLimited(
+  request: Request,
+  env: Env,
+  endpoint: RateLimitedEndpoint,
+  limit: number,
+): Promise<boolean> {
   const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   const client =
     request.headers.get("cf-connecting-ip") ??
@@ -660,20 +669,10 @@ export async function clientTimingRateLimited(request: Request, env: Env): Promi
     "unknown";
   const minute = Math.floor(Date.now() / 60000);
   const id = (await sha256Base64Url(client)).slice(0, 16);
-  return rateLimitReached(env, "client-timing", id, minute, 30);
+  return rateLimitReached(env, endpoint, id, minute, limit);
 }
 
-export async function authInstallCallbackRateLimited(request: Request, env: Env): Promise<boolean> {
-  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const client =
-    request.headers.get("cf-connecting-ip") ??
-    forwardedFor ??
-    request.headers.get("user-agent") ??
-    "unknown";
-  const minute = Math.floor(Date.now() / 60000);
-  const id = (await sha256Base64Url(client)).slice(0, 16);
-  return rateLimitReached(env, "install-callback", id, minute, 6);
-}
+const clientTimingLimitPerMinute = 30;
 
 export async function clientTimingResponse(
   request: Request,
@@ -686,7 +685,16 @@ export async function clientTimingResponse(
       "cache-control": "no-store",
     });
   }
-  if (await clientTimingRateLimited(request, env)) {
+  let limited: boolean;
+  try {
+    limited = await clientRateLimited(request, env, "client-timing", clientTimingLimitPerMinute);
+  } catch (error) {
+    // A timing sample is not worth an error in the browser, and without the limiter nothing
+    // bounds what one client can write: the sample is dropped and the answer is the usual one.
+    console.warn(`client timing dropped: rate limiter unavailable: ${String(error)}`);
+    return jsonResponse({ ok: true }, 202, { "cache-control": "no-store" });
+  }
+  if (limited) {
     return new Response(null, {
       status: 204,
       headers: { "cache-control": "no-store" },

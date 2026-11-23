@@ -61,7 +61,7 @@ import {
   scheduleInstallationCacheWarm,
   writeInstallationRegistry,
 } from "./installation-registry.ts";
-import { authInstallCallbackRateLimited } from "./refresh-targets.ts";
+import { clientRateLimited } from "./refresh-targets.ts";
 import type { BackgroundContext } from "./runtime.ts";
 import {
   installationMissRecorded,
@@ -629,6 +629,11 @@ export async function logoutResponse(request: Request, env: Env): Promise<Respon
   });
 }
 
+// Callbacks per client and minute that arrive without fresh state and are verified with GitHub.
+const installCallbackLimitPerMinute = 6;
+// What a client is told to wait when the limiter can't be reached.
+const installCallbackRetrySeconds = 30;
+
 export async function installResponse(
   request: Request,
   env: Env,
@@ -647,7 +652,26 @@ export async function installResponse(
     const returnTo = stateIsFresh ? state.returnTo : "/";
     const installationId = Number(url.searchParams.get("installation_id"));
     const validInstallationId = Number.isFinite(installationId) ? installationId : null;
-    const canVerifyCallback = stateIsFresh || !(await authInstallCallbackRateLimited(request, env));
+    let canVerifyCallback = stateIsFresh;
+    if (!stateIsFresh) {
+      // A callback without the state this Worker issued makes it ask GitHub about the
+      // installation, so it is limited per client. Without the limiter nothing bounds those
+      // calls: the callback fails closed, and the browser may try again.
+      try {
+        canVerifyCallback = !(await clientRateLimited(
+          request,
+          env,
+          "install-callback",
+          installCallbackLimitPerMinute,
+        ));
+      } catch (error) {
+        console.warn(`install callback refused: rate limiter unavailable: ${String(error)}`);
+        return jsonResponse({ error: "installation callback is unavailable, retry shortly" }, 503, {
+          "cache-control": "no-store",
+          "retry-after": String(installCallbackRetrySeconds),
+        });
+      }
+    }
     const appInstallation =
       validInstallationId && canVerifyCallback
         ? await githubAppInstallation(env, validInstallationId).catch(() => null)
