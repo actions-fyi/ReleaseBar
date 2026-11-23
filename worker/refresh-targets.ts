@@ -52,7 +52,6 @@ import {
   appendRefreshAuditEvent,
   isAuditEvent,
   listRefreshAuditEvents,
-  refreshAuditStorageKey,
 } from "./store/refresh-audit.ts";
 import {
   indexRefreshJob,
@@ -83,7 +82,7 @@ import {
 export { refreshTargetIndexSource, refreshTargetStorageKey, writeRefreshTarget };
 export { indexRefreshJob, writeRefreshJob, writeRefreshJobDelivery };
 export { refreshJobDeliveryStorageKey, refreshJobIndexStorageKey, refreshJobStorageKey };
-export { isAuditEvent, refreshAuditStorageKey };
+export { isAuditEvent };
 
 export function refreshTargetSources(target: RefreshTarget): Array<{
   kind: "owner" | "repo";

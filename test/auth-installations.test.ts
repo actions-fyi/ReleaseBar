@@ -2,7 +2,14 @@ import { generateKeyPairSync } from "node:crypto";
 import { assert, expect, test } from "vitest";
 import { dashboardCacheKey } from "../shared/dashboard.ts";
 import type { RefreshJob } from "../src/types.ts";
-import { kvStore, signedJson, testDashboard, testEnv, worker } from "./dashboard-test-harness.ts";
+import {
+  authFunnelEventCount,
+  kvStore,
+  signedJson,
+  testDashboard,
+  testEnv,
+  worker,
+} from "./dashboard-test-harness.ts";
 
 test("worker rejects oversized custom source requests", async () => {
   const owners = Array.from({ length: 9 }, (_, index) => `owner-${index}`).join(",");
@@ -61,7 +68,7 @@ test("worker exposes GitHub App auth endpoints", async () => {
     context,
   );
   expect(badCallback.status).toBe(400);
-  expect((await env.DASHBOARD_CACHE.list({ prefix: "auth:funnel:v1:" })).keys.length).toBe(0);
+  expect(await authFunnelEventCount()).toBe(0);
 
   const install = await worker.fetch(
     new Request("https://release.bar/api/auth/install?returnTo=/openclaw"),
@@ -814,8 +821,7 @@ test("worker records server-verified install callbacks without signed return sta
     const remembered = JSON.parse((await cache.get("auth:installation:v1:outside-org")) ?? "{}");
     expect(remembered.id).toBe(101);
     expect(remembered.accountLogin).toBe("outside-org");
-    const events = await cache.list({ prefix: "auth:funnel:v1:" });
-    expect(events.keys.length).toBe(2);
+    expect(await authFunnelEventCount()).toBe(2);
   } finally {
     globalThis.fetch = originalFetch;
   }

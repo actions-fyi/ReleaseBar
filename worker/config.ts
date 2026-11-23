@@ -117,7 +117,6 @@ export const refreshJobPrefix = "refresh:job:v1:";
 export const refreshJobIndexPrefix = "refresh:jobs:v2:";
 export const refreshJobDeliveryPrefix = "refresh:job-deliveries:v1:";
 export const legacyRefreshJobIndexKey = "refresh:jobs:index:v1";
-export const refreshAuditPrefix = "refresh:audit:v2:";
 export const refreshStateKey = "refresh:state:v1";
 export const refreshOwnerCountCursorKey = "refresh:owner-count-cursor:v1";
 export const ownerMetadataPrefix = "owner-metadata:v1:";

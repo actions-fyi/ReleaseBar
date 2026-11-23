@@ -176,7 +176,7 @@ test("worker builds cached repository detail with releases and stats", async () 
     expect(body.workTrend?.issuesOpened30d).toBe(5);
     expect(body.workTrend?.pullRequestsClosed30d).toBe(2);
     expect(body.languages.map((language) => language.name)).toStrictEqual(["TypeScript", "CSS"]);
-    const accessRecords = await githubAccessRouteRecords(env.DASHBOARD_CACHE);
+    const accessRecords = await githubAccessRouteRecords();
     assert.ok(
       accessRecords.some(
         (record) =>

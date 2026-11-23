@@ -1,3 +1,4 @@
+import { env as runtimeEnv } from "cloudflare:workers";
 import { assert, expect, test } from "vitest";
 import { isGitHubRateLimit } from "../src/rate-limit.ts";
 import {
@@ -50,7 +51,7 @@ test("worker records client dashboard timing beacons in audit log", async () => 
 
   expect(response.status).toBe(202);
   await Promise.all(waits);
-  const [event] = await refreshAuditEvents(cache);
+  const [event] = await refreshAuditEvents();
   expect(event?.event).toBe("client_dashboard_timing");
   expect(event?.source).toBe("browser");
   expect(event?.reason).toBe("fetch");
@@ -66,23 +67,27 @@ test("worker records client dashboard timing beacons in audit log", async () => 
 });
 
 test("worker stores GitHub access counters and cached owner identity", async () => {
-  const backingCache = kvStore();
+  const cache = kvStore();
   let releaseAuditWrites: () => void = () => undefined;
   const auditWriteGate = new Promise<void>((resolve) => {
     releaseAuditWrites = resolve;
   });
-  const cache = {
-    ...backingCache,
-    async put(key: string, value: string) {
-      if (key.startsWith("github:access:")) await auditWriteGate;
-      await backingCache.put(key, value);
+  // The local database, with its batches held back: the GitHub call counts are written in one.
+  const database = new Proxy(runtimeEnv.DB, {
+    get(target, property) {
+      const member: unknown = Reflect.get(target, property);
+      if (property === "batch") {
+        return async (statements: D1PreparedStatement[]) => {
+          await auditWriteGate;
+          return target.batch(statements);
+        };
+      }
+      return typeof member === "function" ? member.bind(target) : member;
     },
-  };
+  });
   const originalFetch = globalThis.fetch;
-  const originalRandom = Math.random;
   const waits: Array<Promise<unknown>> = [];
   try {
-    Math.random = () => 0;
     globalThis.fetch = async (input) => {
       const url = new URL(String(input));
       if (url.pathname === "/users/owner") {
@@ -129,12 +134,12 @@ test("worker stores GitHub access counters and cached owner identity", async () 
     const response = await Promise.race([
       worker.fetch(
         new Request("https://release.bar/api/owner"),
-        { DASHBOARD_CACHE: cache, GITHUB_TOKEN: "token" },
+        { DASHBOARD_CACHE: cache, DB: database, GITHUB_TOKEN: "token" },
         { waitUntil: (promise) => waits.push(promise) },
       ),
       new Promise<never>((_resolve, reject) => {
         foregroundTimeout = setTimeout(
-          () => reject(new Error("foreground response waited for GitHub audit KV")),
+          () => reject(new Error("foreground response waited for the GitHub audit write")),
           1000,
         );
       }),
@@ -148,7 +153,7 @@ test("worker stores GitHub access counters and cached owner identity", async () 
       login?: string;
     };
     expect(owner.login).toBe("owner");
-    const records = await githubAccessRouteRecords(cache);
+    const records = await githubAccessRouteRecords();
     assert.ok(
       records.some(
         (record) =>
@@ -167,7 +172,6 @@ test("worker stores GitHub access counters and cached owner identity", async () 
     );
   } finally {
     releaseAuditWrites();
-    Math.random = originalRandom;
     globalThis.fetch = originalFetch;
   }
 });

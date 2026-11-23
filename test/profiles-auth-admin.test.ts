@@ -1,4 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
+import { env as runtimeEnv } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import type {
   AuthFunnelSummary,
@@ -373,18 +374,15 @@ test("worker admin scheduler requires an admin session and reports refresh targe
     [`refresh:target:v1:${legacyTarget.key}`]: JSON.stringify(legacyTarget),
     [`refresh:job:v1:${activeJob.id}`]: JSON.stringify(activeJob),
     "refresh:jobs:index:v1": JSON.stringify([activeJob.id]),
-    [`github:access:v1:${accessHour}:dashboard:shared:_:graphql:200:graphql`]: JSON.stringify({
-      area: "dashboard",
-      route: "graphql",
-      status: 200,
-      source: "shared",
-      account: null,
-      resource: "graphql",
-      count: 3,
-      lastPath: "/graphql",
-      lastAt: `${accessHour}:00:00.000Z`,
-    }),
   });
+  await runtimeEnv.DB.prepare(
+    `INSERT INTO github_access_counts
+       (hour, route_key, area, route, status, source, account, resource, count, last_at, last_path)
+     VALUES (?, 'dashboard:200:shared:_:graphql:graphql', 'dashboard', 'graphql', 200, 'shared',
+       NULL, 'graphql', 3, ?, '/graphql')`,
+  )
+    .bind(accessHour, `${accessHour}:00:00.000Z`)
+    .run();
   const sentJobs: RefreshJob[] = [];
   const env = {
     ADMIN_LOGINS: "steipete",
@@ -500,17 +498,21 @@ test("worker admin installation summary bounds record and counter reads", async 
       repositories: [],
       updatedAt: new Date(index * 1000).toISOString(),
     });
-    entries[`auth:funnel-counter:v1:2026-06-13:event-${String(index).padStart(3, "0")}:_:ok`] =
-      String(index + 1);
   }
+  const insertCount = runtimeEnv.DB.prepare(
+    "INSERT INTO auth_funnel_counts (day, event, account, status, count) VALUES (?, ?, '_', 'ok', ?)",
+  );
+  await runtimeEnv.DB.batch(
+    Array.from({ length: 121 }, (_, index) =>
+      insertCount.bind("2026-06-13", `event-${String(index).padStart(3, "0")}`, index + 1),
+    ),
+  );
   const baseCache = kvStore(entries);
   let installationReads = 0;
-  let counterReads = 0;
   const cache = {
     ...baseCache,
     async get(key: string) {
       if (key.startsWith("auth:installation:v1:")) installationReads += 1;
-      if (key.startsWith("auth:funnel-counter:v1:")) counterReads += 1;
       return baseCache.get(key);
     },
   };
@@ -533,8 +535,10 @@ test("worker admin installation summary bounds record and counter reads", async 
   expect(body.installations.length).toBe(80);
   expect(body.counterCount).toBe(121);
   expect(body.counts.length).toBe(80);
+  // The counts are the last 80 by key, as before, highest first.
+  expect(body.counts[0]).toStrictEqual({ key: "2026-06-13:event-120:_:ok", count: 121 });
+  expect(body.counts.at(-1)).toStrictEqual({ key: "2026-06-13:event-041:_:ok", count: 42 });
   expect(installationReads).toBe(80);
-  expect(counterReads).toBe(80);
 });
 
 test("worker scheduler rotates bounded current-schema target pages", async () => {

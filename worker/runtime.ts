@@ -48,6 +48,10 @@ export type BackgroundContext = Pick<ExecutionContext, "waitUntil">;
 // The name of each Durable Object instance. A name is all that addresses an instance, so every
 // caller builds it here.
 export const summaryQuotaObjectName = "summary-quota";
+// The endpoints that limit each client's requests per minute, one `RateLimiter` object each.
+export type RateLimitedEndpoint = "client-timing" | "install-callback";
+export const rateLimiterObjectName = (endpoint: RateLimitedEndpoint): string =>
+  `rate-limit:${endpoint}`;
 export const webhookAdmissionObjectName = "github-webhook-admission";
 export const webhookProcessorObjectName = (owner: string): string =>
   `github-webhook-process:${owner}`;

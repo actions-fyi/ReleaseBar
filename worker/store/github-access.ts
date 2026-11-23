@@ -1,98 +1,120 @@
 // The GitHub audit log: how often the Worker called each GitHub route, by hour, with which
 // credentials and with what result.
 //
-// The counts of an hour are spread over KV entries, each read and written in two steps, so
-// concurrent calls can lose a count. Step 7b of the stack migration moves them to D1
-// (docs/data-model.md).
+// A count is a row of the D1 table `github_access_counts` (migrations/0002_audit.sql) per hour
+// and route key, kept for 14 days. A call adds to it with one statement, so concurrent calls
+// lose none. No row is kept per call: there are too many.
 
 import type { GitHubAccessRouteSummary } from "../../src/types.ts";
-import { tryJsonParse } from "../schemas.ts";
 
-const githubAccessPrefix = "github:access:v1:";
-const githubAccessTtlSeconds = 14 * 24 * 60 * 60;
-const githubAccessShardCount = 16;
+const githubAccessRetentionMs = 14 * 24 * 60 * 60 * 1000;
+const listPageRows = 1000;
+const listPageLimit = 20;
+const deleteBatchRows = 1000;
+const deleteBatchRounds = 5;
 
-export type StoredGitHubAccessShard = {
-  count?: number;
-  lastAt?: string | null;
-  routes?: Record<string, GitHubAccessRouteSummary>;
+// GitHub calls of one route key: how many, and the time and path of the last.
+export type GitHubAccessCalls = Omit<GitHubAccessRouteSummary, "lastAt"> & { lastAt: string };
+
+type CountRow = {
+  hour: string;
+  route_key: string;
+  area: string;
+  route: string;
+  status: number;
+  source: GitHubAccessRouteSummary["source"];
+  account: string | null;
+  resource: string | null;
+  count: number;
+  last_at: string;
+  last_path: string | null;
 };
 
-// An entry of the form that came before the shards: one route's count.
-export type StoredGitHubAccessCounter = GitHubAccessRouteSummary & {
-  remaining?: number | null;
-  limit?: number | null;
-  resetAt?: string | null;
-};
-
-function githubAccessCounterKey(shard: number): string {
-  const hour = new Date().toISOString().slice(0, 13);
-  return `${githubAccessPrefix}${hour}:${shard}`;
-}
-
-// Adds one call to the current hour's count for `route.key`.
-export async function countGitHubAccess(
-  env: Env,
-  route: Omit<GitHubAccessRouteSummary, "count" | "lastAt">,
-): Promise<void> {
-  const key = githubAccessCounterKey(Math.floor(Math.random() * githubAccessShardCount));
-  const raw = await env.DASHBOARD_CACHE.get(key);
-  const current = raw ? tryJsonParse<StoredGitHubAccessShard>(raw, `github access ${key}`) : null;
-  const routes = { ...current?.routes };
-  const existing = routes[route.key];
-  const lastAt = new Date().toISOString();
-  routes[route.key] = {
-    key: route.key,
-    area: route.area,
-    route: route.route,
-    status: route.status,
-    source: route.source,
-    account: route.account,
-    resource: route.resource,
-    count: (existing?.count ?? 0) + 1,
-    lastPath: route.lastPath,
-    lastAt,
-  };
-  await env.DASHBOARD_CACHE.put(
-    key,
-    JSON.stringify({
-      count: (current?.count ?? 0) + 1,
-      lastAt,
-      routes,
-    }),
-    { expirationTtl: githubAccessTtlSeconds },
+// Adds the calls to the counts of the hour of their `lastAt`: one batch, which D1 counts as one
+// query, whatever the number of route keys.
+export async function countGitHubAccess(env: Env, calls: GitHubAccessCalls[]): Promise<void> {
+  if (calls.length === 0) return;
+  const statement = env.DB.prepare(
+    `INSERT INTO github_access_counts
+       (hour, route_key, area, route, status, source, account, resource, count, last_at, last_path)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+     ON CONFLICT (hour, route_key) DO UPDATE SET
+       count = count + excluded.count,
+       last_path = CASE WHEN excluded.last_at >= last_at THEN excluded.last_path ELSE last_path END,
+       last_at = max(last_at, excluded.last_at)`,
   );
-}
-
-// What is stored for the given hours ("2026-06-13T12"), not validated. `key` names the entry;
-// `stored` is null when the entry is gone or invalid.
-export async function listGitHubAccessCounts(
-  env: Env,
-  hours: string[],
-): Promise<
-  Array<{ key: string; stored: StoredGitHubAccessShard | StoredGitHubAccessCounter | null }>
-> {
-  const cache = env.DASHBOARD_CACHE;
-  const list = cache.list.bind(cache);
-  const pages = await Promise.all(
-    hours.map((hour) =>
-      list({
-        prefix: `${githubAccessPrefix}${hour}:`,
-        limit: 1000,
-      }),
+  await env.DB.batch(
+    calls.map((call) =>
+      statement.bind(
+        call.lastAt.slice(0, 13),
+        call.key,
+        call.area,
+        call.route,
+        call.status,
+        call.source,
+        call.account,
+        call.resource,
+        call.count,
+        call.lastAt,
+        call.lastPath,
+      ),
     ),
   );
-  const keys = pages.flatMap((page) => page.keys.map((key) => key.name));
-  return Promise.all(
-    keys.map(async (key) => {
-      const raw = await cache.get(key);
-      const stored = raw
-        ? tryJsonParse<StoredGitHubAccessShard | StoredGitHubAccessCounter>(
-            raw,
-            `github access ${key}`,
-          )
-        : null;
-      return { key, stored };
-    }),
+}
+
+// The counts of the hours from `sinceHour` ("2026-06-13T12") on, one per hour and route key, read
+// in pages of 1,000 rows. `complete` is false when there were more than 20,000.
+export async function listGitHubAccessCounts(
+  env: Env,
+  sinceHour: string,
+): Promise<{ counts: GitHubAccessRouteSummary[]; complete: boolean }> {
+  const statement = env.DB.prepare(
+    `SELECT hour, route_key, area, route, status, source, account, resource, count, last_at,
+       last_path
+     FROM github_access_counts
+     WHERE hour >= ?1 AND (hour, route_key) > (?2, ?3)
+     ORDER BY hour, route_key LIMIT ?4`,
   );
+  const counts: GitHubAccessRouteSummary[] = [];
+  let after = { hour: "", routeKey: "" };
+  for (let page = 0; page < listPageLimit; page += 1) {
+    const { results } = await statement
+      .bind(sinceHour, after.hour, after.routeKey, listPageRows)
+      .all<CountRow>();
+    for (const row of results) {
+      counts.push({
+        key: row.route_key,
+        area: row.area,
+        route: row.route,
+        status: row.status,
+        source: row.source,
+        account: row.account,
+        resource: row.resource,
+        count: row.count,
+        lastAt: row.last_at,
+        lastPath: row.last_path,
+      });
+    }
+    const last = results.at(-1);
+    if (!last || results.length < listPageRows) return { counts, complete: true };
+    after = { hour: last.hour, routeKey: last.route_key };
+  }
+  return { counts, complete: false };
+}
+
+// Deletes counts older than 14 days, at most 5,000 a call. Returns how many.
+export async function deleteExpiredGitHubAccessCounts(env: Env, now: number): Promise<number> {
+  const before = new Date(now - githubAccessRetentionMs).toISOString().slice(0, 13);
+  const statement = env.DB.prepare(
+    `DELETE FROM github_access_counts WHERE (hour, route_key) IN (
+       SELECT hour, route_key FROM github_access_counts WHERE hour < ?1 LIMIT ?2
+     )`,
+  ).bind(before, deleteBatchRows);
+  let deleted = 0;
+  for (let round = 0; round < deleteBatchRounds; round += 1) {
+    const changes = (await statement.run()).meta.changes;
+    deleted += changes;
+    if (changes < deleteBatchRows) break;
+  }
+  return deleted;
 }

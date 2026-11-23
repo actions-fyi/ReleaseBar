@@ -87,6 +87,7 @@
     "bindings": [
       { "name": "BUILD_COORDINATOR", "class_name": "BuildCoordinator" },
       { "name": "OWNER_METADATA", "class_name": "OwnerMetadata" },
+      { "name": "RATE_LIMITER", "class_name": "RateLimiter" },
       { "name": "REFRESH_TARGET_INDEX", "class_name": "RefreshTargetIndex" },
       { "name": "SUMMARY_QUOTA", "class_name": "SummaryQuota" },
       { "name": "WEBHOOK_ADMISSION", "class_name": "WebhookAdmission" },
@@ -110,5 +111,6 @@
       ],
       "deleted_classes": ["DashboardBuildLock"],
     },
+    { "tag": "7b-rate-limits", "new_sqlite_classes": ["RateLimiter"] },
   ],
 }
