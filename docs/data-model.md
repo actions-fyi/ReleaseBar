@@ -6,7 +6,7 @@ The rule: KV holds cached payloads and short-lived entries. Anything queried, li
 
 ## The store layer
 
-Only `worker/store/` names a binding; `npm run lint` fails otherwise (`scripts/check-store-boundary.ts`). Every other module, the Durable Object classes of `worker/objects/` included, calls a store function. A store function is named for what it does, not for the key or table behind it.
+Only `worker/store/` names a binding; `pnpm run lint` fails otherwise (`scripts/check-store-boundary.ts`). Every other module, the Durable Object classes of `worker/objects/` included, calls a store function. A store function is named for what it does, not for the key or table behind it.
 
 - A store function takes the env a handler passed through `withLockJurisdiction` (`worker/store/bindings.ts`). A Durable Object's own env is the raw one: a class whose work reaches another object scopes it first, as `WebhookProcessor` does.
 - A function documented as "not validated" returns what was stored as it is; the caller checks it (`isRefreshTarget`, `isRefreshJob`, `normalizeOwnerMetadataSnapshot`).
@@ -15,7 +15,7 @@ Only `worker/store/` names a binding; `npm run lint` fails otherwise (`scripts/c
 
 ## D1
 
-The schema is the SQL files of `migrations/`, applied in name order by `npm run deploy` before it deploys the Worker, and by the tests before each test (`migrations/README.md`).
+The schema is the SQL files of `migrations/`, applied in name order by `pnpm run deploy` before it deploys the Worker, and by the tests before each test (`migrations/README.md`).
 
 ### Refresh data
 
@@ -168,7 +168,7 @@ Through `sessions.ts`: `auth:session:<id>`, a sign-in session, which expires wit
 ## Changing the schema
 
 - An applied migration file is never edited. A change is a new file with the next free number.
-- `npm run deploy` applies the migrations before it deploys the Worker, so a migration must leave the Worker that is live working: add tables and columns first, and remove what the old code read in a later deploy.
+- `pnpm run deploy` applies the migrations before it deploys the Worker, so a migration must leave the Worker that is live working: add tables and columns first, and remove what the old code read in a later deploy.
 - SQLite can't add a `CHECK` to an existing column or drop one. `migrations/0004_checks.sql` shows the rebuild: a new table with the constraint, the rows copied, the old table dropped, the new one renamed, the indexes created again, all in one file, with the same table, columns and indexes at the end.
 - D1, KV namespaces and queues are created with `--jurisdiction eu`; a jurisdiction can't be added later.
 - Tests run on the local bindings of the Workers runtime. `test/reset-storage.ts` applies the files of `migrations/` to the local database before each test and empties all storage after it. A test that needs rows inserts them through the store functions or the database.

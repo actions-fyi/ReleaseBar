@@ -12,7 +12,7 @@ The trust and org signal APIs only use public GitHub profile, organization, repo
 https://<your-domain>
 ```
 
-Local development serves the app and the Worker API from one origin: `http://127.0.0.1:5173` with `npm run dev`, `http://localhost:8787` with `npm run dev:worker:real`.
+Local development serves the app and the Worker API from one origin: `http://127.0.0.1:5173` with `pnpm run dev`, `http://localhost:8787` with `pnpm run dev:worker:real`.
 
 ## OpenAPI
 
