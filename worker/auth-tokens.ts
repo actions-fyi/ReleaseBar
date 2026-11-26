@@ -69,7 +69,7 @@ import {
   type StoredInstallationRecord,
   writeCachedInstallationToken,
 } from "./store/installations.ts";
-import { deleteStoredSession, writeStoredSession } from "./store/sessions.ts";
+import { createStoredSession, deleteStoredSession } from "./store/sessions.ts";
 
 export async function requireAdmin(
   request: Request,
@@ -498,7 +498,7 @@ export async function storedSessionCookie(env: Env, session: StoredAuthSession):
     throw new Error("missing auth cookie secret");
   }
   const id = randomNonce();
-  await writeStoredSession(env, id, session, sessionMaxAgeSeconds);
+  await createStoredSession(env, id, session, sessionMaxAgeSeconds);
   const token = await signedJson(env.AUTH_COOKIE_SECRET, {
     id,
     exp: session.exp,

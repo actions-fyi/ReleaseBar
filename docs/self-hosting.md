@@ -150,7 +150,9 @@ Configure these Worker secrets to enable login and installation:
 
 `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` enable dedicated installation quota. Without them, users can still sign in, but dashboard rebuilds use the shared server token and cache. `GITHUB_APP_SLUG` is optional and defaults to `releasebar-app`.
 
-Set the GitHub App setup URL to `https://<your-domain>/api/auth/install` and enable redirect-on-update. Set the webhook URL to `https://<your-domain>/api/github/webhook`, use the same webhook secret in GitHub and Cloudflare, and subscribe to Issues, Pull requests, Push, Releases, and Repository events.
+Set the GitHub App setup URL to `https://<your-domain>/api/auth/install` and enable redirect-on-update. Set the webhook URL to `https://<your-domain>/api/github/webhook`, use the same webhook secret in GitHub and Cloudflare, and subscribe to Issues, Pull requests, Push, Releases, and Repository events. GitHub sends the uninstall of the app and the revocation of a user's authorization to every GitHub App without a subscription; ReleaseBar deletes the installation or the user's sessions when they arrive.
+
+A deployment that serves users in the EU needs a privacy policy of its own: [privacy.md](privacy.md) is the one of `releasebar.actions.fyi` and says what the software stores and for how long. The app's footer links to it; change the link in `src/App.svelte` to yours.
 
 Signed webhook payloads up to 2 MiB enter Cloudflare Queue before acknowledgement. Issue and pull-request bursts coalesce into authoritative count refreshes; push and release bursts coalesce into release refreshes. Privacy and archive transitions remain separate so visibility changes apply promptly.
 

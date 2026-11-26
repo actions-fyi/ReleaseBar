@@ -31,6 +31,7 @@
   export let openOwner: (owner: string) => void;
   export let installApp: () => void;
   export let logout: () => void;
+  export let deleteAccount: () => void;
   export let primaryAuthAction: () => void;
   export let primaryAuthTitle: (auth: AuthPayload | null) => string;
   export let primaryAuthLabel: (auth: AuthPayload | null, compact?: boolean) => string;
@@ -196,6 +197,9 @@
             </DropdownMenu.Item>
           {/if}
           <DropdownMenu.Item class="menu-action" onSelect={logout}>Log Out</DropdownMenu.Item>
+          <DropdownMenu.Item class="menu-action" onSelect={deleteAccount}>
+            Delete Account
+          </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Root>
     {:else}

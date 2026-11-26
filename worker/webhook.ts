@@ -13,6 +13,12 @@ import {
   type WebhookTargetAction,
 } from "./runtime.ts";
 import { tryJsonParse } from "./schemas.ts";
+import {
+  accountWebhookEvent,
+  accountWebhookOwner,
+  compactAccountWebhookPayload,
+  processAccountWebhook,
+} from "./account.ts";
 import { markHotCacheStale } from "./build-progress.ts";
 import {
   githubWebhookBodyLimitBytes,
@@ -102,7 +108,9 @@ export async function prepareGitHubWebhookEvent(
     return null;
   }
 
-  if (event === "repository" && action === "privatized") {
+  // A deleted repository goes as one that turned private does: out of the owner's metadata and
+  // out of every cache and dashboard that shows it.
+  if (event === "repository" && (action === "privatized" || action === "deleted")) {
     await Promise.all([
       mutateOwnerMetadataSnapshot(env, repo.owner, {
         kind: "remove",
@@ -113,13 +121,22 @@ export async function prepareGitHubWebhookEvent(
       deleteCacheEntry(env, hotCacheKey),
     ]);
     return {
-      reason: "webhook:repository-privatized",
+      reason: `webhook:repository-${action}`,
       includeReleaseDataOnly: false,
       invalidateDashboard: true,
     };
   }
 
-  if (event === "repository" && action === "publicized") {
+  if (event === "repository" && action === "created") {
+    // Only a repository that was deleted or private under this name comes back: any other new
+    // repository is found by the next refresh.
+    const snapshot = await readOwnerMetadata(env, repo.owner);
+    if (!snapshot?.privateRepos[repo.fullName] && !snapshot?.removedRepos[repo.fullName]) {
+      return null;
+    }
+  }
+
+  if (event === "repository" && (action === "publicized" || action === "created")) {
     const restore = repositoryObservedAt
       ? mutateOwnerMetadataSnapshot(env, repo.owner, {
           kind: "restore",
@@ -311,6 +328,11 @@ export async function processGitHubWebhook(
   env: Env,
   context: BackgroundContext,
 ): Promise<void> {
+  const accountEvent = accountWebhookEvent(event, payload);
+  if (accountEvent) {
+    await processAccountWebhook(env, accountEvent);
+    return;
+  }
   const repo = webhookRepo(payload);
   if (!repo) return;
   const page = await webhookTargetPage(
@@ -378,12 +400,18 @@ export async function githubWebhookRetryDelaySeconds(env: Env, error: unknown): 
   return 5 * 60;
 }
 
+// The owner whose `WebhookProcessor` takes the delivery: the repository's owner, or the account of
+// a delivery without a repository.
+export function webhookProcessorOwner(payload: Record<string, unknown>, delivery: string): string {
+  return webhookRepo(payload)?.owner ?? accountWebhookOwner(payload) ?? delivery;
+}
+
 export async function abandonGitHubWebhookDelivery(
   env: Env,
   delivery: string,
   payload: Record<string, unknown>,
 ): Promise<void> {
-  const owner = webhookRepo(payload)?.owner ?? delivery;
+  const owner = webhookProcessorOwner(payload, delivery);
   await Promise.all([
     forgetWebhookAdmission(env, delivery),
     forgetWebhookProcessing(env, owner, delivery),
@@ -453,18 +481,19 @@ export async function githubWebhookResponse(
     return jsonResponse({ ok: true }, 200, { "cache-control": "no-store" });
   }
   const repo = webhookRepo(payload);
+  const accountEvent = repo ? null : accountWebhookEvent(event, payload);
   if (!delivery) {
     return jsonResponse({ error: "webhook delivery unavailable" }, 503, {
       "cache-control": "no-store",
     });
   }
-  if (!repo) {
+  if (!repo && !accountEvent) {
     return jsonResponse({ ok: true, ignored: true }, 202, {
       "cache-control": "no-store",
     });
   }
   const action = String(payload.action ?? "");
-  if (repo.private === true && !(event === "repository" && action === "privatized")) {
+  if (repo?.private === true && !(event === "repository" && action === "privatized")) {
     return jsonResponse({ ok: true, ignored: true }, 202, {
       "cache-control": "no-store",
     });
@@ -474,7 +503,9 @@ export async function githubWebhookResponse(
       env,
       event,
       delivery,
-      compactGitHubWebhookPayload(event, payload),
+      accountEvent
+        ? compactAccountWebhookPayload(accountEvent)
+        : compactGitHubWebhookPayload(event, payload),
     );
     return jsonResponse(
       admission === "duplicate" ? { ok: true, duplicate: true } : { ok: true },

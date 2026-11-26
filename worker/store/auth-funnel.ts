@@ -139,3 +139,13 @@ export async function deleteExpiredAuthFunnelRows(env: Env, now: number): Promis
   );
   return results.reduce((deleted, result) => deleted + result.meta.changes, 0);
 }
+
+// Deletes the events and counts recorded for the account, and returns how many. `account` is the
+// account's slug, as the events store it.
+export async function deleteAuthFunnelRowsOf(env: Env, account: string): Promise<number> {
+  const results = await env.DB.batch([
+    env.DB.prepare("DELETE FROM auth_funnel_events WHERE account = ?1").bind(account),
+    env.DB.prepare("DELETE FROM auth_funnel_counts WHERE account = ?1").bind(account),
+  ]);
+  return results.reduce((deleted, result) => deleted + result.meta.changes, 0);
+}

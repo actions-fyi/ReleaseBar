@@ -19,6 +19,22 @@ export function profileSnapshotStorageKey(profile: DashboardProfile): string {
   return `${snapshotKeyPrefix}${slugOwner(profile.owner)}:${encodeURIComponent(profile.updatedAt)}`;
 }
 
+// The keys of every snapshot of the owner's profile: from `from`, before `before`. ";" is the
+// character after ":", so the range holds the keys that start with the owner's prefix and no
+// other owner's.
+export function profileSnapshotKeyRange(owner: string): [from: string, before: string] {
+  const prefix = `${snapshotKeyPrefix}${slugOwner(owner)}`;
+  return [`${prefix}:`, `${prefix};`];
+}
+
+// Deletes every snapshot of the owner's profile, and returns how many.
+export async function deleteProfileSnapshotsOf(env: Env, owner: string): Promise<number> {
+  const result = await env.DB.prepare("DELETE FROM profile_snapshots WHERE key >= ?1 AND key < ?2")
+    .bind(...profileSnapshotKeyRange(owner))
+    .run();
+  return result.meta.changes;
+}
+
 // The snapshot a target's `profileSnapshotKey` names. Null for any other key.
 export async function readProfileSnapshot(env: Env, key: string): Promise<DashboardProfile | null> {
   if (!key.startsWith(snapshotKeyPrefix)) return null;

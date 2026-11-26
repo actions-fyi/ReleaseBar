@@ -295,6 +295,23 @@ export async function deleteRefreshTargets(env: Env, keys: string[]): Promise<vo
   );
 }
 
+// The keys of the targets built with a profile snapshot whose key is in the range: the dashboards
+// that show what one owner's profile adds or hides. It reads every target: only the deletion of
+// an account asks.
+export async function refreshTargetKeysOfProfileSnapshots(
+  env: Env,
+  [from, before]: [from: string, before: string],
+): Promise<string[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT key FROM refresh_targets
+     WHERE json_extract(value, '$.profileSnapshotKey') >= ?1
+       AND json_extract(value, '$.profileSnapshotKey') < ?2`,
+  )
+    .bind(from, before)
+    .all<{ key: string }>();
+  return results.map((row) => row.key);
+}
+
 // A page of the stored targets of dashboards with the current cache key version, in key order
 // after `cursor`, not validated. No `nextCursor` tells that no page follows.
 export async function listStoredRefreshTargets(

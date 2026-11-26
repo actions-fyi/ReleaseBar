@@ -219,6 +219,17 @@ export async function deleteStoredInstallation(env: Env, accountLogin: string): 
   await deleteStoredInstallations(env, [accountLogin]);
 }
 
+// Deletes the installation of this id, and returns the account it was stored for: null when no
+// row has the id, as when the account installed the app again under a new one.
+export async function deleteStoredInstallationById(env: Env, id: number): Promise<string | null> {
+  const row = await env.DB.prepare(
+    "DELETE FROM installations WHERE id = ?1 RETURNING account_login",
+  )
+    .bind(id)
+    .first<{ account_login: string }>();
+  return row?.account_login ?? null;
+}
+
 function newestFirst(records: AuthInstallationRecord[]): AuthInstallationRecord[] {
   return records.sort((a, b) => safeIso(b.updatedAt) - safeIso(a.updatedAt));
 }
@@ -313,4 +324,11 @@ export async function writeCachedInstallationToken(
   await env.DASHBOARD_CACHE.put(`auth:installation-token:${installationId}`, token, {
     expirationTtl: installationTokenTtlSeconds,
   });
+}
+
+export async function deleteCachedInstallationToken(
+  env: Env,
+  installationId: number,
+): Promise<void> {
+  await env.DASHBOARD_CACHE.delete(`auth:installation-token:${installationId}`);
 }

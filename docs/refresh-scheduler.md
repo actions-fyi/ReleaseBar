@@ -102,6 +102,8 @@ Push and release deliveries eagerly invalidate and refresh release-enabled dashb
 
 - concurrent `issues` and `pull_request` deliveries for one repository coalesce into one lean authoritative owner-count query, then patch known split counts
 - concurrent `push` and `release` deliveries for one repository coalesce into one current release-data refresh
+- `repository` deleted events remove the repository as privatized ones do: from the owner's metadata, its caches and every dashboard that shows it. A created event restores a repository that was removed under the same name; any other new repository is found by the next refresh
+- `installation` deleted and `github_app_authorization` revoked events name no repository. They take the same path, in the `WebhookProcessor` of the account: the first deletes the installation and its cached token, the second every session of the user (`worker/account.ts`). The queue carries only the installation id and account login, or the user id and login. Every other delivery without a repository is acknowledged and dropped
 - `repository` archive/unarchive events remove or restore rows according to dashboard visibility and enqueue a metadata refresh
 - `push` and `release` invalidate repository fragments and enqueue affected release dashboards for authoritative hydration
 - failed background processing clears the delivery marker so GitHub retries remain actionable

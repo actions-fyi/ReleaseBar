@@ -18,6 +18,7 @@ import type { BackgroundContext, WorkerQueueMessage } from "./runtime.ts";
 import { collectAudit } from "./audit-collector.ts";
 import { withLockJurisdiction } from "./store/bindings.ts";
 import { ownerActivityResponse, repoActivityResponse } from "./activity.ts";
+import { deleteAccountResponse } from "./account.ts";
 import { adminResponse, profileResponse } from "./admin.ts";
 import { assetResponse, ownerActivityPageOwner } from "./app-shell.ts";
 import { deleteExpiredAuditRows } from "./audit-retention.ts";
@@ -62,8 +63,8 @@ import {
   githubWebhookResponse,
   githubWebhookRetryDelaySeconds,
   processGitHubWebhookFanout,
+  webhookProcessorOwner,
 } from "./webhook.ts";
-import { webhookRepo } from "./webhook-targets.ts";
 import { safeIso } from "./time.ts";
 
 export { BuildCoordinator } from "./objects/build-coordinator.ts";
@@ -91,6 +92,7 @@ export default {
       request.method === "POST";
     const ownerRefreshWrite = isOwnerRefreshApiPath(url.pathname) && request.method === "POST";
     const clientTimingWrite = url.pathname === "/api/_client-timing" && request.method === "POST";
+    const accountDelete = url.pathname === "/api/me" && request.method === "DELETE";
     const githubWebhookWrite = url.pathname === "/api/github/webhook" && request.method === "POST";
     if (
       request.method !== "GET" &&
@@ -100,6 +102,7 @@ export default {
       !adminWrite &&
       !ownerRefreshWrite &&
       !clientTimingWrite &&
+      !accountDelete &&
       !githubWebhookWrite
     ) {
       return jsonResponse({ error: "method not allowed" }, 405, { allow: "GET" });
@@ -198,7 +201,7 @@ async function processQueueBatch(
     if (isGitHubWebhookJob(message.body)) {
       const webhookJob = message.body;
       try {
-        const owner = webhookRepo(webhookJob.payload)?.owner ?? webhookJob.delivery;
+        const owner = webhookProcessorOwner(webhookJob.payload, webhookJob.delivery);
         const result = await processWebhookJob(env, owner, webhookJob);
         if (result.state === "busy") throw new Error("webhook processor busy");
         if (result.state === "full") throw new Error("webhook coalescer full");
@@ -338,6 +341,7 @@ export async function routeRequest(
     return jsonResponse(openApiSpec(url.origin));
   }
   if (url.pathname === "/api/me") {
+    if (request.method === "DELETE") return deleteAccountResponse(request, env);
     return meResponse(request, env);
   }
   if (url.pathname === "/api/_client-timing" && request.method === "POST") {

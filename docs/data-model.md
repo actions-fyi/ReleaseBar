@@ -76,6 +76,7 @@ The schema is the SQL files of `migrations/`, applied in name order by `pnpm run
 - Limits (D1, as documented in November 2026): a row or a string is at most 2 MB, which bounds an owner's snapshot; a query binds at most 100 parameters, and a lookup of many owners or accounts binds at most 91, a write at most nine; a result is at most 50 MB, so whole snapshots are read 20 to a statement; a `batch` is one transaction and counts as one query of the invocation; `listStoredInstallations` reads 250 rows per query, each with a repository list of at most 1,000 names.
 - The mark that an account has no installation and the cached installation token are KV entries, owned by `installations.ts` too. No token is written to D1.
 - A session holds a copy of the user's installations; sessions are in KV.
+- An installation goes when GitHub reports the uninstall: the `installation` webhook with the action `deleted` deletes the row by its id, with the cached token, and marks the account as having none (`worker/account.ts`). A row of another id, as after a reinstall, stays. The sync, a lookup GitHub answers with none, and the expiry delete what a missed webhook left.
 - An empty `installations` table fills again by itself: a request that needs an account's installation asks GitHub for it and stores it, a sign-in stores the user's installations, and the admin console's installation sync stores all of them.
 
 - An installation that is stored with the same content and was written in the last five minutes is not written again (`writeInstallationRegistry`). Every `/api/me` call checks the session's installations; without the skip each would send the batch of writes and the four queries that remember the accounts' dashboards as refresh targets.
@@ -120,7 +121,7 @@ D1's limit is its own. Besides it, an invocation on the free plan may make 50 su
 
 ## KV
 
-One namespace, `DASHBOARD_CACHE`. It holds cached payloads and short-lived entries only: what can be built again from GitHub or expires by itself. Nothing in it is queried or counted; the only listings are by prefix, to delete a repository's or an owner's cached entries after a webhook, and to find cached dashboards for the hot dashboard when its index is short.
+One namespace, `DASHBOARD_CACHE`. It holds cached payloads and short-lived entries only: what can be built again from GitHub or expires by itself. Nothing in it is queried or counted; the only listings are by prefix, to delete a repository's or an owner's cached entries after a webhook, to delete a user's sessions, and to find cached dashboards for the hot dashboard when its index is short.
 
 Through `cache.ts`, addressed by the cache key the owner of the data builds. Every entry is written with a lifetime:
 
@@ -144,7 +145,24 @@ The version in a key is part of the key: a change of shape takes a new version, 
 
 Through `installations.ts`: `auth:installation-miss:v1:<account>`, the mark that GitHub knows no installation for an account (10 minutes), and `auth:installation-token:<id>`, the cached installation token (50 minutes).
 
-Through `sessions.ts`: `auth:session:<id>`, a sign-in session, which expires with the session.
+Through `sessions.ts`: `auth:session:<id>`, a sign-in session, which expires with the session, and `auth:user-session:<user id>:<id>`, an entry without content that lists the session under its user and expires with it. The listing by that prefix finds the sessions to delete when the user revokes the app's authorization (the `github_app_authorization` webhook) or deletes the account. A session stored before the listing existed is not found by it, and expires within 30 days.
+
+## Deleting an account
+
+`DELETE /api/me` deletes what is stored for the signed-in user (`eraseAccount`, `worker/account.ts`), with seven D1 queries:
+
+| Data                                                                        | Deleted by                                                                                   |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Every session of the user id, with its tokens                               | `deleteStoredSessionsOf`                                                                     |
+| The profile of the login                                                    | `deleteProfile`                                                                              |
+| The profile's snapshots                                                     | `deleteProfileSnapshotsOf`: the keys of one owner are a range of the primary key             |
+| The refresh targets built with those snapshots, and their cached dashboards | `refreshTargetKeysOfProfileSnapshots`, which reads every target, then `deleteRefreshTargets` |
+| The sign-in funnel events and counts of the login                           | `deleteAuthFunnelRowsOf`                                                                     |
+| The installation of the login's own account, with its cached token          | `deleteStoredInstallation`                                                                   |
+
+- Not deleted: the refresh audit log and the GitHub access counts, which expire after 14 days, and what is public GitHub data about the account: the owner's metadata, cached dashboards and the targets of dashboards without a profile. A dashboard shows that data for any public account and builds it again when it is opened.
+- The app stays installed and authorized on GitHub: while it is, the installation is stored again by the next request that needs it.
+- `docs/privacy.md` says the same to users, with the retention of every kind of data.
 
 ## Durable Objects
 

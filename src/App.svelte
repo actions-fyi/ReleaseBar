@@ -649,6 +649,7 @@
     primaryAuthLabel,
     primaryAuthTitle,
     logout,
+    deleteAccount,
     authStatus,
   } = settingsController;
 
@@ -815,6 +816,7 @@
     {openOwner}
     {installApp}
     {logout}
+    {deleteAccount}
     {primaryAuthAction}
     {primaryAuthTitle}
     {primaryAuthLabel}
@@ -948,6 +950,8 @@
   <a class="external-link" href="https://steipete.me" target="_blank" rel="noreferrer">Peter Steinberger</a>
   <span class="footer-separator" aria-hidden="true">.</span>
   <a class="external-link" href="https://github.com/actions-fyi/ReleaseBar/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT Licensed</a>
+  <span class="footer-separator" aria-hidden="true">.</span>
+  <a class="external-link" href="https://github.com/actions-fyi/ReleaseBar/blob/main/docs/privacy.md" target="_blank" rel="noreferrer">Privacy</a>
 </footer>
 
 <CommandPalette
