@@ -36,7 +36,7 @@
     "valibot": "^1.5.0"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.70.1",
+    "@cloudflare/vite-plugin": "1.70.2",
     "@cloudflare/vitest-plugin": "1.9.2",
     "@sveltejs/vite-plugin-svelte": "7.3.2",
     "@types/node": "26.6.10",
@@ -48,7 +48,7 @@
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vite": "8.3.8",
     "vitest": "5.1.2",
-    "wrangler": "4.166.0"
+    "wrangler": "4.168.0"
   },
   "engines": {
     "node": ">=22.18.0"
