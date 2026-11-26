@@ -10,7 +10,7 @@
   "upload_source_maps": true,
 
   // This file holds no deployment of its own: no custom domain, admin logins or resource IDs.
-  // `npm run deploy` builds with Vite, which adds them from RELEASEBAR_* environment variables
+  // `pnpm run deploy` builds with Vite, which adds them from RELEASEBAR_* environment variables
   // (see docs/self-hosting.md) to the config it writes for the deploy: dist/releasebar/wrangler.json.
 
   "vars": {
@@ -23,11 +23,11 @@
 
   // Needed by the Wrangler commands that read this file instead of the built config: the dry run
   // of .github/workflows/cloudflare.yml (`wrangler deploy --dry-run` on a fresh checkout) and
-  // `npm run dev:worker:real`. They bundle `main` themselves and need the app built first, for
+  // `pnpm run dev:worker:real`. They bundle `main` themselves and need the app built first, for
   // `assets.directory`. The Cloudflare Vite plugin has no use for it and says so in a warning on
   // every `vite build`; it is the only option that warning names.
   "build": {
-    "command": "npm run build",
+    "command": "pnpm run build",
   },
 
   "assets": {
@@ -39,9 +39,9 @@
 
   "kv_namespaces": [{ "binding": "DASHBOARD_CACHE" }],
 
-  // No database ID here: a deployment sets RELEASEBAR_D1_DATABASE_ID, and `npm run deploy` refuses
+  // No database ID here: a deployment sets RELEASEBAR_D1_DATABASE_ID, and `pnpm run deploy` refuses
   // without it. Wrangler would otherwise create the database itself on deploy, outside any
-  // jurisdiction, and a jurisdiction can't be added to a database later. `npm run deploy` applies
+  // jurisdiction, and a jurisdiction can't be added to a database later. `pnpm run deploy` applies
   // the SQL files of `migrations/` to the database before it deploys the Worker.
   "d1_databases": [
     { "binding": "DB", "database_name": "releasebar", "migrations_dir": "migrations" },

@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const root = fileURLToPath(new URL("../", import.meta.url));
 const maxLines = 999;
-const generatedFiles = new Set(["package-lock.json", "worker-configuration.d.ts"]);
+const generatedFiles = new Set(["pnpm-lock.yaml", "worker-configuration.d.ts"]);
 const maintainedExtensions = new Set([
   ".css",
   ".html",

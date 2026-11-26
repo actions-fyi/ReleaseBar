@@ -7,22 +7,22 @@
   "scripts": {
     "build": "vite build",
     "build:data": "vite build && node scripts/build.ts",
-    "check": "npm run check:static && npm run check:data",
+    "check": "pnpm run check:static && pnpm run check:data",
     "check:data": "node scripts/build.ts --check",
     "check:size": "node scripts/check-file-size.mjs",
     "check:store": "node scripts/check-store-boundary.ts",
-    "check:static": "npm run typecheck && npm run lint && npm run format:check && npm run build && npm run test",
-    "deploy": "node scripts/deploy-settings.ts && vite build && npm run deploy:migrations && wrangler deploy",
+    "check:static": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run build && pnpm run test",
+    "deploy": "node scripts/deploy-settings.ts && vite build && pnpm run deploy:migrations && wrangler deploy",
     "deploy:migrations": "wrangler d1 migrations apply DB --remote --config dist/releasebar/wrangler.json",
     "deploy:preview": "node scripts/deploy-settings.ts && vite build && wrangler versions upload",
     "dev": "vite dev --host 127.0.0.1",
     "dev:worker:real": "wrangler dev --config wrangler.jsonc --remote --port 8787",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
-    "lint": "npm run check:size && npm run check:store && oxlint .",
+    "lint": "pnpm run check:size && pnpm run check:store && oxlint .",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
-    "typecheck": "npm run types:check && tsc --noEmit && svelte-check --tsconfig ./tsconfig.svelte.json",
+    "typecheck": "pnpm run types:check && tsc --noEmit && svelte-check --tsconfig ./tsconfig.svelte.json",
     "types": "wrangler types --config wrangler.jsonc --strict-vars=false",
     "types:check": "wrangler types --config wrangler.jsonc --strict-vars=false --check"
   },
@@ -52,5 +52,6 @@
   },
   "engines": {
     "node": ">=22.18.0"
-  }
+  },
+  "packageManager": "pnpm@12.23.0"
 }

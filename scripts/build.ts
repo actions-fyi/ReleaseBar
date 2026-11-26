@@ -1,5 +1,5 @@
-// Fetches the dashboard data of releasebar.config.json from GitHub. `npm run build:data` writes
-// it next to the built app; `npm run check:data` only prints the totals.
+// Fetches the dashboard data of releasebar.config.json from GitHub. `pnpm run build:data` writes
+// it next to the built app; `pnpm run check:data` only prints the totals.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 

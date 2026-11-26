@@ -70,7 +70,7 @@ const discoverPeriodValues = new Set<DiscoverPeriod>([
 ]);
 
 // Where the app asks again when a request to its own origin failed: the canonical domain, when
-// the page is served from another one. `npm run dev` and `npm run dev:worker:real` each serve
+// the page is served from another one. `pnpm run dev` and `pnpm run dev:worker:real` each serve
 // the app and the API from one origin, so there is no other local port to try.
 export function fallbackApiOrigin(): string {
   return workersDevApiOrigin;

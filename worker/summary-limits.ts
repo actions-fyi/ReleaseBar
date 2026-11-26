@@ -1,9 +1,9 @@
 // Caps on the commit titles a release summary sends the model. Anyone can have any public
 // repository summarized, so the input is capped whatever its commits hold. Each cap is a Worker
-// var, set by `npm run deploy` from a RELEASEBAR_* build variable; unset, it has its default.
+// var, set by `pnpm run deploy` from a RELEASEBAR_* build variable; unset, it has its default.
 // Counts are UTF-16 units, as JavaScript measures strings.
 //
-// The bounds keep a setting from removing a cap. `npm run deploy` rejects a value outside them,
+// The bounds keep a setting from removing a cap. `pnpm run deploy` rejects a value outside them,
 // and the Worker clamps one set on it directly, and ignores a value that isn't a whole number.
 // This module imports nothing, so the deploy script can use it without the Worker.
 

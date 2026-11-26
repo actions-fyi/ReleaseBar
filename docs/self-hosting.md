@@ -7,15 +7,15 @@ To deploy your own, follow [First deploy](#first-deploy): it is complete by itse
 ## Requirements
 
 - Node.js 22.18 or newer; `.nvmrc` names Node.js 26.
-- npm, using the committed `package-lock.json`.
+- pnpm, in the version `packageManager` of `package.json` pins, using the committed `pnpm-lock.yaml`. `pnpm-workspace.yaml` lists the dependencies whose build scripts may run.
 - A Cloudflare account and Wrangler authentication for remote development or deployment.
 - A GitHub token for higher API limits when building real dashboard data locally.
 
 Install dependencies and build the app:
 
 ```sh
-npm ci
-npm run build
+pnpm install --frozen-lockfile
+pnpm run build
 ```
 
 `GITHUB_TOKEN` is optional. GitHub Actions uses its built-in token for data builds that need authenticated GitHub access.
@@ -40,7 +40,7 @@ The public Worker service accepts arbitrary public owners through route and quer
 For the app and the Worker on one server, with hot reload:
 
 ```sh
-npm run dev
+pnpm run dev
 ```
 
 This is `vite dev` with the Cloudflare Vite plugin: the Worker runs in the Workers runtime with local bindings, on `http://127.0.0.1:5173`. It does not receive production secrets unless they are provided through local Wrangler configuration, such as a `.dev.vars` file.
@@ -48,50 +48,50 @@ This is `vite dev` with the Cloudflare Vite plugin: the Worker runs in the Worke
 For local code running on Cloudflare with real secrets and remote resources:
 
 ```sh
-npm run dev:worker:real
+pnpm run dev:worker:real
 ```
 
 This is `wrangler dev --remote` on `http://localhost:8787`, which serves the app and the API from that one origin too. It reads `wrangler.jsonc`, not the config of a build, so the resource IDs of the deployment are not in it.
 
 ## First deploy
 
-A deployment needs a Cloudflare account, Wrangler signed in to it (`npx wrangler login`), and this repository. `eu` below is the jurisdiction the data stays in; use another, or leave `--jurisdiction` and `RELEASEBAR_DO_JURISDICTION` out for none. Decide before creating anything: a jurisdiction can't be added to a resource later.
+A deployment needs a Cloudflare account, Wrangler signed in to it (`pnpm exec wrangler login`), and this repository. `eu` below is the jurisdiction the data stays in; use another, or leave `--jurisdiction` and `RELEASEBAR_DO_JURISDICTION` out for none. Decide before creating anything: a jurisdiction can't be added to a resource later.
 
 1. Create the resources. Each command prints what it created:
 
    ```sh
-   npx wrangler queues create releasebar-refresh --jurisdiction eu
-   npx wrangler queues create releasebar-refresh-dlq --jurisdiction eu
-   npx wrangler kv namespace create releasebar-dashboard-cache --jurisdiction eu
-   npx wrangler d1 create releasebar --jurisdiction eu
+   pnpm exec wrangler queues create releasebar-refresh --jurisdiction eu
+   pnpm exec wrangler queues create releasebar-refresh-dlq --jurisdiction eu
+   pnpm exec wrangler kv namespace create releasebar-dashboard-cache --jurisdiction eu
+   pnpm exec wrangler d1 create releasebar --jurisdiction eu
    ```
 
-   Note the `id` of the KV namespace (32 hex digits) and the `database_id` of the D1 database, which is a UUID such as `1b2c3d4e-5f60-4a7b-8c9d-0e1f2a3b4c5d`. The database's **name** (`releasebar`) is not its ID. `npx wrangler d1 list` shows both.
+   Note the `id` of the KV namespace (32 hex digits) and the `database_id` of the D1 database, which is a UUID such as `1b2c3d4e-5f60-4a7b-8c9d-0e1f2a3b4c5d`. The database's **name** (`releasebar`) is not its ID. `pnpm exec wrangler d1 list` shows both.
 
 2. Set the deployment's variables: in the shell for a deploy from your machine, or as **build variables** of Workers Builds (the Worker's Settings → Build → Variables and secrets):
 
-   | Variable                     | Value                                                                                                                                              |
-   | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-   | `RELEASEBAR_D1_DATABASE_ID`  | The database's UUID from step 1. Not its name: with `releasebar` here, `npm run deploy` stops before it builds and says what it expects. Required. |
-   | `RELEASEBAR_KV_NAMESPACE_ID` | The namespace's ID from step 1.                                                                                                                    |
-   | `RELEASEBAR_DO_JURISDICTION` | `eu`, so that the Durable Objects are created there too.                                                                                           |
-   | `RELEASEBAR_DOMAIN`          | Your domain, such as `releasebar.example.com`. Its zone must be in the account.                                                                    |
-   | `RELEASEBAR_ADMIN_LOGINS`    | The GitHub logins that may open `/_admin`, comma-separated.                                                                                        |
+   | Variable                     | Value                                                                                                                                               |
+   | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | `RELEASEBAR_D1_DATABASE_ID`  | The database's UUID from step 1. Not its name: with `releasebar` here, `pnpm run deploy` stops before it builds and says what it expects. Required. |
+   | `RELEASEBAR_KV_NAMESPACE_ID` | The namespace's ID from step 1.                                                                                                                     |
+   | `RELEASEBAR_DO_JURISDICTION` | `eu`, so that the Durable Objects are created there too.                                                                                            |
+   | `RELEASEBAR_DOMAIN`          | Your domain, such as `releasebar.example.com`. Its zone must be in the account.                                                                     |
+   | `RELEASEBAR_ADMIN_LOGINS`    | The GitHub logins that may open `/_admin`, comma-separated.                                                                                         |
 
    [Cloudflare resources](#cloudflare-resources) lists every variable.
 
-3. Give the deploy a token that may change the database. `npm run deploy` applies the D1 migrations, which needs **D1 Edit** on the account, besides what a deploy of a Worker with KV, queues and Durable Objects needs. The token Workers Builds creates by itself has no D1 permission: create an API token with it and select it under Settings → Build → API token. A deploy from your machine uses your Wrangler login, which has it.
+3. Give the deploy a token that may change the database. `pnpm run deploy` applies the D1 migrations, which needs **D1 Edit** on the account, besides what a deploy of a Worker with KV, queues and Durable Objects needs. The token Workers Builds creates by itself has no D1 permission: create an API token with it and select it under Settings → Build → API token. A deploy from your machine uses your Wrangler login, which has it.
 
 4. Deploy:
 
    ```sh
-   npm ci
-   npm run deploy
+   pnpm install --frozen-lockfile
+   pnpm run deploy
    ```
 
-   With Workers Builds, set the deploy command to `npm run deploy` and leave the build command empty; every push to the production branch then deploys. The command checks the variables, builds, applies the migrations and deploys the Worker with its Durable Objects. In the log, between the Vite build and the Worker upload, the migrations are listed as applied: `0001_refresh.sql` to `0004_checks.sql` on a new database, `✅ No migrations to apply!` on later deploys.
+   With Workers Builds, set the deploy command to `pnpm run deploy` and leave the build command empty; every push to the production branch then deploys. The command checks the variables, builds, applies the migrations and deploys the Worker with its Durable Objects. In the log, between the Vite build and the Worker upload, the migrations are listed as applied: `0001_refresh.sql` to `0004_checks.sql` on a new database, `✅ No migrations to apply!` on later deploys.
 
-5. Set the secrets on the Worker (Settings → Variables and Secrets, or `npx wrangler secret put <NAME>`); deploys keep them. `AUTH_COOKIE_SECRET` and the GitHub App secrets enable sign-in ([GitHub App](#github-app)), `GITHUB_TOKEN` gives the shared GitHub quota, `ANTHROPIC_API_KEY` the AI summaries ([AI summaries](#ai-summaries)). Without any of them the Worker serves public dashboards with GitHub's anonymous quota.
+5. Set the secrets on the Worker (Settings → Variables and Secrets, or `pnpm exec wrangler secret put <NAME>`); deploys keep them. `AUTH_COOKIE_SECRET` and the GitHub App secrets enable sign-in ([GitHub App](#github-app)), `GITHUB_TOKEN` gives the shared GitHub quota, `ANTHROPIC_API_KEY` the AI summaries ([AI summaries](#ai-summaries)). Without any of them the Worker serves public dashboards with GitHub's anonymous quota.
 
 6. Open `https://<your-domain>/<a GitHub user>`. The first request answers with repository metadata and enqueues the build of the rest. Nothing needs seeding: the database's tables fill from requests, sign-ins and webhooks.
 
@@ -107,7 +107,7 @@ A deployment needs a Cloudflare account, Wrangler signed in to it (`npx wrangler
 
 The Worker runs before static assets so `/api/*` stays dynamic and owner routes return the application shell. The Worker is named `releasebar`.
 
-`wrangler.jsonc` is generic: it names no account, custom domain, admin login or resource ID. A deployment supplies its own through environment variables, and `npm run deploy` checks them, builds with Vite, which writes them into the Wrangler config of the build (`dist/releasebar/wrangler.json`), applies the D1 migrations and runs `wrangler deploy`, which deploys from that config. With Workers Builds, set these as **build variables** (Settings → Build → Variables and secrets) and set the deploy command to `npm run deploy`. For non-production branch builds, use `npm run deploy:preview`.
+`wrangler.jsonc` is generic: it names no account, custom domain, admin login or resource ID. A deployment supplies its own through environment variables, and `pnpm run deploy` checks them, builds with Vite, which writes them into the Wrangler config of the build (`dist/releasebar/wrangler.json`), applies the D1 migrations and runs `wrangler deploy`, which deploys from that config. With Workers Builds, set these as **build variables** (Settings → Build → Variables and secrets) and set the deploy command to `pnpm run deploy`. For non-production branch builds, use `pnpm run deploy:preview`.
 
 | Variable                                | Effect                                                                                                                                                                                    |
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -123,9 +123,9 @@ The Worker runs before static assets so `/api/*` stays dynamic and owner routes 
 | `RELEASEBAR_SUMMARY_USER_HOURLY_LIMIT`  | AI summaries one signed-in user may generate per hour, from 1 to 1,000 (Worker var `SUMMARY_USER_HOURLY_LIMIT`). Unset: 30.                                                               |
 | `RELEASEBAR_SUMMARY_GLOBAL_DAILY_LIMIT` | AI summaries all users together may generate per day, from 1 to 100,000 (Worker var `SUMMARY_GLOBAL_DAILY_LIMIT`). Unset: 1,000.                                                          |
 
-`npm run deploy` fails without `RELEASEBAR_D1_DATABASE_ID`. Wrangler creates a D1 database for a binding that has no ID, and a database it creates has no jurisdiction, which can't be added later. Because every deployment sets this variable, a build that lost its variables also stops there, before it drops the deployment's domain and admins. A deployment with only this variable set is the generic `wrangler.jsonc` with that database.
+`pnpm run deploy` fails without `RELEASEBAR_D1_DATABASE_ID`. Wrangler creates a D1 database for a binding that has no ID, and a database it creates has no jurisdiction, which can't be added later. Because every deployment sets this variable, a build that lost its variables also stops there, before it drops the deployment's domain and admins. A deployment with only this variable set is the generic `wrangler.jsonc` with that database.
 
-The deploy applies the SQL files of `migrations/` to the database before it deploys the Worker (`wrangler d1 migrations apply DB --remote`), so a failing migration leaves the live Worker as it is. The build's API token therefore needs **D1 Edit** on the account; the token Workers Builds creates by itself does not have it. In the deploy log, between the Vite build and the Worker upload, expect `Resource location: remote` and either `✅ No migrations to apply!` or the table of applied files. A migration that changes existing tables, such as `0004_checks.sql`, keeps their names, columns and indexes, so the Worker that is live while it is applied keeps working. `npm run deploy:preview` applies no migration.
+The deploy applies the SQL files of `migrations/` to the database before it deploys the Worker (`wrangler d1 migrations apply DB --remote`), so a failing migration leaves the live Worker as it is. The build's API token therefore needs **D1 Edit** on the account; the token Workers Builds creates by itself does not have it. In the deploy log, between the Vite build and the Worker upload, expect `Resource location: remote` and either `✅ No migrations to apply!` or the table of applied files. A migration that changes existing tables, such as `0004_checks.sql`, keeps their names, columns and indexes, so the Worker that is live while it is applied keeps working. `pnpm run deploy:preview` applies no migration.
 
 The queues `releasebar-refresh` and `releasebar-refresh-dlq` and the D1 database must exist before the first deploy ([First deploy](#first-deploy), step 1). To keep all data in one jurisdiction, create the queues, the KV namespace and the database in it, and set the same jurisdiction for Durable Objects; a jurisdiction can't be changed once a resource exists.
 
@@ -168,7 +168,7 @@ Only a signed-in user's request generates a summary, so summaries need the GitHu
 
 Each summary that calls the model counts against two limits: `RELEASEBAR_SUMMARY_USER_HOURLY_LIMIT` per GitHub user in each clock hour (UTC), and `RELEASEBAR_SUMMARY_GLOBAL_DAILY_LIMIT` for all users together in each UTC day. A user over a limit sees a message in place of the summary until the window ends. Cached summaries and summaries that end without the model, such as "No commits have landed since the latest release.", count nothing. A failed model call counts, since it may have been billed. The counters live in the `SUMMARY_QUOTA` Durable Object, in `RELEASEBAR_DO_JURISDICTION` when that is set; when it cannot be reached no summary is generated.
 
-A release summary reads the commit titles since the latest release. A signed-in user can have any public repository summarized, so its input is capped whatever the commits hold: each title to `RELEASEBAR_SUMMARY_TITLE_CHARS`, and the list to `RELEASEBAR_SUMMARY_INPUT_CHARS`, newest titles first. `npm run deploy` rejects a limit outside its bounds; a Worker var set directly is clamped to them, and ignored unless it is a whole number. A changed limit applies to summaries made after it, not to cached ones.
+A release summary reads the commit titles since the latest release. A signed-in user can have any public repository summarized, so its input is capped whatever the commits hold: each title to `RELEASEBAR_SUMMARY_TITLE_CHARS`, and the list to `RELEASEBAR_SUMMARY_INPUT_CHARS`, newest titles first. `pnpm run deploy` rejects a limit outside its bounds; a Worker var set directly is clamped to them, and ignored unless it is a whole number. A changed limit applies to summaries made after it, not to cached ones.
 
 To send summaries to another endpoint that speaks the Messages API, such as Cloudflare AI Gateway or a proxy, set the build variable `RELEASEBAR_ANTHROPIC_BASE_URL` (or the Worker var `ANTHROPIC_BASE_URL` directly). The client appends `/v1/messages` to it and sends `ANTHROPIC_API_KEY` in the `x-api-key` header.
 
@@ -177,16 +177,16 @@ To send summaries to another endpoint that speaks the Messages API, such as Clou
 The production deployment is a Cloudflare Worker with Worker Assets, not GitHub Pages. A local deployment runs:
 
 ```sh
-RELEASEBAR_DOMAIN=releasebar.example.com npm run deploy
+RELEASEBAR_DOMAIN=releasebar.example.com pnpm run deploy
 ```
 
-`npm run build` is one `vite build`: it writes the app to `dist/client`, the Worker to `dist/releasebar`, and next to the Worker the Wrangler config that `wrangler deploy` uses. Run `wrangler deploy` only after a build, through `npm run deploy`: on its own in a fresh checkout it deploys the generic `wrangler.jsonc`, without the deployment's settings.
+`pnpm run build` is one `vite build`: it writes the app to `dist/client`, the Worker to `dist/releasebar`, and next to the Worker the Wrangler config that `wrangler deploy` uses. Run `wrangler deploy` only after a build, through `pnpm run deploy`: on its own in a fresh checkout it deploys the generic `wrangler.jsonc`, without the deployment's settings.
 
-Pushes to `main` are built and deployed by Cloudflare's GitHub app (Workers Builds), which runs `npm run deploy` as its deploy command and needs no separate build command. No workflow deploys, and GitHub holds no Cloudflare token.
+Pushes to `main` are built and deployed by Cloudflare's GitHub app (Workers Builds), which runs `pnpm run deploy` as its deploy command and needs no separate build command. No workflow deploys, and GitHub holds no Cloudflare token.
 
-Pull requests are gated by the org's Test TypeScript check, which runs the `typecheck`, `lint`, `format:check`, `build` and `test` scripts, and by `.github/workflows/cloudflare.yml`, which dry-runs the Wrangler deployment of the generic `wrangler.jsonc` without credentials. `npm run build` is the offline build; `npm run build:data` also fetches dashboard data from GitHub.
+Pull requests are gated by the org's Test TypeScript check, which runs the `typecheck`, `lint`, `format:check`, `build` and `test` scripts, and by `.github/workflows/cloudflare.yml`, which dry-runs the Wrangler deployment of the generic `wrangler.jsonc` without credentials. `pnpm run build` is the offline build; `pnpm run build:data` also fetches dashboard data from GitHub.
 
-`npm test` runs the tests with [Vitest](https://vitest.dev/) and needs no build first. Most test files run inside the Workers runtime through Cloudflare's Vitest integration, on the local KV namespace, D1 database, queue and Durable Objects that `wrangler.jsonc` binds, with nothing faked; the files listed in `vitest.config.ts` run on Node.js. The run writes a coverage report to `coverage/`, which the org's coverage workflow picks up. `npm run test:watch` re-runs the tests of changed files.
+`pnpm test` runs the tests with [Vitest](https://vitest.dev/) and needs no build first. Most test files run inside the Workers runtime through Cloudflare's Vitest integration, on the local KV namespace, D1 database, queue and Durable Objects that `wrangler.jsonc` binds, with nothing faked; the files listed in `vitest.config.ts` run on Node.js. The run writes a coverage report to `coverage/`, which the org's coverage workflow picks up. `pnpm run test:watch` re-runs the tests of changed files.
 
 ## Admin
 

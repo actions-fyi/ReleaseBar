@@ -1,0 +1,9 @@
+# pnpm fails the install on a dependency's build script that isn't allowed or denied here.
+allowBuilds:
+  # Wrangler's bundler; its script puts the platform binary in place.
+  esbuild: true
+  # The Workers runtime of the dev server, the tests and Wrangler; its script puts the platform
+  # binary in place.
+  workerd: true
+  # macOS file watching; it ships a prebuilt binary, so the rebuild isn't needed.
+  fsevents: false

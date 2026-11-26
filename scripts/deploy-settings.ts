@@ -1,4 +1,4 @@
-// Run by `npm run deploy` before the build. It stops a deploy whose RELEASEBAR_* environment
+// Run by `pnpm run deploy` before the build. It stops a deploy whose RELEASEBAR_* environment
 // variables (Workers Builds build variables) are missing or malformed, and prints the ones that
 // vite.config.ts is about to write into the deployed Wrangler config.
 import { deployConfig, deploySettingNames } from "../shared/deploy-config.ts";
