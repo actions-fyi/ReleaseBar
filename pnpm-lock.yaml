@@ -196,13 +196,13 @@ importers:
         version: 2.6.2
       bits-ui:
         specifier: ^2.21.0
-        version: 2.22.0(@internationalized/date@3.12.4)(svelte@5.59.1)
+        version: 2.22.0(@internationalized/date@3.12.4)(svelte@5.59.2)
       svelte:
         specifier: ^5.57.3
-        version: 5.59.1
+        version: 5.59.2
       svelte-command-palette:
         specifier: ^2.0.2
-        version: 2.0.2(svelte@5.59.1)
+        version: 2.0.2(svelte@5.59.2)
       valibot:
         specifier: ^1.5.0
         version: 1.5.0(@typescript/typescript6@6.0.2)
@@ -215,7 +215,7 @@ importers:
         version: 1.9.2(@types/node@26.6.10)(vitest@5.1.2)
       '@sveltejs/vite-plugin-svelte':
         specifier: 7.3.2
-        version: 7.3.2(svelte@5.59.1)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2))
+        version: 7.3.2(svelte@5.59.2)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2))
       '@types/node':
         specifier: 26.6.10
         version: 26.6.10
@@ -227,13 +227,13 @@ importers:
         version: 5.1.2(vitest@5.1.2)
       oxfmt:
         specifier: 0.80.0
-        version: 0.80.0(svelte@5.59.1)
+        version: 0.80.0(svelte@5.59.2)
       oxlint:
         specifier: 1.95.0
         version: 1.95.0
       svelte-check:
         specifier: 4.7.8
-        version: 4.7.8(@typescript/typescript6@6.0.2)(picomatch@4.0.7)(svelte@5.59.1)
+        version: 4.7.8(@typescript/typescript6@6.0.2)(picomatch@4.0.7)(svelte@5.59.2)
       typescript:
         specifier: npm:@typescript/typescript6@6.0.2
         version: '@typescript/typescript6@6.0.2'
@@ -1391,8 +1391,9 @@ packages:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
 
-  devalue@5.9.4:
-    resolution: {integrity: sha512-sPAT4pztbu6586/hrhOnMKS17IJrvg12mXiSPSS3W5qDeN2RGgvZ0diZCm31dBbnevfVmujNO3IM2wrS4Y2Rhg==}
+  devalue@6.0.4:
+    resolution: {integrity: sha512-8L3d5HaKt6/wnWKRtwmJu7qrLM6YiGb6mxktIFfgjQzQzIAR5vAZdHioZv/252Pp4SN/xu47oxe7RlwoZzWTTA==}
+    engines: {node: '>=18'}
 
   devtools-protocol@0.0.1182435:
     resolution: {integrity: sha512-EmlkWb62wSbQNE1gRZZsi4KZYRaF5Skpp183LhRU7+sadKR06O1dHCjZmFSEG6Kv7P6S/UYLxcY3NlYwqKM99w==}
@@ -1795,8 +1796,8 @@ packages:
     peerDependencies:
       svelte: ^5.30.2
 
-  svelte@5.59.1:
-    resolution: {integrity: sha512-ADG20W/jYSQut/79AavRRfbXQYebFKMVWT/xAbjVVZfZA4XzIoFfcpanEfYTyN+uWQUaPP+nstFx4qVKwEVnQQ==}
+  svelte@5.59.2:
+    resolution: {integrity: sha512-XsSgJYzoRJ1GfD5IOJorwRy77eIEv8I1p+3wDQGkDIEbVd8BFXCy4PTQ8diPtuazRRHq6IWidBg2m3rDrqNtcA==}
     engines: {node: '>=18'}
 
   tabbable@6.5.2:
@@ -2565,11 +2566,11 @@ snapshots:
 
   '@sveltejs/load-config@0.2.3': {}
 
-  '@sveltejs/vite-plugin-svelte@7.3.2(svelte@5.59.1)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2))':
+  '@sveltejs/vite-plugin-svelte@7.3.2(svelte@5.59.2)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2))':
     dependencies:
       deepmerge: 4.3.1
       obug: 3.0.0
-      svelte: 5.59.1
+      svelte: 5.59.2
       vite: 8.3.8(@types/node@26.6.10)(esbuild@0.28.2)
       vitefu: 1.1.4(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2))
 
@@ -2733,15 +2734,15 @@ snapshots:
 
   axobject-query@4.1.0: {}
 
-  bits-ui@2.22.0(@internationalized/date@3.12.4)(svelte@5.59.1):
+  bits-ui@2.22.0(@internationalized/date@3.12.4)(svelte@5.59.2):
     dependencies:
       '@floating-ui/core': 1.8.0
       '@floating-ui/dom': 1.8.0
       '@internationalized/date': 3.12.4
       esm-env: 1.2.2
-      runed: 0.35.1(svelte@5.59.1)
-      svelte: 5.59.1
-      svelte-toolbelt: 0.10.7(svelte@5.59.1)
+      runed: 0.35.1(svelte@5.59.2)
+      svelte: 5.59.2
+      svelte-toolbelt: 0.10.7(svelte@5.59.2)
       tabbable: 6.5.2
     transitivePeerDependencies:
       - '@sveltejs/kit'
@@ -2791,7 +2792,7 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
-  devalue@5.9.4: {}
+  devalue@6.0.4: {}
 
   devtools-protocol@0.0.1182435: {}
 
@@ -2991,9 +2992,9 @@ snapshots:
 
   locate-character@3.0.0: {}
 
-  lucide-svelte@0.562.0(svelte@5.59.1):
+  lucide-svelte@0.562.0(svelte@5.59.2):
     dependencies:
-      svelte: 5.59.1
+      svelte: 5.59.2
 
   lz-string@1.5.0: {}
 
@@ -3046,7 +3047,7 @@ snapshots:
 
   obug@3.0.0: {}
 
-  oxfmt@0.80.0(svelte@5.59.1):
+  oxfmt@0.80.0(svelte@5.59.2):
     dependencies:
       tinypool: 2.2.0
     optionalDependencies:
@@ -3069,7 +3070,7 @@ snapshots:
       '@oxfmt/binding-win32-arm64-msvc': 0.80.0
       '@oxfmt/binding-win32-ia32-msvc': 0.80.0
       '@oxfmt/binding-win32-x64-msvc': 0.80.0
-      svelte: 5.59.1
+      svelte: 5.59.2
 
   oxlint@1.95.0:
     optionalDependencies:
@@ -3131,12 +3132,12 @@ snapshots:
       '@rolldown/binding-win32-arm64-msvc': 1.2.19
       '@rolldown/binding-win32-x64-msvc': 1.2.19
 
-  runed@0.35.1(svelte@5.59.1):
+  runed@0.35.1(svelte@5.59.2):
     dependencies:
       dequal: 2.0.3
       esm-env: 1.2.2
       lz-string: 1.5.0
-      svelte: 5.59.1
+      svelte: 5.59.2
 
   sade@1.8.1:
     dependencies:
@@ -3192,7 +3193,7 @@ snapshots:
 
   supports-color@10.2.2: {}
 
-  svelte-check@4.7.8(@typescript/typescript6@6.0.2)(picomatch@4.0.7)(svelte@5.59.1):
+  svelte-check@4.7.8(@typescript/typescript6@6.0.2)(picomatch@4.0.7)(svelte@5.59.2):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       '@sveltejs/load-config': 0.2.3
@@ -3200,29 +3201,29 @@ snapshots:
       fdir: 6.5.0(picomatch@4.0.7)
       picocolors: 1.1.1
       sade: 1.8.1
-      svelte: 5.59.1
+      svelte: 5.59.2
       typescript: '@typescript/typescript6@6.0.2'
     transitivePeerDependencies:
       - picomatch
 
-  svelte-command-palette@2.0.2(svelte@5.59.1):
+  svelte-command-palette@2.0.2(svelte@5.59.2):
     dependencies:
       csstype: 3.2.4
       fuse.js: 7.5.0
-      lucide-svelte: 0.562.0(svelte@5.59.1)
-      svelte: 5.59.1
+      lucide-svelte: 0.562.0(svelte@5.59.2)
+      svelte: 5.59.2
       tinykeys: 2.1.0
 
-  svelte-toolbelt@0.10.7(svelte@5.59.1):
+  svelte-toolbelt@0.10.7(svelte@5.59.2):
     dependencies:
       clsx: 2.1.1
-      runed: 0.35.1(svelte@5.59.1)
+      runed: 0.35.1(svelte@5.59.2)
       style-to-object: 1.0.14
-      svelte: 5.59.1
+      svelte: 5.59.2
     transitivePeerDependencies:
       - '@sveltejs/kit'
 
-  svelte@5.59.1:
+  svelte@5.59.2:
     dependencies:
       '@jridgewell/remapping': 2.3.5
       '@jridgewell/sourcemap-codec': 1.6.0
@@ -3232,7 +3233,7 @@ snapshots:
       aria-query: 5.3.1
       axobject-query: 4.1.0
       clsx: 2.1.1
-      devalue: 5.9.4
+      devalue: 6.0.4
       esm-env: 1.2.2
       esrap: 2.4.2
       is-reference: 3.0.3
