@@ -14,14 +14,14 @@ ReleaseBar runs as a Cloudflare Worker. To deploy your own, see [self-hosting](d
 ```sh
 git clone https://github.com/actions-fyi/ReleaseBar.git
 cd ReleaseBar
-npm ci
+pnpm install --frozen-lockfile
 ```
 
 ReleaseBar requires Node.js 22.18 or newer; `.nvmrc` names Node.js 26.
 
 ## Quick start
 
-With the development server running (`npm run dev`), open a dashboard for any public GitHub owner, such as `http://127.0.0.1:5173/steipete`, or read the same cached data from the API. On a deployment, use its domain instead.
+With the development server running (`pnpm run dev`), open a dashboard for any public GitHub owner, such as `http://127.0.0.1:5173/steipete`, or read the same cached data from the API. On a deployment, use its domain instead.
 
 ```sh
 curl -fsSL http://127.0.0.1:5173/api/steipete \
@@ -62,9 +62,9 @@ Static builds use `releasebar.config.json`; the hosted service serves arbitrary 
 ## Development
 
 ```sh
-npm ci
-npm run check:static
-npm run dev
+pnpm install --frozen-lockfile
+pnpm run check:static
+pnpm run dev
 ```
 
 The Vite development server runs on `http://127.0.0.1:5173` and serves the app and the Worker, API routes included, in the Workers runtime.

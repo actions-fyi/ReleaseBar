@@ -1,4 +1,4 @@
-// Run by `npm run lint`. Fails when code outside worker/store/ names a binding of wrangler.jsonc:
+// Run by `pnpm run lint`. Fails when code outside worker/store/ names a binding of wrangler.jsonc:
 // only the store layer reads or writes KV, D1, the queue, the assets or a Durable Object, so that
 // what is behind a store function can change without touching its callers.
 //

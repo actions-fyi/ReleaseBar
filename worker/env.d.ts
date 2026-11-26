@@ -1,6 +1,6 @@
-// Variables and secrets a deployment sets outside wrangler.jsonc: `npm run deploy` writes some from
+// Variables and secrets a deployment sets outside wrangler.jsonc: `pnpm run deploy` writes some from
 // RELEASEBAR_* build variables, the rest are Worker secrets or dashboard variables (see
-// docs/self-hosting.md). Bindings are not declared here: `npm run types` generates them into
+// docs/self-hosting.md). Bindings are not declared here: `pnpm run types` generates them into
 // worker-configuration.d.ts.
 interface DeploymentEnv {
   ADMIN_LOGINS?: string;
