@@ -951,7 +951,7 @@
   <span class="footer-separator" aria-hidden="true">.</span>
   <a class="external-link" href="https://github.com/actions-fyi/ReleaseBar/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT Licensed</a>
   <span class="footer-separator" aria-hidden="true">.</span>
-  <a class="external-link" href="https://github.com/actions-fyi/ReleaseBar/blob/main/docs/privacy.md" target="_blank" rel="noreferrer">Privacy</a>
+  <a href="/privacy">Privacy</a>
 </footer>
 
 <CommandPalette

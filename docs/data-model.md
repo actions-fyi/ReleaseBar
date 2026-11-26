@@ -162,7 +162,7 @@ Through `sessions.ts`: `auth:session:<id>`, a sign-in session, which expires wit
 
 - Not deleted: the refresh audit log and the GitHub access counts, which expire after 14 days, and what is public GitHub data about the account: the owner's metadata, cached dashboards and the targets of dashboards without a profile. A dashboard shows that data for any public account and builds it again when it is opened.
 - The app stays installed and authorized on GitHub: while it is, the installation is stored again by the next request that needs it.
-- `docs/privacy.md` says the same to users, with the retention of every kind of data.
+- The privacy policy at `/privacy` (`public/privacy.html`) says the same to users, with the retention of every kind of data. A change to what is stored, or for how long, is a change to that page.
 
 ## Durable Objects
 

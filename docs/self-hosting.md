@@ -152,7 +152,17 @@ Configure these Worker secrets to enable login and installation:
 
 Set the GitHub App setup URL to `https://<your-domain>/api/auth/install` and enable redirect-on-update. Set the webhook URL to `https://<your-domain>/api/github/webhook`, use the same webhook secret in GitHub and Cloudflare, and subscribe to Issues, Pull requests, Push, Releases, and Repository events. GitHub sends the uninstall of the app and the revocation of a user's authorization to every GitHub App without a subscription; ReleaseBar deletes the installation or the user's sessions when they arrive.
 
-A deployment that serves users in the EU needs a privacy policy of its own: [privacy.md](privacy.md) is the one of `releasebar.actions.fyi` and says what the software stores and for how long. The app's footer links to it; change the link in `src/App.svelte` to yours.
+### Privacy policy
+
+The site serves its privacy policy at `/privacy`, linked from the footer. The text is `public/privacy.html`: what the software stores, why, for how long, and how a user deletes it. Who runs the deployment comes from Worker variables, set in the Cloudflare dashboard like `GITHUB_APP_SLUG`:
+
+- `PRIVACY_CONTROLLER`: the name and postal address of the person or company responsible. Line breaks are kept.
+- `PRIVACY_CONTACT`: where privacy requests go. An email address becomes a link.
+- `PRIVACY_AUTHORITY`: optional, the data protection authority users may complain to.
+
+Without the first two the page says that the operator has not named who is responsible, and is not a complete policy. The page describes the software as it is shipped: a deployment that changes what is stored, adds a processor or turns AI summaries off edits `public/privacy.html`. Have the text reviewed for your jurisdiction.
+
+`/privacy` is the policy for every visitor, so the dashboard of a GitHub account named `privacy` has no page; its data stays available at `/api/privacy`.
 
 Signed webhook payloads up to 2 MiB enter Cloudflare Queue before acknowledgement. Issue and pull-request bursts coalesce into authoritative count refreshes; push and release bursts coalesce into release refreshes. Privacy and archive transitions remain separate so visibility changes apply promptly.
 

@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="What ReleaseBar stores, why, for how long, and how to delete it."
+    />
+    <title>Privacy policy · {{domain}}</title>
+    <link rel="canonical" href="https://{{domain}}/privacy" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script>
+      try {
+        if (localStorage.getItem("releasedeck:theme") === "light") {
+          document.documentElement.dataset.theme = "light";
+        }
+      } catch (error) {}
+    </script>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #080908;
+        --panel: #10130f;
+        --text: #e9f4e1;
+        --muted: #8f9b85;
+        --line: #2a3226;
+        --green: #9cff57;
+        --amber: #ffcc66;
+      }
+      :root[data-theme="light"] {
+        color-scheme: light;
+        --bg: #f6f4ea;
+        --panel: #fffefa;
+        --text: #1e2114;
+        --muted: #656d5c;
+        --line: #dcd6c5;
+        --green: #2f8f20;
+        --amber: #9a6400;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          15px/1.6 ui-sans-serif,
+          system-ui,
+          sans-serif;
+      }
+      main {
+        width: min(820px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 32px 0 64px;
+      }
+      h1 {
+        margin: 24px 0 8px;
+        font-size: 28px;
+        line-height: 1.2;
+      }
+      h2 {
+        margin: 40px 0 8px;
+        font-size: 19px;
+      }
+      h3 {
+        margin: 24px 0 8px;
+        font-size: 15px;
+      }
+      a {
+        color: var(--green);
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .notice {
+        margin: 16px 0;
+        padding: 12px 16px;
+        border: 1px solid var(--amber);
+        border-radius: 8px;
+        color: var(--amber);
+      }
+      .operator {
+        white-space: pre-line;
+      }
+      .table {
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        padding: 8px 12px 8px 0;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 600;
+      }
+      code {
+        font:
+          13px ui-monospace,
+          monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a href="/">← ReleaseBar</a>
+      <h1>Privacy policy</h1>
+      <p class="muted">For the ReleaseBar service at {{domain}}.</p>
+      {{notice}}
+
+      <h2>Who is responsible</h2>
+      <p class="operator">{{controller}}</p>
+      <p>Privacy requests: {{contact}}</p>
+
+      <h2>What ReleaseBar is</h2>
+      <p>
+        ReleaseBar shows release health for public GitHub repositories. It reads public data through
+        the GitHub API and shows it as a dashboard for an account or a repository. Signing in with
+        GitHub and installing the ReleaseBar GitHub App are optional.
+      </p>
+
+      <h2>What is stored</h2>
+
+      <h3>Without signing in</h3>
+      <div class="table">
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Source</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                Public GitHub data about the accounts and repositories a dashboard shows: names,
+                descriptions, releases, issue and pull request counts, CI state, public activity,
+                public stargazers and contributors, avatar addresses
+              </td>
+              <td>The GitHub API</td>
+              <td>To show the dashboard without asking GitHub on every visit</td>
+            </tr>
+            <tr>
+              <td>
+                Signals computed from that public data: an account's age, reach and footprint
+                ("trust profile"), and a summary of a repository's recent stargazers
+              </td>
+              <td>Computed by ReleaseBar</td>
+              <td>
+                To give context on an owner or a repository. No decision about a person is made from
+                them
+              </td>
+            </tr>
+            <tr>
+              <td>
+                Which dashboards were opened and when: the dashboard's address, not who opened it
+              </td>
+              <td>Your request</td>
+              <td>To keep recently opened dashboards fresh</td>
+            </tr>
+            <tr>
+              <td>Page load timings your browser reports, without an identifier</td>
+              <td>Your browser</td>
+              <td>To find slow pages</td>
+            </tr>
+            <tr>
+              <td>A counter per client and minute, keyed by a shortened hash of the IP address</td>
+              <td>Your request</td>
+              <td>To limit requests to two endpoints</td>
+            </tr>
+            <tr>
+              <td>Theme, hidden owners and repositories, custom sources</td>
+              <td>Stays in your browser's local storage</td>
+              <td>To remember your view</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Private repositories are never shown. A repository that turns private or is deleted is
+        removed from dashboards and caches (see <a href="#public-data">Public data and removal</a>).
+      </p>
+
+      <h3>When you sign in with GitHub</h3>
+      <div class="table">
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Your GitHub user id, login, display name, avatar and profile address</td>
+              <td>To show who is signed in and which dashboards are yours</td>
+            </tr>
+            <tr>
+              <td>The access token and refresh token GitHub issues for you</td>
+              <td>To ask GitHub which installations of the app you can use</td>
+            </tr>
+            <tr>
+              <td>The list of ReleaseBar installations you can use</td>
+              <td>To decide which dashboards get the app's own API quota</td>
+            </tr>
+            <tr>
+              <td>
+                A session cookie, <code>rd_session</code>, that points to the above, and short-lived
+                cookies during sign-in and installation (<code>rd_oauth_state_*</code>,
+                <code>rd_install_return</code>)
+              </td>
+              <td>To keep you signed in and to protect the sign-in</td>
+            </tr>
+            <tr>
+              <td>
+                Sign-in and installation events: time, step, account login, installation id, outcome
+              </td>
+              <td>To see where sign-in fails</td>
+            </tr>
+            <tr>
+              <td>A counter of the AI summaries you started in the current hour, by user id</td>
+              <td>To limit their cost</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        ReleaseBar stores no email address, and of the repositories an installation covers only the
+        names of the public ones. These cookies are needed for sign-in; ReleaseBar sets no other
+        cookies and uses no analytics or advertising service.
+      </p>
+
+      <h3>When you save a dashboard profile</h3>
+      <p>
+        The owners and repositories your dashboard adds or hides, when it was saved and by which
+        login. A profile is public: it decides what everyone sees at your dashboard's address.
+      </p>
+
+      <h3>When the GitHub App is installed on an account</h3>
+      <p>
+        The installation id, the account's login, type, avatar and address, whether it covers all or
+        selected repositories, and the names of the public repositories it covers. An installation
+        token, valid for under an hour, is cached while it is in use.
+      </p>
+
+      <h2>Legal basis</h2>
+      <ul>
+        <li>
+          Sign-in, sessions, profiles and installations: performance of the service you asked for
+          (Art. 6(1)(b) GDPR).
+        </li>
+        <li>
+          Showing public GitHub data, keeping dashboards fresh, request limits, timings and the
+          event logs: legitimate interests (Art. 6(1)(f) GDPR) in offering a public release
+          dashboard and in keeping it working and secure. You may object, see
+          <a href="#rights">Your rights</a>.
+        </li>
+      </ul>
+
+      <h2>How long</h2>
+      <div class="table">
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Kept for</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Session with its tokens</td>
+              <td>30 days, or until you log out, revoke the authorization or delete the account</td>
+            </tr>
+            <tr>
+              <td>Dashboard profile</td>
+              <td>Until you reset it or delete the account</td>
+            </tr>
+            <tr>
+              <td>Snapshots of a profile, and the record that a dashboard was opened</td>
+              <td>90 days after it was last used</td>
+            </tr>
+            <tr>
+              <td>Installation</td>
+              <td>
+                Until the app is uninstalled; at the latest 90 days after it was last confirmed
+              </td>
+            </tr>
+            <tr>
+              <td>Installation token</td>
+              <td>50 minutes</td>
+            </tr>
+            <tr>
+              <td>Sign-in and installation events</td>
+              <td>90 days</td>
+            </tr>
+            <tr>
+              <td>Refresh and GitHub access logs, page timings</td>
+              <td>14 days</td>
+            </tr>
+            <tr>
+              <td>Cached public GitHub data and the signals computed from it</td>
+              <td>
+                Up to 90 days, depending on the kind; it is fetched again when a dashboard is opened
+              </td>
+            </tr>
+            <tr>
+              <td>Request counters</td>
+              <td>About two minutes; the AI summary counter one hour</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Who receives data</h2>
+      <ul>
+        <li>
+          <strong>Cloudflare</strong> hosts the service. Stored data is kept in Cloudflare's EU
+          jurisdiction. Cloudflare processes your IP address to deliver the pages. The request logs
+          that would hold IP addresses and headers are switched off for ReleaseBar, and query
+          strings are removed from its logs and traces.
+        </li>
+        <li>
+          <strong>GitHub</strong> receives the API requests that fetch public data, and handles
+          sign-in and installation.
+        </li>
+        <li>
+          <strong>Anthropic</strong> receives public activity and commit titles of public
+          repositories when an AI summary is generated. No session or account data is sent.
+        </li>
+      </ul>
+
+      <h2>Your choices</h2>
+      <ul>
+        <li><strong>Log out</strong>: deletes the session and its tokens.</li>
+        <li>
+          <strong>Delete Account</strong> (account menu): deletes every session of yours with its
+          tokens, your dashboard profile with its snapshots and the dashboards built from it, the
+          installation record of your own account, and your sign-in events. The logs of the last 14
+          days are not searched; they expire.
+        </li>
+        <li>
+          <strong>Revoke the authorization</strong> (GitHub: Settings → Applications → Authorized
+          GitHub Apps): GitHub tells ReleaseBar, which deletes every session of yours.
+        </li>
+        <li>
+          <strong>Uninstall the app</strong> (GitHub: Settings → Applications → Installed GitHub
+          Apps): GitHub tells ReleaseBar, which deletes the installation record and its token.
+        </li>
+      </ul>
+      <p>
+        Deleting the account does not uninstall the app or revoke the authorization: only you can do
+        that on GitHub. While the app stays installed, ReleaseBar learns of the installation again
+        the next time a dashboard of that account is built.
+      </p>
+
+      <h2 id="public-data">Public data and removal</h2>
+      <p>
+        A dashboard exists for every public GitHub account, whether its owner uses ReleaseBar or
+        not, and shows only what GitHub publishes. Deleting your ReleaseBar account does not remove
+        it.
+      </p>
+      <ul>
+        <li>
+          A repository you delete or make private disappears from ReleaseBar when GitHub reports the
+          change (accounts with the app installed) or the next time its dashboard is refreshed, and
+          from every cache within the times above.
+        </li>
+        <li>
+          To object to the display of your account's public data, or to have it removed, write to
+          the contact above. The operator handles such requests by hand.
+        </li>
+      </ul>
+
+      <h2 id="rights">Your rights</h2>
+      <p>
+        Under the GDPR you may ask for access to your data, its correction, its deletion, the
+        restriction of its processing and a copy in a portable format, and you may object to
+        processing that rests on legitimate interests. Write to the contact above. You may also
+        complain to a data protection authority{{authority}}.
+      </p>
+
+      <h2>Changes</h2>
+      <p>
+        The
+        <a href="https://github.com/actions-fyi/ReleaseBar/commits/main/public/privacy.html"
+          >history of this page</a
+        >
+        shows every change to this policy.
+      </p>
+    </main>
+  </body>
+</html>

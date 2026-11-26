@@ -164,7 +164,7 @@ export function createSettingsController(context: SettingsContext) {
   const installApp = (): void => location.assign(authUrl("install").toString());
   const logout = (): void => location.assign(authUrl("logout").toString());
 
-  // Deletes what ReleaseBar stores for the signed-in account (docs/privacy.md) and signs out.
+  // Deletes what ReleaseBar stores for the signed-in account (the policy at /privacy) and signs out.
   async function deleteAccount(): Promise<void> {
     const confirmed = confirm(
       "Delete your ReleaseBar account? This removes your sessions, your saved dashboard profile and your sign-in history. Public GitHub data stays visible. To stop ReleaseBar's access, also uninstall the GitHub App and revoke its authorization on GitHub.",

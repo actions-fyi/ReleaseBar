@@ -29,7 +29,7 @@ Owner pages show bounded people-trust or organization-signal profiles based on p
 
 ## GitHub login and installation
 
-GitHub authentication uses `/api/auth/login`, `/api/auth/callback`, `/api/auth/install`, `/api/auth/logout`, and `/api/me`. `DELETE /api/me`, "Delete Account" in the account menu, deletes what is stored for the signed-in user; the [privacy policy](privacy.md) lists it. Login detects existing ReleaseBar GitHub App installations and offers installation when the current dashboard source is not covered.
+GitHub authentication uses `/api/auth/login`, `/api/auth/callback`, `/api/auth/install`, `/api/auth/logout`, and `/api/me`. `DELETE /api/me`, "Delete Account" in the account menu, deletes what is stored for the signed-in user; the privacy policy at `/privacy` lists it. Login detects existing ReleaseBar GitHub App installations and offers installation when the current dashboard source is not covered.
 
 An installation supplies dedicated GitHub API quota for the selected account and public repositories. Public unsynced dashboards remain metadata-only and skip release hydration. Once an installation is known, anonymous viewers can benefit from that account's app quota; mixed-owner dashboards partition work across each covered source instead of consuming one shared quota bucket.
 

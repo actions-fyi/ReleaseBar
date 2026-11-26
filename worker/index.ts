@@ -43,6 +43,7 @@ import { errorMessage } from "./dashboard-cache.ts";
 import { ownerEventsResponse } from "./dashboard-rebuild.ts";
 import { discoverResponse } from "./discover.ts";
 import { ownerResponse } from "./owner-response.ts";
+import { isPrivacyPath, privacyResponse } from "./privacy.ts";
 import { finishRefreshJobReservation, schedulerTick } from "./refresh-queue.ts";
 import {
   auditSyncEvent,
@@ -325,6 +326,11 @@ export async function routeRequest(
     ownerActivityPageOwner(url.pathname)
   ) {
     return assetResponse(request, env);
+  }
+  // Before the pages of an owner: the address is the policy's, not the dashboard of an account
+  // named "privacy".
+  if (isPrivacyPath(url.pathname)) {
+    return privacyResponse(request, env);
   }
   if (url.pathname.startsWith("/og/")) {
     const { label, extension } = socialRouteLabel(url.pathname);

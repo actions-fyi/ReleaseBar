@@ -1,8 +1,8 @@
 // What ReleaseBar stores about an account beyond GitHub's public data, and the three ways it goes:
 // the user deletes the account (`DELETE /api/me`), the user revokes the app's authorization, or the
 // app is uninstalled from an account. GitHub reports the last two with webhooks, which
-// `worker/webhook.ts` hands to `processAccountWebhook`. docs/privacy.md says what is stored and for
-// how long.
+// `worker/webhook.ts` hands to `processAccountWebhook`. The policy at /privacy (public/privacy.html) says what is stored and
+// for how long.
 
 import { slugOwner, validOwnerSlug } from "../shared/dashboard.ts";
 import type { AuthUser } from "../src/types.ts";
@@ -129,7 +129,7 @@ export async function processAccountWebhook(env: Env, event: AccountWebhookEvent
 //
 // What stays is GitHub's public data about the account, which a dashboard shows for any public
 // account and builds again when it is opened, and the audit rows of the last 14 days
-// (docs/privacy.md).
+// (public/privacy.html).
 export async function eraseAccount(env: Env, user: Pick<AuthUser, "id" | "login">): Promise<void> {
   const account = slugOwner(user.login);
   const [targetKeys, installation] = await Promise.all([
