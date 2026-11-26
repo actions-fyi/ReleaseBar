@@ -10,6 +10,7 @@ import type {
 import { hmac, verifySignedJson } from "./crypto.ts";
 import { auditGitHubFetch } from "./github-audit.ts";
 import { type BackgroundContext, canonicalDomain } from "./runtime.ts";
+import { siteLinks } from "./privacy.ts";
 import { authDependentAppShellHeaders } from "./auth-oauth.ts";
 import { cachedHotInitialData } from "./build-progress.ts";
 import {
@@ -327,6 +328,7 @@ export async function assetResponse(request: Request, env: Env): Promise<Respons
     const title = socialPreviewTitle(label);
     const image = `${originalUrl.origin}/og/${encodeURIComponent(label)}.png`;
     const domain = canonicalDomain(env, originalUrl);
+    const links = siteLinks(env);
     const initialData = await initialPageData(request, originalUrl, env).catch(() => null);
     const html = injectInitialPageData(
       (await response.text())
@@ -341,6 +343,18 @@ export async function assetResponse(request: Request, env: Env): Promise<Respons
         .replace(
           /<meta name="releasebar:canonical-domain" content="[^"]*" \/>/,
           `<meta name="releasebar:canonical-domain" content="${escapeHtml(domain)}" />`,
+        )
+        .replace(
+          /<meta name="releasebar:privacy-url" content="[^"]*" \/>/,
+          `<meta name="releasebar:privacy-url" content="${escapeHtml(links.privacyUrl)}" />`,
+        )
+        .replace(
+          /<meta name="releasebar:imprint-url" content="[^"]*" \/>/,
+          `<meta name="releasebar:imprint-url" content="${escapeHtml(links.imprintUrl ?? "")}" />`,
+        )
+        .replace(
+          /<meta name="releasebar:development" content="[^"]*" \/>/,
+          `<meta name="releasebar:development" content="${links.development ? "true" : ""}" />`,
         )
         .replace(
           /<meta property="og:title" content="[^"]*" \/>/,

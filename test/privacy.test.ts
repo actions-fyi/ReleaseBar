@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import policy from "../public/privacy.html?raw";
-import { serveAssets, worker } from "./dashboard-test-harness.ts";
+import { assetResponse } from "../worker/app-shell.ts";
+import { serveAssets, testEnv, worker } from "./dashboard-test-harness.ts";
 
 const context = { waitUntil: () => undefined };
 
@@ -38,7 +39,7 @@ test("/privacy serves the policy with the deployment's operator", async () => {
   expect(html).not.toMatch(/\{\{|\}\}/);
 });
 
-test("/privacy says so when the deployment names no operator", async () => {
+test("/privacy says that a deployment without a named operator is not for public use", async () => {
   servePolicy();
   for (const path of ["/privacy", "/privacy.html"]) {
     const response = await worker.fetch(
@@ -48,11 +49,80 @@ test("/privacy says so when the deployment names no operator", async () => {
     );
     expect(response.status).toBe(200);
     const html = await response.text();
-    expect(html).toContain('<p class="notice">');
+    expect(html).toContain('<p class="notice">Development deployment, not for public use');
     expect(html).toContain('<p class="operator">Not named yet.</p>');
     // A contact that is no email address is text, not a link.
     expect(html).toContain("Privacy requests: https://example.com/contact");
     expect(html).toContain("complain to a data protection authority.");
     expect(html).not.toMatch(/\{\{|\}\}/);
   }
+});
+
+test("/privacy redirects to the policy of the deployment's own", async () => {
+  const paths = servePolicy();
+  const response = await worker.fetch(
+    new Request("https://release.bar/privacy"),
+    { PRIVACY_POLICY_URL: "https://example.com/legal/privacy" },
+    context,
+  );
+  expect(response.status).toBe(302);
+  expect(response.headers.get("location")).toBe("https://example.com/legal/privacy");
+  expect(paths).toStrictEqual([]);
+
+  // An address that is not http(s) is no policy: the built-in page is served.
+  const builtIn = await worker.fetch(
+    new Request("https://release.bar/privacy"),
+    { PRIVACY_POLICY_URL: "javascript:alert(1)" },
+    context,
+  );
+  expect(builtIn.status).toBe(200);
+});
+
+const shell =
+  '<title>ReleaseBar</title><meta name="releasebar:privacy-url" content="/privacy" /><meta name="releasebar:imprint-url" content="" /><meta name="releasebar:development" content="" />';
+
+async function shellMetas(vars: Partial<Env>): Promise<Record<string, string>> {
+  serveAssets(async () => new Response(shell, { headers: { "content-type": "text/html" } }));
+  const response = await assetResponse(new Request("https://release.bar/openclaw"), testEnv(vars));
+  const html = await response.text();
+  return Object.fromEntries(
+    ["privacy-url", "imprint-url", "development"].map((name) => [
+      name,
+      html.split(`<meta name="releasebar:${name}" content="`)[1]?.split('"')[0] ?? "missing",
+    ]),
+  );
+}
+
+test("the app shell tells the page the deployment's legal links", async () => {
+  // Nothing configured: the built-in page, and a development deployment.
+  expect(await shellMetas({})).toStrictEqual({
+    "privacy-url": "/privacy",
+    "imprint-url": "",
+    development: "true",
+  });
+  // A named operator: the built-in page is the policy.
+  expect(
+    await shellMetas({
+      PRIVACY_CONTROLLER: "Example GmbH",
+      PRIVACY_CONTACT: "privacy@example.com",
+      IMPRINT_URL: "https://example.com/imprint",
+    }),
+  ).toStrictEqual({
+    "privacy-url": "/privacy",
+    "imprint-url": "https://example.com/imprint",
+    development: "",
+  });
+  // A policy of its own, in place of the built-in page.
+  expect(
+    await shellMetas({
+      PRIVACY_POLICY_URL: "https://example.com/privacy?lang=en&v=2",
+      IMPRINT_URL: "not an address",
+    }),
+  ).toStrictEqual({
+    "privacy-url": "https://example.com/privacy?lang=en&amp;v=2",
+    "imprint-url": "",
+    development: "",
+  });
+  // The operator needs both a name and a contact.
+  expect((await shellMetas({ PRIVACY_CONTROLLER: "Example GmbH" })).development).toBe("true");
 });

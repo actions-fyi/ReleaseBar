@@ -152,15 +152,23 @@ Configure these Worker secrets to enable login and installation:
 
 Set the GitHub App setup URL to `https://<your-domain>/api/auth/install` and enable redirect-on-update. Set the webhook URL to `https://<your-domain>/api/github/webhook`, use the same webhook secret in GitHub and Cloudflare, and subscribe to Issues, Pull requests, Push, Releases, and Repository events. GitHub sends the uninstall of the app and the revocation of a user's authorization to every GitHub App without a subscription; ReleaseBar deletes the installation or the user's sessions when they arrive.
 
-### Privacy policy
+### Privacy policy and imprint
 
-The site serves its privacy policy at `/privacy`, linked from the footer. The text is `public/privacy.html`: what the software stores, why, for how long, and how a user deletes it. Who runs the deployment comes from Worker variables, set in the Cloudflare dashboard like `GITHUB_APP_SLUG`:
+The footer links to the deployment's privacy policy and, when it has one, its imprint. Both are set with Worker variables, in the Cloudflare dashboard like `GITHUB_APP_SLUG`. The repository names no operator.
 
-- `PRIVACY_CONTROLLER`: the name and postal address of the person or company responsible. Line breaks are kept.
-- `PRIVACY_CONTACT`: where privacy requests go. An email address becomes a link.
-- `PRIVACY_AUTHORITY`: optional, the data protection authority users may complain to.
+A deployment has a policy in one of two ways:
 
-Without the first two the page says that the operator has not named who is responsible, and is not a complete policy. The page describes the software as it is shipped: a deployment that changes what is stored, adds a processor or turns AI summaries off edits `public/privacy.html`. Have the text reviewed for your jurisdiction.
+- **Its own:** `PRIVACY_POLICY_URL` is the address of the operator's policy. The footer links there, and `/privacy` redirects to it.
+- **The built-in page:** `/privacy` serves `public/privacy.html`, which says what the software stores, why, for how long, and how a user deletes it. The operator is named by:
+  - `PRIVACY_CONTROLLER`: the name and postal address of the person or company responsible. Line breaks are kept.
+  - `PRIVACY_CONTACT`: where privacy requests go. An email address becomes a link.
+  - `PRIVACY_AUTHORITY`: optional, the data protection authority users may complain to.
+
+A deployment with neither `PRIVACY_POLICY_URL` nor both of `PRIVACY_CONTROLLER` and `PRIVACY_CONTACT` is a development deployment: every page shows "Development deployment, not for public use", and so does `/privacy`. `pnpm run dev` shows it too.
+
+`IMPRINT_URL` is the address of the operator's imprint and adds an "Imprint" link to the footer. Both addresses must start with `http://` or `https://`; any other value counts as unset.
+
+The built-in page describes the software as it is shipped: a deployment that changes what is stored, adds a processor or turns AI summaries off edits `public/privacy.html` or uses a policy of its own. Have the text reviewed for your jurisdiction.
 
 `/privacy` is the policy for every visitor, so the dashboard of a GitHub account named `privacy` has no page; its data stays available at `/api/privacy`.
 

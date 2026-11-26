@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
+  import { externalLink, siteLinks } from "./site-links.ts";
   import CommandPalette, {
     defineActions,
     paletteStore,
@@ -66,6 +67,7 @@
     TrustProfilePayload,
   } from "./types.ts";
 
+  const links = siteLinks();
   const adminRoute = location.pathname === "/_admin";
   const activityPageRoute = ownerActivityFromPath(location.pathname);
   const repoRoute = activityPageRoute ? null : repoFromPath(location.pathname);
@@ -789,6 +791,13 @@
   });
 </script>
 
+{#if links.development}
+  <p class="development-notice" role="status">
+    Development deployment, not for public use: its operator has not published a privacy policy
+    yet.
+  </p>
+{/if}
+
 <main class="shell">
   <AppHeader
     {repoRoute}
@@ -951,7 +960,15 @@
   <span class="footer-separator" aria-hidden="true">.</span>
   <a class="external-link" href="https://github.com/actions-fyi/ReleaseBar/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT Licensed</a>
   <span class="footer-separator" aria-hidden="true">.</span>
-  <a href="/privacy">Privacy</a>
+  {#if externalLink(links.privacyUrl)}
+    <a class="external-link" href={links.privacyUrl} target="_blank" rel="noreferrer">Privacy</a>
+  {:else}
+    <a href={links.privacyUrl}>Privacy</a>
+  {/if}
+  {#if links.imprintUrl}
+    <span class="footer-separator" aria-hidden="true">.</span>
+    <a class="external-link" href={links.imprintUrl} target="_blank" rel="noreferrer">Imprint</a>
+  {/if}
 </footer>
 
 <CommandPalette
