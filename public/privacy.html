@@ -101,6 +101,27 @@
         color: var(--muted);
         font-weight: 600;
       }
+      .regions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .regions details {
+        padding: 12px 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+      }
+      .regions summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .regions[data-region="eu"] #rights-eu,
+      .regions[data-region="us"] #rights-us,
+      .regions[data-region="other"] #rights-other {
+        order: -1;
+        border-color: var(--green);
+      }
       code {
         font:
           13px ui-monospace,
@@ -251,20 +272,6 @@
         token, valid for under an hour, is cached while it is in use.
       </p>
 
-      <h2>Legal basis</h2>
-      <ul>
-        <li>
-          Sign-in, sessions, profiles and installations: performance of the service you asked for
-          (Art. 6(1)(b) GDPR).
-        </li>
-        <li>
-          Showing public GitHub data, keeping dashboards fresh, request limits, timings and the
-          event logs: legitimate interests (Art. 6(1)(f) GDPR) in offering a public release
-          dashboard and in keeping it working and secure. You may object, see
-          <a href="#rights">Your rights</a>.
-        </li>
-      </ul>
-
       <h2>How long</h2>
       <div class="table">
         <table>
@@ -379,13 +386,65 @@
         </li>
       </ul>
 
-      <h2 id="rights">Your rights</h2>
+      <h2 id="rights">Your rights where you live</h2>
       <p>
-        Under the GDPR you may ask for access to your data, its correction, its deletion, the
-        restriction of its processing and a copy in a portable format, and you may object to
-        processing that rests on legitimate interests. Write to the contact above. You may also
-        complain to a data protection authority{{authority}}.
+        Which law gives you rights depends on where you live. {{region-note}} If you live somewhere
+        else, open the section for your region: all of them apply to this service, whichever is
+        shown first.
       </p>
+      <div class="regions" data-region="{{region}}">
+        <details id="rights-eu" {{open-eu}}>
+          <summary>European Union, EEA, United Kingdom and Switzerland</summary>
+          <p>
+            The General Data Protection Regulation, the UK GDPR or the Swiss Federal Act on Data
+            Protection applies to you. The processing rests on these grounds:
+          </p>
+          <ul>
+            <li>
+              Sign-in, sessions, profiles and installations: performance of the service you asked
+              for (Art. 6(1)(b) GDPR).
+            </li>
+            <li>
+              Showing public GitHub data, keeping dashboards fresh, request limits, timings and the
+              event logs: legitimate interests (Art. 6(1)(f) GDPR) in offering a public release
+              dashboard and in keeping it working and secure.
+            </li>
+          </ul>
+          <p>
+            You may ask for access to your data, its correction, its deletion, the restriction of
+            its processing and a copy in a portable format, and you may object to processing that
+            rests on legitimate interests. Write to the contact above. You may also complain to a
+            data protection authority{{authority}}.
+          </p>
+        </details>
+        <details id="rights-us" {{open-us}}>
+          <summary>United States</summary>
+          <p>
+            Several states, among them California, Colorado, Connecticut, Texas and Virginia, give
+            their residents rights over personal information. Whether such a law binds the operator
+            of this service depends on its size; the operator answers these requests either way:
+          </p>
+          <ul>
+            <li>to know what personal information is held about you, and to get a copy of it;</li>
+            <li>to have it corrected or deleted;</li>
+            <li>not to be treated differently for asking.</li>
+          </ul>
+          <p>
+            Personal information is not sold, and it is not shared or used for targeted advertising.
+            No sensitive personal information is collected. Write to the contact above to make a
+            request; if it is declined, you may ask the operator to reconsider and you may complain
+            to your state's attorney general.
+          </p>
+        </details>
+        <details id="rights-other" {{open-other}}>
+          <summary>Everywhere else</summary>
+          <p>
+            Wherever you live, you may ask what is stored about you, have it corrected or deleted,
+            and object to the display of your account's public data. Write to the contact above. The
+            laws of your country may give you further rights, and a regulator to complain to.
+          </p>
+        </details>
+      </div>
 
       <h2>Changes</h2>
       <p>

@@ -53,7 +53,7 @@ test("/privacy says that a deployment without a named operator is not for public
     expect(html).toContain('<p class="operator">Not named yet.</p>');
     // A contact that is no email address is text, not a link.
     expect(html).toContain("Privacy requests: https://example.com/contact");
-    expect(html).toContain("complain to a data protection authority.");
+    expect(html).toContain("data protection authority.");
     expect(html).not.toMatch(/\{\{|\}\}/);
   }
 });
@@ -125,4 +125,41 @@ test("the app shell tells the page the deployment's legal links", async () => {
   });
   // The operator needs both a name and a contact.
   expect((await shellMetas({ PRIVACY_CONTROLLER: "Example GmbH" })).development).toBe("true");
+});
+
+function requestFrom(cf: Record<string, unknown> | null): Request {
+  const request = new Request("https://release.bar/privacy");
+  if (cf) Object.defineProperty(request, "cf", { value: cf });
+  return request;
+}
+
+test("/privacy opens the legal section of the visitor's region and keeps the others", async () => {
+  servePolicy();
+  const cases: Array<[cf: Record<string, unknown> | null, region: string]> = [
+    [{ country: "DE", isEUCountry: "1" }, "eu"],
+    // Outside the EU, under the GDPR or a law that follows it.
+    [{ country: "NO" }, "eu"],
+    [{ country: "GB" }, "eu"],
+    [{ country: "CH" }, "eu"],
+    [{ country: "US", regionCode: "CA" }, "us"],
+    [{ country: "JP" }, "other"],
+    // No country, as in local development.
+    [{}, "other"],
+    [null, "other"],
+  ];
+  for (const [cf, region] of cases) {
+    const response = await worker.fetch(requestFrom(cf), {}, context);
+    expect(response.headers.get("cache-control")).toBe("private, max-age=300");
+    const html = await response.text();
+    expect(html).toContain(`<div class="regions" data-region="${region}">`);
+    // Every region's section is on the page; only the visitor's is open.
+    const open = ["eu", "us", "other"].filter((candidate) =>
+      new RegExp(`<details id="rights-${candidate}" open\\s*>`).test(html),
+    );
+    expect(open).toStrictEqual([region]);
+    expect(html.match(/<details id="rights-/g)?.length).toBe(3);
+    expect(html).not.toMatch(/\{\{|\}\}/);
+  }
+  const fromUs = await (await worker.fetch(requestFrom({ country: "US" }), {}, context)).text();
+  expect(fromUs).toContain("Your request appears to come from the United States");
 });

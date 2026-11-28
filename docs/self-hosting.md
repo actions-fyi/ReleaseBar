@@ -168,6 +168,8 @@ A deployment with neither `PRIVACY_POLICY_URL` nor both of `PRIVACY_CONTROLLER` 
 
 `IMPRINT_URL` is the address of the operator's imprint and adds an "Imprint" link to the footer. Both addresses must start with `http://` or `https://`; any other value counts as unset.
 
+The built-in page has one section of rights per region: the EU, the EEA, the United Kingdom and Switzerland; the United States; and everywhere else. The section of the country Cloudflare reports for the request is open and first, and the other two stay on the page, closed, because a request's country is only a guess at where someone lives. The sections are default text that the operator publishes by using the built-in page: a legal basis under the GDPR, the rights of the US state privacy laws, and a neutral one.
+
 The built-in page describes the software as it is shipped: a deployment that changes what is stored, adds a processor or turns AI summaries off edits `public/privacy.html` or uses a policy of its own. Have the text reviewed for your jurisdiction.
 
 `/privacy` is the policy for every visitor, so the dashboard of a GitHub account named `privacy` has no page; its data stays available at `/api/privacy`.

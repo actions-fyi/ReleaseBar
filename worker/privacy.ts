@@ -2,6 +2,10 @@
 // every deployment; who runs the deployment is not, and comes from its variables
 // (docs/self-hosting.md): PRIVACY_CONTROLLER, PRIVACY_CONTACT and PRIVACY_AUTHORITY.
 //
+// The page's legal sections are one per region: the section of the region the request comes from
+// is open and first, the others stay on the page, closed. Rights follow where someone lives, and
+// the request's country is only a guess at that.
+//
 // A deployment with a policy of its own names it with PRIVACY_POLICY_URL: the footer links there
 // and `/privacy` redirects to it. IMPRINT_URL adds a link to the operator's imprint. A deployment
 // with neither a policy of its own nor a named operator is a development deployment, and the site
@@ -63,6 +67,29 @@ export const developmentNotice =
 
 const incompleteNotice = `<p class="notice">${developmentNotice} This page describes what the software stores, and is not a complete policy until the operator names who is responsible and how to reach them.</p>`;
 
+// The regions the page has a legal section for.
+export type PrivacyRegion = "eu" | "us" | "other";
+const privacyRegions: PrivacyRegion[] = ["eu", "us", "other"];
+
+// The countries of the EEA outside the EU, the United Kingdom and Switzerland: their law follows
+// the GDPR, and Cloudflare's `isEUCountry` does not cover them.
+const gdprCountriesOutsideEu = new Set(["IS", "LI", "NO", "GB", "CH"]);
+
+const regionNotes: Record<PrivacyRegion, string> = {
+  eu: "Your request appears to come from the EU, the EEA, the United Kingdom or Switzerland, so that section is shown first.",
+  us: "Your request appears to come from the United States, so that section is shown first.",
+  other: "The general section is shown first.",
+};
+
+// The region of the country Cloudflare reports for the request. "other" for every other country,
+// and for a request without one, as in local development.
+export function privacyRegion(request: Request): PrivacyRegion {
+  const cf = (request as Request<unknown, IncomingRequestCfProperties>).cf;
+  const country = typeof cf?.country === "string" ? cf.country.toUpperCase() : "";
+  if (cf?.isEUCountry === "1" || gdprCountriesOutsideEu.has(country)) return "eu";
+  return country === "US" ? "us" : "other";
+}
+
 export async function privacyResponse(request: Request, env: Env): Promise<Response> {
   const links = siteLinks(env);
   if (links.privacyUrl !== privacyPath) return redirectResponse(links.privacyUrl);
@@ -74,16 +101,23 @@ export async function privacyResponse(request: Request, env: Env): Promise<Respo
   const controller = env.PRIVACY_CONTROLLER?.trim() ?? "";
   const contact = env.PRIVACY_CONTACT?.trim() ?? "";
   const authority = env.PRIVACY_AUTHORITY?.trim() ?? "";
-  const html = (await response.text())
+  const region = privacyRegion(request);
+  let html = (await response.text())
     .replaceAll("{{domain}}", escapeHtml(canonicalDomain(env, url)))
     .replace("{{notice}}", links.development ? incompleteNotice : "")
     .replace("{{controller}}", controller ? escapeHtml(controller) : "Not named yet.")
     .replace("{{contact}}", contact ? contactHtml(contact) : "not named yet.")
-    .replace("{{authority}}", authority ? `, such as ${escapeHtml(authority)}` : "");
+    .replace("{{authority}}", authority ? `, such as ${escapeHtml(authority)}` : "")
+    .replace("{{region}}", region)
+    .replace("{{region-note}}", regionNotes[region]);
+  for (const candidate of privacyRegions) {
+    html = html.replace(`{{open-${candidate}}}`, candidate === region ? "open" : "");
+  }
+  // The page differs by the visitor's country: no shared cache may keep it.
   return new Response(html, {
     headers: {
       "content-type": "text/html; charset=utf-8",
-      "cache-control": "public, max-age=300",
+      "cache-control": "private, max-age=300",
     },
   });
 }
